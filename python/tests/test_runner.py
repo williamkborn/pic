@@ -20,9 +20,16 @@ class TestQemuBinaryMap:
     """Test QEMU binary name resolution."""
 
     def test_all_architectures_mapped(self) -> None:
-        expected = {"x86_64", "i686", "aarch64", "armv5_arm", "armv5_thumb",
-                    "mipsel32", "mipsbe32"}
-        assert set(QEMU_BINARIES.keys()) == expected
+        # Sync test (test_sync.py) verifies completeness against the registry.
+        # Here we just check the map is non-empty and values look like QEMU binaries.
+        assert len(QEMU_BINARIES) > 0
+        for arch, binary in QEMU_BINARIES.items():
+            assert binary.startswith("qemu-"), (
+                f"{arch}: {binary} doesn't look like a QEMU binary"
+            )
+            assert binary.endswith("-static"), (
+                f"{arch}: {binary} doesn't end with -static"
+            )
 
     def test_unknown_arch_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown architecture"):

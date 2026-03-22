@@ -19,12 +19,12 @@ from pathlib import Path
 from picblobs._extractor import BlobData, extract
 
 __version__ = "0.1.0"
-__all__ = ["get_blob", "list_blobs", "BlobData", "extract"]
+__all__ = ["get_blob", "list_blobs", "BlobData", "extract", "clear_cache"]
 
 _BLOB_DIR = Path(__file__).parent / "_blobs"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=64)
 def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
     """Load and extract a blob by type, OS, and architecture.
 
@@ -47,6 +47,11 @@ def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
             f"No blob for {blob_type}/{target_os}/{target_arch}: {so_path}"
         )
     return extract(so_path, blob_type, target_os, target_arch)
+
+
+def clear_cache() -> None:
+    """Clear the blob extraction cache. Call after rebuilding .so files."""
+    get_blob.cache_clear()
 
 
 def list_blobs() -> list[tuple[str, str, str]]:

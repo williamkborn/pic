@@ -24,6 +24,7 @@ _QEMU_BINARIES = {
     "armv5_thumb": "qemu-arm-static",
     "mipsel32": "qemu-mipsel-static",
     "mipsbe32": "qemu-mips-static",
+    "s390x": "qemu-s390x-static",
 }
 
 def _qemu_blob_test_impl(ctx):
@@ -34,15 +35,15 @@ def _qemu_blob_test_impl(ctx):
     runner_type = ctx.attr.runner_type
     qemu = _QEMU_BINARIES.get(arch, "qemu-{}-static".format(arch))
 
-    # Find the .bin file from the blob target.
-    bin_file = None
+    # Find the blob file (.so or .bin) from the blob target.
+    blob_file = None
     for f in blob_files:
-        if f.extension == "bin":
-            bin_file = f
+        if f.extension in ("so", "bin"):
+            blob_file = f
             break
 
-    if not bin_file:
-        fail("No .bin file found in blob target {}".format(ctx.attr.blob.label))
+    if not blob_file:
+        fail("No .so or .bin file found in blob target {}".format(ctx.attr.blob.label))
 
     # Generate the test script.
     script = ctx.actions.declare_file(ctx.attr.name + "_qemu_test.sh")
@@ -51,13 +52,13 @@ def _qemu_blob_test_impl(ctx):
     if arch == "x86_64":
         run_cmd = "./{runner} ./{blob}".format(
             runner = runner.short_path,
-            blob = bin_file.short_path,
+            blob = blob_file.short_path,
         )
     else:
         run_cmd = "{qemu} ./{runner} ./{blob}".format(
             qemu = qemu,
             runner = runner.short_path,
-            blob = bin_file.short_path,
+            blob = blob_file.short_path,
         )
 
     ctx.actions.write(
@@ -78,7 +79,7 @@ set -euo pipefail
         is_executable = True,
     )
 
-    runfiles = ctx.runfiles(files = [runner, bin_file])
+    runfiles = ctx.runfiles(files = [runner, blob_file])
 
     return [DefaultInfo(
         executable = script,

@@ -1,9 +1,12 @@
 # picblobs — position-independent code blob library
 #
-# Build all blobs:  bazel build //src/blob:all
-# Run all tests:    bazel test //tests/...
-# Lint C code:      bazel build --config=lint //src/...
+# Build all blobs:     bazel build //src/payload:all
+# Lint C code:         bazel build --config=lint //src/... //tests/...
+# Check formatting:    bazel test //tools:format_check
+# Check codegen:       bazel test //tools:generate_check
+# Run all checks:      bazel test //tools:all --config=lint
 
 exports_files([
     ".clang-tidy",
+    ".clang-format",
 ])

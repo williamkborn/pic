@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,15 +21,70 @@ def _project_root() -> Path:
 
 PROJECT_ROOT = _project_root()
 BAZEL_BIN = PROJECT_ROOT / "bazel-bin"
+_RUNNER_CHECK_PATH = BAZEL_BIN / "tests" / "runners" / "linux" / "runner"
+
+# Import the registry for cross-arch parametrization.
+sys.path.insert(0, str(PROJECT_ROOT))
+from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms
+
+sys.path.pop(0)
+
+
+def _runners_exist() -> bool:
+    return _RUNNER_CHECK_PATH.exists()
 
 
 # --- Environment-based filters (set by `picblobs test --os/--arch/--type`) ---
+
 
 def _env_filter(key: str) -> str:
     return os.environ.get(f"PICBLOBS_TEST_{key.upper()}", "")
 
 
-# --- Fixtures ---
+# ============================================================
+# Registry-driven fixtures for cross-arch parametrization
+# ============================================================
+
+
+def _all_arch_ids() -> list[str]:
+    """Return all architecture names from the registry."""
+    return list(ARCHITECTURES.keys())
+
+
+def _all_platform_ids() -> list[tuple[str, str]]:
+    """Return all (os, arch) pairs from the registry."""
+    return all_platforms()
+
+
+def _linux_arch_ids() -> list[str]:
+    """Return Linux architecture names from the registry."""
+    return OPERATING_SYSTEMS["linux"].architectures
+
+
+@pytest.fixture(params=_all_arch_ids())
+def target_arch(request: pytest.FixtureRequest) -> str:
+    """Parametrized fixture: yields each registered architecture name."""
+    return request.param
+
+
+@pytest.fixture(params=_linux_arch_ids())
+def linux_arch(request: pytest.FixtureRequest) -> str:
+    """Parametrized fixture: yields each Linux architecture name."""
+    return request.param
+
+
+@pytest.fixture(
+    params=_all_platform_ids(),
+    ids=[f"{os}:{arch}" for os, arch in _all_platform_ids()],
+)
+def platform_pair(request: pytest.FixtureRequest) -> tuple[str, str]:
+    """Parametrized fixture: yields each (os, arch) pair."""
+    return request.param
+
+
+# ============================================================
+# Standard fixtures
+# ============================================================
 
 
 @pytest.fixture(scope="session")
@@ -39,21 +95,19 @@ def project_root() -> Path:
 @pytest.fixture(scope="session")
 def blob_dir() -> Path:
     """Path to built .so blob files."""
-    d = BAZEL_BIN / "src" / "blob"
-    return d
+    return BAZEL_BIN / "src" / "blob"
 
 
 @pytest.fixture(scope="session")
 def runner_dir() -> Path:
     """Path to built test runner binaries."""
-    d = BAZEL_BIN / "tests" / "runners"
-    return d
+    return BAZEL_BIN / "tests" / "runners"
 
 
 @pytest.fixture(scope="session")
-def runners_available(runner_dir: Path) -> bool:
+def runners_available() -> bool:
     """True if test runners have been built."""
-    return (runner_dir / "linux" / "runner").exists()
+    return _runners_exist()
 
 
 @pytest.fixture(scope="session")
@@ -62,19 +116,25 @@ def qemu_available() -> bool:
     return shutil.which("qemu-x86_64-static") is not None
 
 
-# --- Markers ---
+# ============================================================
+# Markers
+# ============================================================
+
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "requires_runners: test needs compiled C test runners")
+    config.addinivalue_line(
+        "markers", "requires_runners: test needs compiled C test runners"
+    )
     config.addinivalue_line("markers", "requires_qemu: test needs QEMU user-static")
     config.addinivalue_line("markers", "requires_blobs: test needs built .so blobs")
 
 
 def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item],
+    config: pytest.Config,
+    items: list[pytest.Item],
 ) -> None:
     """Auto-skip tests based on available infrastructure."""
-    runners_exist = (BAZEL_BIN / "tests" / "runners" / "linux" / "runner").exists()
+    runners_exist = _runners_exist()
     has_qemu = shutil.which("qemu-x86_64-static") is not None
 
     # Environment-based filters.
@@ -84,14 +144,18 @@ def pytest_collection_modifyitems(
 
     for item in items:
         if "requires_runners" in item.keywords and not runners_exist:
-            item.add_marker(pytest.mark.skip(
-                reason="Test runners not built. Run: bazel build //tests/runners/...",
-            ))
+            item.add_marker(
+                pytest.mark.skip(
+                    reason="Test runners not built. Run: bazel build //tests/runners/...",
+                )
+            )
 
         if "requires_qemu" in item.keywords and not has_qemu:
-            item.add_marker(pytest.mark.skip(
-                reason="QEMU user-static not installed.",
-            ))
+            item.add_marker(
+                pytest.mark.skip(
+                    reason="QEMU user-static not installed.",
+                )
+            )
 
         # Apply env-based filters to parametrized tests.
         if filter_os or filter_arch or filter_type:
@@ -99,8 +163,14 @@ def pytest_collection_modifyitems(
             if params:
                 p = params.params
                 if filter_os and p.get("target_os", "") != filter_os:
-                    item.add_marker(pytest.mark.skip(reason=f"Filtered: os!={filter_os}"))
+                    item.add_marker(
+                        pytest.mark.skip(reason=f"Filtered: os!={filter_os}")
+                    )
                 if filter_arch and p.get("target_arch", "") != filter_arch:
-                    item.add_marker(pytest.mark.skip(reason=f"Filtered: arch!={filter_arch}"))
+                    item.add_marker(
+                        pytest.mark.skip(reason=f"Filtered: arch!={filter_arch}")
+                    )
                 if filter_type and p.get("blob_type", "") != filter_type:
-                    item.add_marker(pytest.mark.skip(reason=f"Filtered: type!={filter_type}"))
+                    item.add_marker(
+                        pytest.mark.skip(reason=f"Filtered: type!={filter_type}")
+                    )

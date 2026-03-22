@@ -1,0 +1,821 @@
+"""Canonical platform registry — single source of truth.
+
+Every architecture, OS, platform combination, and syscall number
+is defined HERE. All other files that enumerate platforms, architectures,
+or syscall numbers must be generated from or validated against this registry.
+
+To add a new architecture:
+  1. Add an entry to ARCHITECTURES below (with traits).
+  2. Add syscall numbers to SYSCALL_NUMBERS[os][gcc_define].
+  3. Add the syscall asm primitive to src/include/picblobs/syscall.h.
+  4. Add the _start stub to tests/runners/{os}/runner.c.
+  5. Run: python tools/generate.py        (regenerates derived files)
+  6. Run: python -m pytest python/tests/  (catches anything you missed)
+
+To add a new OS:
+  1. Add an entry to OPERATING_SYSTEMS below.
+  2. Add syscall numbers to SYSCALL_NUMBERS[os].
+  3. Create tests/runners/{os}/runner.c with a test runner.
+  4. Run: python tools/generate.py
+  5. Run: python -m pytest python/tests/
+
+To add a new syscall:
+  1. Add the number to every arch in SYSCALL_NUMBERS[os].
+  2. Add a SyscallDef entry to SYSCALL_DEFS.
+  3. Run: python tools/generate.py  (generates sys/{name}.h with numbers + wrapper)
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class Architecture:
+    """Defines a target architecture and all its properties."""
+
+    # Canonical name used in Python/CLI (e.g., "x86_64", "mipsel32").
+    name: str
+
+    # GCC compiler predefined macro (e.g., "__x86_64__", "__mips__").
+    gcc_define: str
+
+    # QEMU user-static binary name (e.g., "qemu-x86_64-static").
+    qemu_binary: str
+
+    # Bootlin toolchain archive architecture slug.
+    bootlin_arch: str
+
+    # GCC target triple (e.g., "x86_64-buildroot-linux-gnu").
+    gcc_triple: str
+
+    # Extra compiler flags for this architecture.
+    extra_cflags: list[str] = field(default_factory=list)
+
+    # Bazel @platforms//cpu constraint value (e.g., "@platforms//cpu:x86_64").
+    # Custom constraints use "//platforms:{name}" format.
+    cpu_constraint: str = ""
+
+    # Architecture traits — central place for per-arch boolean decisions.
+    uses_mmap2: bool = False  # Uses mmap2 syscall with page-unit offset.
+    uses_old_mmap: bool = (
+        False  # Uses old_mmap (args via struct pointer, not registers).
+    )
+    openat_only: bool = False  # No legacy open syscall (use openat).
+    needs_got_reloc: bool = False  # Needs GOT self-relocation (PIC_SELF_RELOCATE).
+    needs_trampoline: bool = False  # Needs entry trampoline for PIC setup.
+    is_32bit: bool = False  # 32-bit architecture (affects lseek, etc.).
+
+    # Bootlin toolchain version.
+    bootlin_version: str = "2024.05-1"
+
+    # SHA256 of the Bootlin archive (empty = unpinned).
+    bootlin_sha256: str = ""
+
+
+@dataclass(frozen=True)
+class OperatingSystem:
+    """Defines a target operating system."""
+
+    # Canonical name (e.g., "linux", "freebsd", "windows").
+    name: str
+
+    # Architectures supported on this OS.
+    architectures: list[str]
+
+    # Runner type for test execution.
+    runner_type: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.runner_type:
+            object.__setattr__(self, "runner_type", self.name)
+
+
+# ============================================================
+# Architecture definitions
+# ============================================================
+
+ARCHITECTURES: dict[str, Architecture] = {}
+
+
+def _register_arch(arch: Architecture) -> None:
+    ARCHITECTURES[arch.name] = arch
+
+
+_register_arch(
+    Architecture(
+        name="x86_64",
+        gcc_define="__x86_64__",
+        qemu_binary="qemu-x86_64-static",
+        bootlin_arch="x86-64",
+        gcc_triple="x86_64-buildroot-linux-gnu",
+        extra_cflags=["-march=x86-64"],
+        cpu_constraint="@platforms//cpu:x86_64",
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="i686",
+        gcc_define="__i386__",
+        qemu_binary="qemu-i386-static",
+        bootlin_arch="x86-i686",
+        gcc_triple="i686-buildroot-linux-gnu",
+        extra_cflags=["-march=i686"],
+        cpu_constraint="@platforms//cpu:x86_32",
+        uses_mmap2=True,
+        is_32bit=True,
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="aarch64",
+        gcc_define="__aarch64__",
+        qemu_binary="qemu-aarch64-static",
+        bootlin_arch="aarch64",
+        gcc_triple="aarch64-buildroot-linux-gnu",
+        cpu_constraint="@platforms//cpu:aarch64",
+        openat_only=True,
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="armv5_arm",
+        gcc_define="__arm__",
+        qemu_binary="qemu-arm-static",
+        bootlin_arch="armv5-eabi",
+        gcc_triple="arm-buildroot-linux-gnueabi",
+        extra_cflags=["-march=armv5te"],
+        cpu_constraint="@platforms//cpu:arm",
+        uses_mmap2=True,
+        is_32bit=True,
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="armv5_thumb",
+        gcc_define="__arm__",
+        qemu_binary="qemu-arm-static",
+        bootlin_arch="armv5-eabi",
+        gcc_triple="arm-buildroot-linux-gnueabi",
+        extra_cflags=["-march=armv5te"],
+        cpu_constraint="@platforms//cpu:arm",
+        uses_mmap2=True,
+        is_32bit=True,
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="mipsel32",
+        gcc_define="__mips__",
+        qemu_binary="qemu-mipsel-static",
+        bootlin_arch="mips32el",
+        gcc_triple="mipsel-buildroot-linux-gnu",
+        extra_cflags=["-mips32", "-EL"],
+        cpu_constraint="//platforms:mipsel32",
+        uses_mmap2=True,
+        needs_got_reloc=True,
+        needs_trampoline=True,
+        is_32bit=True,
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="s390x",
+        gcc_define="__s390x__",
+        qemu_binary="qemu-s390x-static",
+        bootlin_arch="s390x-z13",
+        gcc_triple="s390x-buildroot-linux-gnu",
+        extra_cflags=["-march=z13"],
+        cpu_constraint="//platforms:s390x",
+        uses_old_mmap=True,
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="mipsbe32",
+        gcc_define="__mips__",
+        qemu_binary="qemu-mips-static",
+        bootlin_arch="mips32",
+        gcc_triple="mips-buildroot-linux-gnu",
+        extra_cflags=["-mips32", "-EB"],
+        cpu_constraint="//platforms:mipsbe32",
+        uses_mmap2=True,
+        needs_got_reloc=True,
+        needs_trampoline=True,
+        is_32bit=True,
+    )
+)
+
+
+# ============================================================
+# OS definitions
+# ============================================================
+
+OPERATING_SYSTEMS: dict[str, OperatingSystem] = {}
+
+
+def _register_os(os: OperatingSystem) -> None:
+    OPERATING_SYSTEMS[os.name] = os
+
+
+_register_os(
+    OperatingSystem(
+        name="linux",
+        architectures=[
+            "x86_64",
+            "i686",
+            "aarch64",
+            "armv5_arm",
+            "armv5_thumb",
+            "s390x",
+            "mipsel32",
+            "mipsbe32",
+        ],
+    )
+)
+
+_register_os(
+    OperatingSystem(
+        name="freebsd",
+        architectures=[
+            "x86_64",
+            "i686",
+            "aarch64",
+            "armv5_arm",
+            "armv5_thumb",
+            "mipsel32",
+            "mipsbe32",
+        ],
+    )
+)
+
+_register_os(
+    OperatingSystem(
+        name="windows",
+        architectures=["x86_64", "aarch64"],
+    )
+)
+
+
+# ============================================================
+# Syscall numbers — the data that generates sys/{os}/nr.h
+# ============================================================
+#
+# Structure: SYSCALL_NUMBERS[os][gcc_define][syscall_name] = number
+# Every gcc_define block within an OS must define the SAME set of
+# syscall names. test_sync.py enforces this.
+
+SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
+    "linux": {
+        "__x86_64__": {
+            "read": 0,
+            "write": 1,
+            "open": 2,
+            "close": 3,
+            "fstat": 5,
+            "lseek": 8,
+            "mmap": 9,
+            "mprotect": 10,
+            "munmap": 11,
+            "socket": 41,
+            "connect": 42,
+            "accept": 43,
+            "bind": 49,
+            "listen": 50,
+            "setsockopt": 54,
+            "dup2": 33,
+            "pipe": 22,
+            "exit": 60,
+            "exit_group": 231,
+        },
+        "__i386__": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "lseek": 19,
+            "llseek": 140,
+            "mmap": 192,
+            "mprotect": 125,
+            "munmap": 91,
+            "socket": 359,
+            "connect": 362,
+            "exit": 1,
+            "exit_group": 252,
+        },
+        "__aarch64__": {
+            "read": 63,
+            "write": 64,
+            "openat": 56,
+            "close": 57,
+            "lseek": 62,
+            "mmap": 222,
+            "mprotect": 226,
+            "munmap": 215,
+            "socket": 198,
+            "connect": 203,
+            "exit": 93,
+            "exit_group": 94,
+        },
+        "__arm__": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "lseek": 19,
+            "llseek": 140,
+            "mmap": 192,
+            "mprotect": 125,
+            "munmap": 91,
+            "socket": 281,
+            "connect": 283,
+            "exit": 1,
+            "exit_group": 248,
+        },
+        "__s390x__": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "fstat": 108,
+            "lseek": 19,
+            "mmap": 90,
+            "mprotect": 125,
+            "munmap": 91,
+            "socket": 359,
+            "connect": 362,
+            "accept": 364,
+            "bind": 361,
+            "listen": 363,
+            "setsockopt": 366,
+            "dup2": 63,
+            "pipe": 42,
+            "exit": 1,
+            "exit_group": 248,
+        },
+        "__mips__": {
+            "read": 4003,
+            "write": 4004,
+            "open": 4005,
+            "close": 4006,
+            "lseek": 4019,
+            "llseek": 4140,
+            "mmap": 4210,
+            "mprotect": 4125,
+            "munmap": 4091,
+            "socket": 4183,
+            "connect": 4170,
+            "exit": 4001,
+            "exit_group": 4246,
+        },
+    },
+    "freebsd": {
+        # FreeBSD syscall numbers are architecture-independent.
+        "_all_": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "lseek": 478,
+            "mmap": 477,
+            "mprotect": 74,
+            "munmap": 73,
+            "socket": 97,
+            "connect": 98,
+            "exit": 1,
+            "exit_group": 431,
+        },
+    },
+}
+
+# mmap flag values — architecture/OS-specific.
+# Structure: MMAP_FLAGS[flag_group] = {gcc_define_or_os: value, ...}
+MMAP_FLAGS: dict[str, dict[str, int]] = {
+    "MAP_SHARED": {"_default_": 0x01, "__mips__": 0x001},
+    "MAP_PRIVATE": {"_default_": 0x02, "__mips__": 0x002},
+    "MAP_FIXED": {"_default_": 0x10, "__mips__": 0x010},
+    "MAP_ANONYMOUS": {
+        "_default_": 0x20,
+        "__mips__": 0x800,
+        "freebsd": 0x1000,
+    },
+}
+
+# ============================================================
+# Syscall wrapper definitions — drives sys/{name}.h generation
+# ============================================================
+#
+# Each entry describes one syscall's C wrapper function.
+# The generator combines these with SYSCALL_NUMBERS to produce
+# a fully self-contained sys/{name}.h header.
+
+
+@dataclass(frozen=True)
+class SyscallDef:
+    """Defines how to generate a syscall wrapper function."""
+
+    name: str  # syscall name (matches SYSCALL_NUMBERS keys)
+    wrapper: str  # C function name
+    return_type: str  # "long", "void *", "void"
+    params: str  # C parameter list
+    call_args: str  # args passed to pic_syscallN (after __NR_)
+    arg_count: int  # number of args to pic_syscallN
+    noreturn: bool = False  # __attribute__((noreturn))
+    # If set, this is emitted instead of the default wrapper body.
+    # Use {NR} as placeholder for the __NR_ macro name.
+    custom_body: str = ""
+    # Related constants to embed in this syscall's header.
+    constants: str = ""
+
+
+SYSCALL_DEFS: dict[str, SyscallDef] = {}
+
+
+def _def_syscall(s: SyscallDef) -> None:
+    SYSCALL_DEFS[s.name] = s
+
+
+# --- simple syscalls ---
+
+_def_syscall(
+    SyscallDef(
+        name="read",
+        wrapper="pic_read",
+        return_type="long",
+        params="int fd, void *buf, pic_size_t count",
+        call_args="fd, (long)buf, count",
+        arg_count=3,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="write",
+        wrapper="pic_write",
+        return_type="long",
+        params="int fd, const void *buf, pic_size_t count",
+        call_args="fd, (long)buf, count",
+        arg_count=3,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="close",
+        wrapper="pic_close",
+        return_type="long",
+        params="int fd",
+        call_args="fd",
+        arg_count=1,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="lseek",
+        wrapper="pic_lseek",
+        return_type="long",
+        params="int fd, long offset, int whence",
+        call_args="fd, offset, whence",
+        arg_count=3,
+        constants="\n".join(
+            [
+                "#define PIC_SEEK_SET 0",
+                "#define PIC_SEEK_CUR 1",
+                "#define PIC_SEEK_END 2",
+            ]
+        ),
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="mprotect",
+        wrapper="pic_mprotect",
+        return_type="long",
+        params="void *addr, pic_size_t len, int prot",
+        call_args="(long)addr, len, prot",
+        arg_count=3,
+        constants="\n".join(
+            [
+                "#define PIC_PROT_NONE    0x0",
+                "#define PIC_PROT_READ    0x1",
+                "#define PIC_PROT_WRITE   0x2",
+                "#define PIC_PROT_EXEC    0x4",
+            ]
+        ),
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="munmap",
+        wrapper="pic_munmap",
+        return_type="long",
+        params="void *addr, pic_size_t len",
+        call_args="(long)addr, len",
+        arg_count=2,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="exit",
+        wrapper="pic_exit",
+        return_type="void",
+        params="int code",
+        call_args="code",
+        arg_count=1,
+        noreturn=True,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="exit_group",
+        wrapper="pic_exit_group",
+        return_type="void",
+        params="int code",
+        call_args="code",
+        arg_count=1,
+        noreturn=True,
+    )
+)
+
+# --- complex syscalls (custom bodies) ---
+
+_def_syscall(
+    SyscallDef(
+        name="open",
+        wrapper="pic_open",
+        return_type="long",
+        params="const char *path, int flags, int mode",
+        call_args="",
+        arg_count=0,  # unused — custom body
+        custom_body="""\
+#ifndef AT_FDCWD
+#define AT_FDCWD (-100)
+#endif
+
+static inline long pic_open(const char *path, int flags, int mode) {
+#if PIC_ARCH_OPENAT_ONLY
+    return pic_syscall4(__NR_openat, AT_FDCWD, (long)path, flags, mode);
+#else
+    return pic_syscall3(__NR_open, (long)path, flags, mode);
+#endif
+}""",
+        constants="\n".join(
+            [
+                "#define PIC_O_RDONLY 0",
+                "#define PIC_O_WRONLY 1",
+                "#define PIC_O_RDWR   2",
+            ]
+        ),
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="mmap",
+        wrapper="pic_mmap",
+        return_type="void *",
+        params="void *addr, pic_size_t len, int prot, int flags, int fd, long offset",
+        call_args="",
+        arg_count=0,  # unused — custom body
+        custom_body="""\
+#define _PIC_MMAP2_SHIFT 12
+
+static inline void *pic_mmap(void *addr, pic_size_t len, int prot,
+                             int flags, int fd, long offset) {
+#if PIC_ARCH_USES_OLD_MMAP
+    /* s390x old_mmap: args passed via struct pointer in r2. */
+    unsigned long args[6] = {
+        (unsigned long)addr, (unsigned long)len, (unsigned long)prot,
+        (unsigned long)flags, (unsigned long)fd, (unsigned long)offset
+    };
+    return (void *)pic_syscall1(__NR_mmap, (long)args);
+#elif PIC_ARCH_USES_MMAP2
+    return (void *)pic_syscall6(__NR_mmap, (long)addr, len, prot, flags, fd, offset >> _PIC_MMAP2_SHIFT);
+#else
+    return (void *)pic_syscall6(__NR_mmap, (long)addr, len, prot, flags, fd, offset);
+#endif
+}""",
+    )
+)
+
+# --- networking + misc syscalls (numbers defined, wrappers for future use) ---
+
+_def_syscall(
+    SyscallDef(
+        name="socket",
+        wrapper="pic_socket",
+        return_type="long",
+        params="int domain, int type, int protocol",
+        call_args="domain, type, protocol",
+        arg_count=3,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="connect",
+        wrapper="pic_connect",
+        return_type="long",
+        params="int sockfd, const void *addr, pic_size_t addrlen",
+        call_args="sockfd, (long)addr, addrlen",
+        arg_count=3,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="accept",
+        wrapper="pic_accept",
+        return_type="long",
+        params="int sockfd, void *addr, void *addrlen",
+        call_args="sockfd, (long)addr, (long)addrlen",
+        arg_count=3,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="bind",
+        wrapper="pic_bind",
+        return_type="long",
+        params="int sockfd, const void *addr, pic_size_t addrlen",
+        call_args="sockfd, (long)addr, addrlen",
+        arg_count=3,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="listen",
+        wrapper="pic_listen",
+        return_type="long",
+        params="int sockfd, int backlog",
+        call_args="sockfd, backlog",
+        arg_count=2,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="setsockopt",
+        wrapper="pic_setsockopt",
+        return_type="long",
+        params="int sockfd, int level, int optname, const void *optval, pic_size_t optlen",
+        call_args="sockfd, level, optname, (long)optval, optlen",
+        arg_count=5,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="dup2",
+        wrapper="pic_dup2",
+        return_type="long",
+        params="int oldfd, int newfd",
+        call_args="oldfd, newfd",
+        arg_count=2,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="pipe",
+        wrapper="pic_pipe",
+        return_type="long",
+        params="int *pipefd",
+        call_args="(long)pipefd",
+        arg_count=1,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="fstat",
+        wrapper="pic_fstat",
+        return_type="long",
+        params="int fd, void *statbuf",
+        call_args="fd, (long)statbuf",
+        arg_count=2,
+    )
+)
+
+_def_syscall(
+    SyscallDef(
+        name="llseek",
+        wrapper="pic_llseek",
+        return_type="long",
+        params="int fd, unsigned long offset_high, unsigned long offset_low, void *result, unsigned int whence",
+        call_args="fd, offset_high, offset_low, (long)result, whence",
+        arg_count=5,
+    )
+)
+
+# The mmap constants (MAP_* flags) are handled specially by the generator
+# because they're arch+OS-specific. See MMAP_FLAGS above.
+
+
+# Symbols that the linker script must define and the extractor reads.
+# Single source of truth for the linker ↔ extractor contract.
+LINKER_SYMBOLS = {
+    "blob_start": "__blob_start",
+    "blob_end": "__blob_end",
+    "config_start": "__config_start",
+    "got_start": "__got_start",
+    "got_end": "__got_end",
+}
+
+
+# ============================================================
+# Derived helpers — computed from the registry above
+# ============================================================
+
+
+def qemu_binaries() -> dict[str, str]:
+    """Return {arch_name: qemu_binary_name} for all architectures."""
+    return {name: arch.qemu_binary for name, arch in ARCHITECTURES.items()}
+
+
+def platform_configs() -> dict[str, tuple[str, str]]:
+    """Return {os:arch: (bazel_config, runner_type)} for all active platforms."""
+    result = {}
+    for os_name, os_def in OPERATING_SYSTEMS.items():
+        for arch_name in os_def.architectures:
+            key = f"{os_name}:{arch_name}"
+            bazel_config = f"{os_name}_{arch_name}"
+            result[key] = (bazel_config, os_def.runner_type)
+    return result
+
+
+def all_platforms() -> list[tuple[str, str]]:
+    """Return [(os, arch), ...] for all defined platforms."""
+    result = []
+    for os_name, os_def in OPERATING_SYSTEMS.items():
+        for arch_name in os_def.architectures:
+            result.append((os_name, arch_name))
+    return result
+
+
+def gcc_defines() -> set[str]:
+    """Return the set of unique GCC architecture defines."""
+    return {arch.gcc_define for arch in ARCHITECTURES.values()}
+
+
+def syscall_os_support(syscall_name: str) -> dict[str, dict[str, int]]:
+    """Return {os: {gcc_define: number}} for a given syscall.
+
+    For OSes with architecture-independent numbers (_all_), expands
+    to all gcc_defines with the same number.
+
+    Also checks related names (e.g., "open" finds "openat" on aarch64).
+    """
+    # Related syscall names that should be treated as the same module.
+    related_map: dict[str, set[str]] = {
+        "open": {"open", "openat"},
+        "lseek": {"lseek", "llseek"},
+    }
+    names_to_check = related_map.get(syscall_name, {syscall_name})
+
+    result: dict[str, dict[str, int]] = {}
+    for os_name, arch_tables in SYSCALL_NUMBERS.items():
+        if "_all_" in arch_tables:
+            for name in names_to_check:
+                nr = arch_tables["_all_"].get(name)
+                if nr is not None:
+                    result[os_name] = {"_all_": nr}
+                    break
+        else:
+            per_arch: dict[str, int] = {}
+            for gcc_define, nrs in arch_tables.items():
+                for name in names_to_check:
+                    if name in nrs:
+                        per_arch[gcc_define] = nrs[name]
+                        break
+            if per_arch:
+                result[os_name] = per_arch
+    return result
+
+
+def all_syscall_names() -> set[str]:
+    """Return the union of all syscall names across all OSes."""
+    names: set[str] = set()
+    for arch_tables in SYSCALL_NUMBERS.values():
+        for nrs in arch_tables.values():
+            names.update(nrs.keys())
+    return names
+
+
+def arches_with_trait(trait: str) -> list[str]:
+    """Return architecture names where the given trait is True."""
+    return [name for name, arch in ARCHITECTURES.items() if getattr(arch, trait, False)]

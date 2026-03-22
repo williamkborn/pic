@@ -1,18 +1,21 @@
-"""C linting and static analysis integration for Bazel.
+"""C linting and formatting checks for Bazel.
 
-Provides two mechanisms:
-  1. clang_tidy_aspect  — runs clang-tidy on cc_library/cc_binary targets
-  2. cppcheck_test      — runs cppcheck as a Bazel test
+Provides:
+  1. clang_tidy_aspect   — runs clang-tidy on cc_library/cc_binary targets
+  2. clang_format_test   — verifies C files are formatted per .clang-format
+  3. cppcheck_test       — runs cppcheck as a Bazel test
 
 Usage:
   # Run clang-tidy on all C targets:
-  bazel build --config=lint //src/...
+  bazel build --config=lint //src/... //tests/...
 
-  # Run cppcheck as a test:
+  # Check formatting:
+  bazel test //src:format_check
+
+  # Run cppcheck:
   bazel test //src:cppcheck
 """
 
-load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 # ============================================================
@@ -20,21 +23,21 @@ load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 # ============================================================
 
 def _clang_tidy_aspect_impl(target, ctx):
-    """Aspect that runs clang-tidy on C compilation actions."""
+    """Aspect that runs clang-tidy on C source files.
 
-    # Only apply to targets that provide CcInfo.
+    Fails the build if clang-tidy reports any warnings or errors.
+    """
     if not CcInfo in target:
         return []
 
     cc_info = target[CcInfo]
     compilation_context = cc_info.compilation_context
 
-    # Collect source files from the rule's srcs.
     srcs = []
     if hasattr(ctx.rule.attr, "srcs"):
         for src in ctx.rule.attr.srcs:
             for f in src.files.to_list():
-                if f.extension in ("c", "h", "cc", "cpp"):
+                if f.extension == "c":
                     srcs.append(f)
 
     if not srcs:
@@ -42,15 +45,11 @@ def _clang_tidy_aspect_impl(target, ctx):
 
     outputs = []
     for src in srcs:
-        if src.extension == "h":
-            continue
-
         lint_output = ctx.actions.declare_file(
             "{}.clang-tidy.txt".format(src.short_path),
         )
         outputs.append(lint_output)
 
-        # Build include flags from the compilation context.
         include_flags = []
         for inc in compilation_context.includes.to_list():
             include_flags.extend(["-I", inc])
@@ -59,7 +58,6 @@ def _clang_tidy_aspect_impl(target, ctx):
         for inc in compilation_context.quote_includes.to_list():
             include_flags.extend(["-iquote", inc])
 
-        # Collect all header files for inputs.
         header_inputs = compilation_context.headers.to_list()
 
         args = ctx.actions.args()
@@ -75,15 +73,20 @@ def _clang_tidy_aspect_impl(target, ctx):
             outputs = [lint_output],
             inputs = [src] + header_inputs,
             command = """
-                if command -v clang-tidy >/dev/null 2>&1; then
-                    clang-tidy "$@" > {out} 2>&1 || true
-                else
-                    echo "clang-tidy not found, skipping" > {out}
+                if ! command -v clang-tidy >/dev/null 2>&1; then
+                    echo "SKIP: clang-tidy not found" > {out}
+                    exit 0
+                fi
+                clang-tidy "$@" > {out} 2>&1
+                status=$?
+                if [ $status -ne 0 ]; then
+                    cat {out} >&2
+                    exit $status
                 fi
             """.format(out = lint_output.path),
             arguments = [args],
             mnemonic = "ClangTidy",
-            progress_message = "Running clang-tidy on %{label}: {}".format(src.short_path),
+            progress_message = "clang-tidy %{{label}}: {}".format(src.short_path),
         )
 
     return [OutputGroupInfo(lint_results = depset(outputs))]
@@ -91,7 +94,82 @@ def _clang_tidy_aspect_impl(target, ctx):
 clang_tidy_aspect = aspect(
     implementation = _clang_tidy_aspect_impl,
     attr_aspects = ["deps"],
-    doc = "Runs clang-tidy on C source files.",
+    doc = "Runs clang-tidy on C source files. Fails on warnings.",
+)
+
+# ============================================================
+# clang-format check test
+# ============================================================
+
+def _clang_format_test_impl(ctx):
+    """Test rule that verifies C files are formatted per .clang-format."""
+    srcs = []
+    for src in ctx.attr.srcs:
+        srcs.extend(src.files.to_list())
+
+    config = ctx.file.config
+
+    script = ctx.actions.declare_file(ctx.attr.name + "_format_check.sh")
+
+    src_paths = " ".join([f.short_path for f in srcs])
+
+    ctx.actions.write(
+        output = script,
+        content = """\
+#!/bin/bash
+set -euo pipefail
+
+if ! command -v clang-format >/dev/null 2>&1; then
+    echo "SKIP: clang-format not found"
+    exit 0
+fi
+
+failed=0
+for f in {srcs}; do
+    if ! clang-format --dry-run --Werror --style=file:{config} "$f" 2>/dev/null; then
+        echo "FAIL: $f"
+        failed=1
+    fi
+done
+
+if [ $failed -ne 0 ]; then
+    echo ""
+    echo "Run: python tools/fmt.py"
+    exit 1
+fi
+
+echo "{count} files formatted correctly"
+""".format(
+            srcs = src_paths,
+            config = config.short_path,
+            count = len(srcs),
+        ),
+        is_executable = True,
+    )
+
+    runfiles = ctx.runfiles(files = srcs + [config])
+
+    return [DefaultInfo(
+        executable = script,
+        runfiles = runfiles,
+    )]
+
+clang_format_test = rule(
+    implementation = _clang_format_test_impl,
+    test = True,
+    attrs = {
+        "srcs": attr.label_list(
+            mandatory = True,
+            allow_files = [".c", ".h"],
+            doc = "C source and header files to check.",
+        ),
+        "config": attr.label(
+            mandatory = True,
+            allow_single_file = True,
+            doc = "The .clang-format config file.",
+        ),
+    },
+    doc = "Verifies C files are formatted per .clang-format.",
 )
 
 # ============================================================
@@ -118,7 +196,7 @@ def _cppcheck_test_impl(ctx):
 set -euo pipefail
 
 if ! command -v cppcheck >/dev/null 2>&1; then
-    echo "cppcheck not found, skipping"
+    echo "SKIP: cppcheck not found"
     exit 0
 fi
 

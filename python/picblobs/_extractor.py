@@ -50,28 +50,46 @@ class BlobData:
     """Section name → (offset_from_blob_start, size)."""
 
 
-def _find_symbol(symtab: SymbolTableSection, name: str) -> int:
-    """Return the value of a symbol by name, or raise ValueError."""
+def _find_symbols(symtab: SymbolTableSection, names: set[str]) -> dict[str, int]:
+    """Return values for all requested symbols in a single pass.
+
+    Raises ValueError if any symbol is not found.
+    """
+    result: dict[str, int] = {}
     for sym in symtab.iter_symbols():
-        if sym.name == name:
-            return sym.entry.st_value
-    raise ValueError(f"Symbol '{name}' not found in .symtab")
+        if sym.name in names:
+            result[sym.name] = sym.entry.st_value
+            if len(result) == len(names):
+                break
+    missing = names - result.keys()
+    if missing:
+        raise ValueError(f"Symbols not found in .symtab: {', '.join(sorted(missing))}")
+    return result
 
 
-def _read_range(elf: ELFFile, start: int, end: int) -> bytearray:
-    """Read bytes from ELF sections covering [start, end).
+def _extract_blob_data(
+    elf: ELFFile,
+    start: int,
+    end: int,
+) -> tuple[bytearray, dict[str, tuple[int, int]]]:
+    """Read blob bytes and collect section metadata in a single pass.
+
+    Returns (code_bytes, sections_dict) where sections_dict maps
+    section name to (offset_from_start, size).
 
     For SHT_PROGBITS sections, copies raw data.
     For SHT_NOBITS sections (.bss), fills with zeros.
     """
     size = end - start
     buf = bytearray(size)
+    sections: dict[str, tuple[int, int]] = {}
 
     for section in elf.iter_sections():
         sh_flags = section.header.sh_flags
         sh_addr = section.header.sh_addr
         sh_size = section.header.sh_size
         sh_type = section.header.sh_type
+        name = section.name
 
         # Only process allocated sections (skip .symtab, .strtab, etc.)
         if not (sh_flags & 0x2):  # SHF_ALLOC
@@ -89,6 +107,11 @@ def _read_range(elf: ELFFile, start: int, end: int) -> bytearray:
         if overlap_start >= overlap_end:
             continue
 
+        # Collect section metadata.
+        if name and sec_start >= start and sec_start < end:
+            sections[name] = (sec_start - start, sh_size)
+
+        # Copy section data into buffer.
         buf_offset = overlap_start - start
 
         if sh_type == "SHT_NOBITS":
@@ -98,32 +121,11 @@ def _read_range(elf: ELFFile, start: int, end: int) -> bytearray:
             data = section.data()
             data_offset = overlap_start - sec_start
             length = overlap_end - overlap_start
-            buf[buf_offset:buf_offset + length] = data[data_offset:data_offset + length]
+            buf[buf_offset : buf_offset + length] = data[
+                data_offset : data_offset + length
+            ]
 
-    return buf
-
-
-def _collect_sections(
-    elf: ELFFile, blob_start: int, blob_end: int,
-) -> dict[str, tuple[int, int]]:
-    """Collect section offsets relative to blob_start."""
-    result = {}
-    for section in elf.iter_sections():
-        sh_flags = section.header.sh_flags
-        sh_addr = section.header.sh_addr
-        sh_size = section.header.sh_size
-        name = section.name
-
-        if not (sh_flags & 0x2):  # SHF_ALLOC only
-            continue
-        if sh_size == 0 or not name:
-            continue
-        if sh_addr < blob_start or sh_addr >= blob_end:
-            continue
-
-        result[name] = (sh_addr - blob_start, sh_size)
-
-    return result
+    return buf, sections
 
 
 def extract(
@@ -168,12 +170,13 @@ def extract(
         if symtab is None:
             raise ValueError(f"No .symtab in {so_path}")
 
-        blob_start = _find_symbol(symtab, "__blob_start")
-        blob_end = _find_symbol(symtab, "__blob_end")
-        config_start = _find_symbol(symtab, "__config_start")
+        syms = _find_symbols(symtab, {"__blob_start", "__blob_end", "__config_start"})
+        blob_start = syms["__blob_start"]
+        blob_end = syms["__blob_end"]
+        config_start = syms["__config_start"]
 
-        code = bytes(_read_range(elf, blob_start, blob_end))
-        sections = _collect_sections(elf, blob_start, blob_end)
+        code_buf, sections = _extract_blob_data(elf, blob_start, blob_end)
+        code = bytes(code_buf)
 
     return BlobData(
         code=code,

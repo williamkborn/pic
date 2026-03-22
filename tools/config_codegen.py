@@ -13,7 +13,9 @@ import sys
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate Python config structs from C headers")
+    parser = argparse.ArgumentParser(
+        description="Generate Python config structs from C headers"
+    )
     parser.add_argument("--input", required=True, help="Input C header file")
     parser.add_argument("--output", required=True, help="Output Python file")
     args = parser.parse_args()

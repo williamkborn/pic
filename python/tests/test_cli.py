@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from picblobs.cli import main, _parse_target
@@ -24,17 +26,19 @@ class TestParseTarget:
 class TestListCommand:
     """Test the 'list' subcommand."""
 
-    def test_list_runs(self, capsys: pytest.CaptureFixture[str]) -> None:
-        rc = main(["list"])
+    def test_list_runs(self, caplog: pytest.LogCaptureFixture) -> None:
+        with caplog.at_level(logging.INFO, logger="picblobs"):
+            rc = main(["list"])
         assert rc == 0
-        out = capsys.readouterr().out
-        assert "BLOB TYPE" in out or "No blobs found" in out
+        assert "BLOB TYPE" in caplog.text or "No blobs found" in caplog.text
 
 
 class TestInfoCommand:
     """Test the 'info' subcommand."""
 
-    def test_missing_blob_returns_error(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_missing_blob_returns_error(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         rc = main(["info", "nonexistent", "linux:x86_64"])
         assert rc == 1
 
@@ -46,7 +50,9 @@ class TestInfoCommand:
 class TestExtractCommand:
     """Test the 'extract' subcommand."""
 
-    def test_missing_blob_returns_error(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_missing_blob_returns_error(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         rc = main(["extract", "nonexistent", "linux:x86_64", "-o", "/dev/null"])
         assert rc == 1
 
@@ -54,7 +60,9 @@ class TestExtractCommand:
 class TestRunCommand:
     """Test the 'run' subcommand."""
 
-    def test_missing_blob_returns_error(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_missing_blob_returns_error(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         rc = main(["run", "nonexistent", "linux:x86_64"])
         assert rc == 1
 
@@ -67,7 +75,9 @@ class TestRunCommand:
         with pytest.raises(SystemExit):
             main(["run"])
 
-    def test_dry_run_with_missing_blob(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_dry_run_with_missing_blob(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         rc = main(["run", "nonexistent", "linux:x86_64", "--dry-run"])
         assert rc == 1  # blob not found, never reaches dry-run
 

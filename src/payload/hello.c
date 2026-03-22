@@ -5,18 +5,20 @@
  * patches the GOT so rodata references work at any load address.
  */
 
-#include "picblobs/section.h"
+#include "picblobs/os/linux.h"
 #include "picblobs/reloc.h"
-#include "picblobs/sys/linux/nr.h"
-#include "picblobs/sys/write.h"
+#include "picblobs/section.h"
 #include "picblobs/sys/exit.h"
+#include "picblobs/sys/exit_group.h"
+#include "picblobs/sys/write.h"
 
 PIC_RODATA
 static const char msg[] = "Hello, world!\n";
 
 PIC_ENTRY
-void _start(void) {
-    PIC_SELF_RELOCATE();
-    pic_write(1, msg, sizeof(msg) - 1);
-    pic_exit_group(0);
+void _start(void)
+{
+	PIC_SELF_RELOCATE();
+	pic_write(1, msg, sizeof(msg) - 1);
+	pic_exit_group(0);
 }

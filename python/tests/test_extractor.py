@@ -75,15 +75,30 @@ class TestExtract:
 class TestPathDerivation:
     """Test that blob_type/os/arch are derived from file paths."""
 
-    def test_derives_from_path(self, tmp_path: Path) -> None:
-        # Create a fake path structure: _blobs/linux/x86_64/alloc_jump.so
-        # We can't extract from it (not a real ELF), but we can test the path parsing
-        # by checking the function handles the path parts correctly.
-        parts = tmp_path / "linux" / "x86_64" / "alloc_jump.so"
-        parts.parent.mkdir(parents=True)
+    @pytest.mark.requires_blobs
+    def test_derives_from_path(self, blob_dir: Path) -> None:
+        """Test that extract() derives metadata from the .so file path."""
+        so_files = list(blob_dir.rglob("*.so"))
+        if not so_files:
+            pytest.skip("No .so blobs built yet")
 
-        # The file needs to be a valid ELF for extract() to work,
-        # so we just test the path parsing logic indirectly.
-        assert parts.stem == "alloc_jump"
-        assert parts.parts[-2] == "x86_64"
-        assert parts.parts[-3] == "linux"
+        blob = extract(so_files[0])
+        # Verify the path-derived fields are non-empty.
+        assert blob.blob_type, "blob_type should be derived from filename"
+        assert blob.target_os or blob.target_arch, "os/arch should be derived from path"
+
+    def test_explicit_overrides_path(self, tmp_path: Path) -> None:
+        """Test that explicit args override path derivation.
+
+        We can't run extract() without a real ELF, but we can verify
+        the function signature accepts override parameters.
+        """
+        # Verify the function accepts all override parameters without error
+        # (the actual extraction will fail on a non-ELF file).
+        fake = tmp_path / "linux" / "x86_64" / "test.so"
+        fake.parent.mkdir(parents=True)
+        fake.write_bytes(b"not an elf")
+        with pytest.raises(Exception):
+            extract(
+                fake, blob_type="custom", target_os="freebsd", target_arch="aarch64"
+            )

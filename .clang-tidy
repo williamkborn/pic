@@ -8,14 +8,19 @@ Checks: >
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
   cert-*,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
   clang-analyzer-*,
   -clang-analyzer-security.insecureAPI.*,
   misc-*,
   -misc-unused-parameters,
+  -misc-include-cleaner,
+  -misc-use-internal-linkage,
   performance-*,
+  -performance-no-int-to-ptr,
   portability-*,
-  readability-identifier-naming,
   readability-braces-around-statements,
   readability-isolate-declaration,
 
@@ -26,8 +31,6 @@ CheckOptions:
     value: lower_case
   - key: readability-identifier-naming.VariableCase
     value: lower_case
-  - key: readability-identifier-naming.MacroDefinitionCase
-    value: UPPER_CASE
   - key: readability-identifier-naming.StructCase
     value: lower_case
   - key: readability-identifier-naming.TypedefCase

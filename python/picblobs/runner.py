@@ -10,25 +10,18 @@ Manages the lifecycle of running a PIC blob under QEMU user-static:
 from __future__ import annotations
 
 import dataclasses
+import logging
+import platform
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
 
-from picblobs._extractor import BlobData, extract
+log = logging.getLogger(__name__)
 
-# QEMU user-static binary names per architecture.
-QEMU_BINARIES: dict[str, str] = {
-    "x86_64": "qemu-x86_64-static",
-    "i686": "qemu-i386-static",
-    "aarch64": "qemu-aarch64-static",
-    "armv5_arm": "qemu-arm-static",
-    "armv5_thumb": "qemu-arm-static",
-    "mipsel32": "qemu-mipsel-static",
-    "mipsbe32": "qemu-mips-static",
-}
+from picblobs._extractor import BlobData, extract
+from picblobs._qemu import QEMU_BINARIES
 
 # Embedded runners inside the package.
 _PACKAGE_RUNNER_DIR = Path(__file__).parent / "_runners"
@@ -64,9 +57,7 @@ def find_qemu(arch: str) -> Path:
 
     path = shutil.which(name)
     if path is None:
-        raise FileNotFoundError(
-            f"{name} not found on PATH. Install qemu-user-static."
-        )
+        raise FileNotFoundError(f"{name} not found on PATH. Install qemu-user-static.")
     return Path(path)
 
 
@@ -115,8 +106,7 @@ def find_runner(
             return runner
 
     raise FileNotFoundError(
-        f"Test runner not found for {runner_type}/{arch}. "
-        f"Run: picblobs build"
+        f"Test runner not found for {runner_type}/{arch}. Run: picblobs build"
     )
 
 
@@ -147,10 +137,24 @@ def prepare_blob(
     if config:
         if blob.config_offset > len(data):
             data.extend(b"\x00" * (blob.config_offset - len(data)))
-        data[blob.config_offset:blob.config_offset + len(config)] = config
+        data[blob.config_offset : blob.config_offset + len(config)] = config
 
     blob_file.write_bytes(bytes(data))
     return blob_file
+
+
+def _is_native_arch(arch: str) -> bool:
+    """Check if the given blob architecture can run natively on this host."""
+    host = platform.machine()
+    # Map our arch names to platform.machine() values.
+    # Only 64-bit arches get native execution; 32-bit compat (e.g., i686
+    # on x86_64) requires the runner to be compiled for that arch which
+    # still needs the cross-compiled runner binary, so use QEMU.
+    native_map: dict[str, str] = {
+        "x86_64": "x86_64",
+        "aarch64": "aarch64",
+    }
+    return native_map.get(arch, "") == host
 
 
 def _build_command(
@@ -159,11 +163,20 @@ def _build_command(
     arch: str,
 ) -> list[str]:
     """Build the QEMU + runner command line."""
-    if arch == "x86_64":
+    if _is_native_arch(arch):
         return [str(runner_path), str(blob_file)]
     else:
         qemu = find_qemu(arch)
         return [str(qemu), str(runner_path), str(blob_file)]
+
+
+def _cleanup_blob_file(blob_file: Path) -> None:
+    """Remove a temp blob file and its parent directory."""
+    blob_file.unlink(missing_ok=True)
+    try:
+        blob_file.parent.rmdir()
+    except OSError:
+        pass
 
 
 def run_blob(
@@ -205,21 +218,23 @@ def run_blob(
     blob_file = prepare_blob(blob, config)
 
     if debug:
-        print(f"[debug] blob:       {blob.blob_type} {blob.target_os}:{blob.target_arch}", file=sys.stderr)
-        print(f"[debug] code size:  {len(blob.code)} bytes", file=sys.stderr)
-        print(f"[debug] config:     {len(config)} bytes at offset {blob.config_offset}", file=sys.stderr)
-        print(f"[debug] runner:     {runner_path}", file=sys.stderr)
-        print(f"[debug] blob file:  {blob_file}", file=sys.stderr)
+        log.debug(
+            "blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch
+        )
+        log.debug("code size:  %d bytes", len(blob.code))
+        log.debug("config:     %d bytes at offset %d", len(config), blob.config_offset)
+        log.debug("runner:     %s", runner_path)
+        log.debug("blob file:  %s", blob_file)
 
     # Build the command.
     cmd = _build_command(runner_path, blob_file, blob.target_arch)
 
     if debug:
-        print(f"[debug] command:    {' '.join(cmd)}", file=sys.stderr)
+        log.debug("command:    %s", " ".join(cmd))
 
     if dry_run:
         if debug:
-            print(f"[debug] dry run — not executing", file=sys.stderr)
+            log.debug("dry run — not executing")
         return RunResult(
             stdout=b"",
             stderr=b"",
@@ -239,9 +254,9 @@ def run_blob(
         duration = time.monotonic() - start
 
         if debug:
-            print(f"[debug] exit code:  {proc.returncode}", file=sys.stderr)
-            print(f"[debug] duration:   {duration:.3f}s", file=sys.stderr)
-            print(f"[debug] temp dir:   {blob_file.parent} (preserved)", file=sys.stderr)
+            log.debug("exit code:  %d", proc.returncode)
+            log.debug("duration:   %.3fs", duration)
+            log.debug("temp dir:   %s (preserved)", blob_file.parent)
 
         return RunResult(
             stdout=proc.stdout,
@@ -251,13 +266,13 @@ def run_blob(
             command=cmd,
             blob_file=str(blob_file),
         )
+    except subprocess.TimeoutExpired:
+        if not debug:
+            _cleanup_blob_file(blob_file)
+        raise
     finally:
         if not debug:
-            blob_file.unlink(missing_ok=True)
-            try:
-                blob_file.parent.rmdir()
-            except OSError:
-                pass
+            _cleanup_blob_file(blob_file)
 
 
 def run_so(
@@ -276,6 +291,11 @@ def run_so(
     blob = extract(so_path)
     if not runner_type:
         runner_type = blob.target_os or "linux"
+    if not blob.target_arch:
+        raise ValueError(
+            f"Cannot determine architecture from {so_path}. "
+            "Pass target info via extract() or use run_blob() directly."
+        )
     return run_blob(
         blob,
         config=config,

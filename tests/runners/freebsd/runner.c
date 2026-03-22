@@ -17,18 +17,18 @@
  * Usage: ./runner <blob.bin>
  */
 
-#include "picblobs/types.h"
+#include "picblobs/sys/exit.h"
 #include "picblobs/sys/linux/nr.h"
 #include "picblobs/syscall.h"
-#include "picblobs/sys/exit.h"
+#include "picblobs/types.h"
 
 #define RUNNER_ERROR 127
 #define MAX_SYSCALL_LOG 256
 
 /* Verification log entry. */
 struct syscall_record {
-    long number;
-    long args[6];
+	long number;
+	long args[6];
 };
 
 /* Verification buffer — filled by the shim, read by the runner. */
@@ -43,33 +43,34 @@ static int syscall_log_count = 0;
  * The calling convention matches the architecture's syscall convention:
  * syscall number in the standard register, args in subsequent registers.
  */
-long __attribute__((section(".shim")))
-freebsd_syscall_shim(long number, long a0, long a1, long a2,
-                     long a3, long a4, long a5) {
-    if (syscall_log_count < MAX_SYSCALL_LOG) {
-        struct syscall_record *rec = &syscall_log[syscall_log_count++];
-        rec->number = number;
-        rec->args[0] = a0;
-        rec->args[1] = a1;
-        rec->args[2] = a2;
-        rec->args[3] = a3;
-        rec->args[4] = a4;
-        rec->args[5] = a5;
-    }
+long __attribute__((section(".shim"))) freebsd_syscall_shim(
+	long number, long a0, long a1, long a2, long a3, long a4, long a5)
+{
+	if (syscall_log_count < MAX_SYSCALL_LOG) {
+		struct syscall_record *rec = &syscall_log[syscall_log_count++];
+		rec->number = number;
+		rec->args[0] = a0;
+		rec->args[1] = a1;
+		rec->args[2] = a2;
+		rec->args[3] = a3;
+		rec->args[4] = a4;
+		rec->args[5] = a5;
+	}
 
-    /* Return canned success value. */
-    /* TODO: per-syscall return value table for FreeBSD. */
-    return 0;
+	/* Return canned success value. */
+	/* TODO: per-syscall return value table for FreeBSD. */
+	return 0;
 }
 
-void runner_main(int argc, char **argv) {
-    if (argc < 2) {
-        pic_exit_group(RUNNER_ERROR);
-    }
+void runner_main(int argc, char **argv)
+{
+	if (argc < 2) {
+		pic_exit_group(RUNNER_ERROR);
+	}
 
-    /* TODO: load blob, execute, then inspect syscall_log. */
+	/* TODO: load blob, execute, then inspect syscall_log. */
 
-    /* Report results via exit code. */
-    int result = (syscall_log_count > 0) ? 0 : 1;
-    pic_exit_group(result);
+	/* Report results via exit code. */
+	int result = (syscall_log_count > 0) ? 0 : 1;
+	pic_exit_group(result);
 }

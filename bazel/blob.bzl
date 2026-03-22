@@ -13,23 +13,36 @@ we need pyelftools to read at runtime.
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 # All target platforms we build blobs for.
+# Format: "os:arch" → "//platforms:os_arch"
+#
+# Keep in sync with tools/registry.py OPERATING_SYSTEMS.
+# test_sync.py verifies consistency.
+#
+# To add a platform: add it to tools/registry.py, then add the
+# corresponding entry here and in platforms/BUILD.bazel.
+
+_LINUX_ARCHES = ["x86_64", "i686", "aarch64", "armv5_arm", "armv5_thumb", "s390x", "mipsel32", "mipsbe32"]
+_FREEBSD_ARCHES = ["x86_64", "i686", "aarch64", "armv5_arm", "armv5_thumb", "mipsel32", "mipsbe32"]
+_WINDOWS_ARCHES = ["x86_64", "aarch64"]
+
 BLOB_TARGETS = {
-    "linux:x86_64": "//platforms:linux_x86_64",
-    "linux:i686": "//platforms:linux_i686",
-    "linux:aarch64": "//platforms:linux_aarch64",
-    "linux:armv5_arm": "//platforms:linux_armv5_arm",
-    "linux:mipsel32": "//platforms:linux_mipsel32",
-    "linux:mipsbe32": "//platforms:linux_mipsbe32",
+    "{}:{}".format(os, arch): "//platforms:{}_{}".format(os, arch)
+    for os, arches in [
+        ("linux", _LINUX_ARCHES),
+        ("freebsd", _FREEBSD_ARCHES),
+        ("windows", _WINDOWS_ARCHES),
+    ]
+    for arch in arches
 }
 
 def pic_blob(
         name,
         srcs,
-        deps = [],
-        hdrs = [],
+        deps = None,
+        hdrs = None,
         linker_script = None,
-        copts = [],
-        linkopts = [],
+        copts = None,
+        linkopts = None,
         **kwargs):
     """Compile and link a PIC blob as a shared object.
 
@@ -47,6 +60,10 @@ def pic_blob(
         linkopts: Additional linker flags.
         **kwargs: Passed through to generated targets.
     """
+    deps = deps or []
+    hdrs = hdrs or []
+    copts = copts or []
+    linkopts = linkopts or []
     lib_name = name + "_obj"
 
     cc_library(

@@ -1,35 +1,50 @@
-"""picblobs developer CLI.
+"""picblobs CLI.
 
-Provides subcommands for inspecting, extracting, and running PIC blobs
-during development and testing.
+Inspect, extract, run, and verify PIC blobs shipped in the package.
 
 Usage:
     picblobs list
     picblobs info hello linux:x86_64
     picblobs extract hello linux:x86_64 -o blob.bin
-    picblobs run hello
-    picblobs run hello linux:aarch64 --debug
-    picblobs run --so bazel-bin/src/payload/hello.so
-    picblobs test -k "alloc_jump"
+    picblobs run hello linux:aarch64
+    picblobs verify
+    picblobs verify --arch x86_64 --arch mipsel32
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
+log = logging.getLogger("picblobs")
+
 DEFAULT_TARGET = "linux:x86_64"
+
+
+def _setup_logging(verbose: bool = False) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
 
 
 def _parse_target(target: str) -> tuple[str, str]:
     """Parse 'os:arch' target string. Returns (os, arch)."""
     if ":" not in target:
-        raise argparse.ArgumentTypeError(
+        raise ValueError(
             f"Invalid target '{target}'. Expected format: os:arch (e.g., linux:x86_64)"
         )
     parts = target.split(":", 1)
     return parts[0], parts[1]
+
+
+# ============================================================
+# list
+# ============================================================
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -38,17 +53,22 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     blobs = list_blobs()
     if not blobs:
-        print("No blobs found. Build first: bazel build //src/blob:all")
+        log.info("No blobs found in package.")
         return 0
 
     fmt = "{:<20s} {:<10s} {:<15s}"
-    print(fmt.format("BLOB TYPE", "OS", "ARCH"))
-    print(fmt.format("-" * 20, "-" * 10, "-" * 15))
+    log.info(fmt.format("BLOB TYPE", "OS", "ARCH"))
+    log.info(fmt.format("-" * 20, "-" * 10, "-" * 15))
     for blob_type, target_os, target_arch in blobs:
-        print(fmt.format(blob_type, target_os, target_arch))
+        log.info(fmt.format(blob_type, target_os, target_arch))
 
-    print(f"\n{len(blobs)} blob(s)")
+    log.info("%d blob(s)", len(blobs))
     return 0
+
+
+# ============================================================
+# info
+# ============================================================
 
 
 def cmd_info(args: argparse.Namespace) -> int:
@@ -64,20 +84,25 @@ def cmd_info(args: argparse.Namespace) -> int:
         else:
             blob = get_blob(args.type, target_os, target_arch)
     except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}", file=sys.stderr)
+        log.error("%s", e)
         return 1
 
-    print(f"Blob:           {blob.blob_type}")
-    print(f"OS:             {blob.target_os}")
-    print(f"Arch:           {blob.target_arch}")
-    print(f"Code size:      {len(blob.code)} bytes")
-    print(f"Config offset:  {blob.config_offset}")
-    print(f"Entry offset:   {blob.entry_offset}")
-    print(f"SHA-256:        {blob.sha256}")
-    print(f"Sections:")
+    log.info("Blob:           %s", blob.blob_type)
+    log.info("OS:             %s", blob.target_os)
+    log.info("Arch:           %s", blob.target_arch)
+    log.info("Code size:      %d bytes", len(blob.code))
+    log.info("Config offset:  %d", blob.config_offset)
+    log.info("Entry offset:   %d", blob.entry_offset)
+    log.info("SHA-256:        %s", blob.sha256)
+    log.info("Sections:")
     for name, (offset, size) in sorted(blob.sections.items()):
-        print(f"  {name:<20s} offset={offset:#06x}  size={size:#06x}")
+        log.info("  %-20s offset=%#06x  size=%#06x", name, offset, size)
     return 0
+
+
+# ============================================================
+# extract
+# ============================================================
 
 
 def cmd_extract(args: argparse.Namespace) -> int:
@@ -93,7 +118,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
         else:
             blob = get_blob(args.type, target_os, target_arch)
     except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}", file=sys.stderr)
+        log.error("%s", e)
         return 1
 
     output = Path(args.output)
@@ -103,11 +128,16 @@ def cmd_extract(args: argparse.Namespace) -> int:
         config = bytes.fromhex(args.config_hex)
         if blob.config_offset > len(data):
             data.extend(b"\x00" * (blob.config_offset - len(data)))
-        data[blob.config_offset:blob.config_offset + len(config)] = config
+        data[blob.config_offset : blob.config_offset + len(config)] = config
 
     output.write_bytes(bytes(data))
-    print(f"Wrote {len(data)} bytes to {output}")
+    log.info("Wrote %d bytes to %s", len(data), output)
     return 0
+
+
+# ============================================================
+# run
+# ============================================================
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -116,7 +146,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     from picblobs._extractor import extract
     from picblobs.runner import run_blob
 
-    # Build config bytes.
     config = b""
     if args.config_hex:
         config = bytes.fromhex(args.config_hex)
@@ -124,12 +153,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         config = Path(args.payload).read_bytes()
 
     runner_path = Path(args.runner_path) if args.runner_path else None
-
     target_os, target_arch = _parse_target(args.target)
 
     try:
         if args.so:
-            # Direct .so mode — extract with explicit os/arch from target.
             blob = extract(args.so, target_os=target_os, target_arch=target_arch)
         else:
             blob = get_blob(args.type, target_os, target_arch)
@@ -144,42 +171,92 @@ def cmd_run(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
         )
     except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}", file=sys.stderr)
+        log.error("%s", e)
         return 1
 
     if args.dry_run:
-        print(" ".join(result.command))
+        log.info(" ".join(result.command))
         return 0
 
-    # Print output.
     if result.stdout:
         sys.stdout.buffer.write(result.stdout)
     if result.stderr:
         sys.stderr.buffer.write(result.stderr)
 
     if args.debug:
-        print(f"\n--- exit_code={result.exit_code} duration={result.duration_s:.3f}s ---",
-              file=sys.stderr)
+        log.debug("exit_code=%d duration=%.3fs", result.exit_code, result.duration_s)
 
     return result.exit_code
 
 
-def cmd_build(args: argparse.Namespace) -> int:
-    """Build and stage all blobs for all platforms."""
-    import subprocess
+# ============================================================
+# verify
+# ============================================================
 
-    cmd = [
-        sys.executable,
-        str(Path(__file__).resolve().parent.parent.parent / "tools" / "stage_blobs.py"),
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Run a blob on every available architecture. The smoke test.
+
+    Discovers what's in the package — no build system knowledge.
+    """
+    from picblobs import list_blobs
+    from picblobs.runner import run_so
+
+    blob_type = args.type
+    target_os = args.os
+    filter_arches = set(args.arch) if args.arch else None
+
+    # Discover what's actually in the package for this blob type + OS.
+    available = [
+        (bt, os_name, arch)
+        for bt, os_name, arch in list_blobs()
+        if bt == blob_type and os_name == target_os
     ]
 
-    if args.targets:
-        cmd.extend(["--targets"] + args.targets)
-    if args.configs:
-        cmd.extend(["--configs"] + args.configs)
+    if filter_arches:
+        available = [(bt, o, a) for bt, o, a in available if a in filter_arches]
 
-    result = subprocess.run(cmd)
-    return result.returncode
+    if not available:
+        log.error("No blobs found for %s/%s. Nothing to verify.", blob_type, target_os)
+        if not filter_arches:
+            log.error("Available blobs:")
+            for bt, o, a in list_blobs():
+                log.error("  %s %s:%s", bt, o, a)
+        return 1
+
+    passed = 0
+    failed = 0
+    errors = []
+
+    blob_dir = Path(__file__).parent / "_blobs"
+    for _, os_name, arch in available:
+        so = blob_dir / os_name / arch / f"{blob_type}.so"
+        try:
+            result = run_so(str(so), runner_type=os_name, timeout=args.timeout)
+            stdout = result.stdout.decode(errors="replace").strip()
+            if result.exit_code == 0:
+                log.info("  %-14s  exit=0   %r", arch, stdout)
+                passed += 1
+            else:
+                log.error("  %-14s  exit=%-4d %r  FAIL", arch, result.exit_code, stdout)
+                failed += 1
+                errors.append(arch)
+        except Exception as e:
+            log.error("  %-14s  ERROR: %s", arch, e)
+            failed += 1
+            errors.append(arch)
+
+    total = passed + failed
+    if errors:
+        log.info("%d/%d passed  (failed: %s)", passed, total, ", ".join(errors))
+    else:
+        log.info("%d/%d passed", passed, total)
+    return 1 if failed else 0
+
+
+# ============================================================
+# test
+# ============================================================
 
 
 def cmd_test(args: argparse.Namespace) -> int:
@@ -191,7 +268,6 @@ def cmd_test(args: argparse.Namespace) -> int:
 
     if args.verbose:
         cmd.append("-v")
-
     if args.filter:
         cmd.extend(["-k", args.filter])
 
@@ -209,88 +285,133 @@ def cmd_test(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+# ============================================================
+# main
+# ============================================================
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="picblobs",
-        description="picblobs developer CLI — inspect, extract, and run PIC blobs",
+        description="picblobs — inspect, extract, run, and verify PIC blobs",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # --- list ---
-    sub.add_parser("list", help="List all available blobs")
+    sub.add_parser("list", help="List all blobs in the package")
 
     # --- info ---
     p_info = sub.add_parser("info", help="Show blob metadata")
     p_info.add_argument("type", nargs="?", default="", help="Blob type (e.g., hello)")
-    p_info.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="Target as os:arch (default: linux:x86_64)")
+    p_info.add_argument(
+        "target",
+        nargs="?",
+        default=DEFAULT_TARGET,
+        help="os:arch (default: linux:x86_64)",
+    )
     p_info.add_argument("--so", default="", help="Direct path to .so file")
 
     # --- extract ---
     p_extract = sub.add_parser("extract", help="Extract flat blob to file")
     p_extract.add_argument("type", nargs="?", default="", help="Blob type")
-    p_extract.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="Target as os:arch")
+    p_extract.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="os:arch")
     p_extract.add_argument("-o", "--output", required=True, help="Output file path")
     p_extract.add_argument("--so", default="", help="Direct path to .so file")
-    p_extract.add_argument("--config-hex", default="", help="Config struct as hex string")
+    p_extract.add_argument(
+        "--config-hex", default="", help="Config struct as hex string"
+    )
 
     # --- run ---
     p_run = sub.add_parser(
         "run",
-        help="Run a blob under QEMU via the C test runner",
+        help="Run a single blob under QEMU",
         description=(
             "Execute a PIC blob through the C test runner under QEMU user-static.\n\n"
             "Examples:\n"
             "  picblobs run hello                          # linux:x86_64 default\n"
             "  picblobs run hello linux:aarch64             # cross-arch\n"
             "  picblobs run hello linux:x86_64 --debug      # verbose output\n"
-            "  picblobs run --so bazel-bin/src/payload/hello.so  # direct .so\n"
+            "  picblobs run --so path/to/hello.so           # direct .so file\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_run.add_argument("type", nargs="?", default="", help="Blob type (e.g., hello, alloc_jump)")
-    p_run.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="Target as os:arch (default: linux:x86_64)")
-    p_run.add_argument("--so", default="", help="Direct path to .so file (bypasses type/target)")
+    p_run.add_argument("type", nargs="?", default="", help="Blob type")
+    p_run.add_argument(
+        "target",
+        nargs="?",
+        default=DEFAULT_TARGET,
+        help="os:arch (default: linux:x86_64)",
+    )
+    p_run.add_argument("--so", default="", help="Direct path to .so file")
     p_run.add_argument("--config-hex", default="", help="Config struct as hex string")
     p_run.add_argument("--payload", default="", help="Read config from file")
-    p_run.add_argument("--runner-type", default="", help="Runner type override (linux/freebsd/windows)")
-    p_run.add_argument("--runner-path", default="", help="Explicit path to runner binary")
-    p_run.add_argument("--timeout", type=float, default=30.0, help="Execution timeout in seconds")
-    p_run.add_argument("--debug", action="store_true", help="Verbose output, keep temp files")
-    p_run.add_argument("--dry-run", action="store_true", help="Print command without executing")
-
-    # --- build ---
-    p_build = sub.add_parser(
-        "build",
-        help="Build and stage blobs for all platforms",
-        description="Build blob .so files for all platforms and stage into the package tree.",
+    p_run.add_argument("--runner-type", default="", help="Runner type override")
+    p_run.add_argument(
+        "--runner-path", default="", help="Explicit path to runner binary"
     )
-    p_build.add_argument("targets", nargs="*", default=[], help="Blob names to build (default: all)")
-    p_build.add_argument("--configs", nargs="*", default=[], help="Platform configs as os:arch (default: all)")
+    p_run.add_argument("--timeout", type=float, default=30.0, help="Timeout in seconds")
+    p_run.add_argument(
+        "--debug", action="store_true", help="Verbose output, keep temp files"
+    )
+    p_run.add_argument(
+        "--dry-run", action="store_true", help="Print command without executing"
+    )
+
+    # --- verify ---
+    p_verify = sub.add_parser(
+        "verify",
+        help="Run a blob on all architectures in the package",
+        description=(
+            "Smoke test: run a blob on every architecture available in the\n"
+            "package. Discovers what's present — no build system knowledge.\n\n"
+            "Examples:\n"
+            "  picblobs verify                                # hello on all linux arches\n"
+            "  picblobs verify --arch x86_64 --arch mipsel32  # specific arches\n"
+            "  picblobs verify --type alloc_jump               # different blob\n"
+            "  picblobs verify --os freebsd                    # freebsd arches\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_verify.add_argument("--type", default="hello", help="Blob type (default: hello)")
+    p_verify.add_argument("--os", default="linux", help="Target OS (default: linux)")
+    p_verify.add_argument(
+        "--arch",
+        action="append",
+        default=[],
+        help="Architecture (repeatable, default: all available)",
+    )
+    p_verify.add_argument(
+        "--timeout", type=float, default=30.0, help="Per-blob timeout in seconds"
+    )
 
     # --- test ---
     p_test = sub.add_parser("test", help="Run pytest test suite")
-    p_test.add_argument("--os", default="", help="Filter tests by target OS")
-    p_test.add_argument("--arch", default="", help="Filter tests by architecture")
-    p_test.add_argument("--type", default="", help="Filter tests by blob type")
-    p_test.add_argument("-k", "--filter", default="", help="pytest -k filter expression")
-    p_test.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
-    p_test.add_argument("pytest_args", nargs="*", default=[], help="Additional pytest arguments")
+    p_test.add_argument("--os", default="", help="Filter by OS")
+    p_test.add_argument("--arch", default="", help="Filter by architecture")
+    p_test.add_argument("--type", default="", help="Filter by blob type")
+    p_test.add_argument("-k", "--filter", default="", help="pytest -k expression")
+    p_test.add_argument("-v", "--verbose", action="store_true")
+    p_test.add_argument(
+        "pytest_args", nargs="*", default=[], help="Additional pytest args"
+    )
 
     args = parser.parse_args(argv)
 
-    # Validate: run/info/extract need either --so or a blob type.
+    verbose = getattr(args, "debug", False) or getattr(args, "verbose", False)
+    _setup_logging(verbose)
+
     if args.command in ("run", "info", "extract"):
         so = getattr(args, "so", "")
         blob_type = getattr(args, "type", "")
         if not so and not blob_type:
-            parser.error(f"Provide a blob type or --so path")
+            parser.error("Provide a blob type or --so path")
 
     handlers = {
         "list": cmd_list,
         "info": cmd_info,
         "extract": cmd_extract,
         "run": cmd_run,
-        "build": cmd_build,
+        "verify": cmd_verify,
         "test": cmd_test,
     }
 

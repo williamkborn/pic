@@ -1,7 +1,7 @@
 /*
  * picblobs linker script — controls blob binary layout (ADR-003).
  *
- * Layout (all 16-byte aligned, base 0x400000):
+ * Layout (all 16-byte aligned, base 0):
  *
  *   .text.pic_entry  — blob entry point (PIC_ENTRY)
  *   .text.pic_code   — blob code (PIC_TEXT)

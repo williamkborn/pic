@@ -215,8 +215,17 @@ def _bootlin_toolchain_repo_impl(ctx):
     }
     if sha256:
         download_kwargs["sha256"] = sha256
+    else:
+        # buildifier: disable=print
+        print("WARNING: Bootlin toolchain '{}' has no SHA256 pin. ".format(toolchain_id) +
+              "Builds are not reproducible. Set sha256 in MODULE.bazel.")
 
-    ctx.download_and_extract(**download_kwargs)
+    result = ctx.download_and_extract(**download_kwargs)
+
+    # Print the SHA256 for pinning if not already set.
+    if not sha256 and hasattr(result, "sha256"):
+        # buildifier: disable=print
+        print("  Pin with: sha256 = \"{}\"".format(result.sha256))
 
     # Generate the config.bzl with baked-in triple and flags.
     config_bzl = _CONFIG_BZL_CONTENT.format(
