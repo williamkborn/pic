@@ -1,0 +1,103 @@
+# REQ-011: Bazel Cross-Compilation with Bootlin Toolchains
+
+## Status
+Accepted
+
+## Statement
+
+picblobs SHALL use Bazel as its build system for compiling all C source code into PIC blobs. Cross-compilation toolchains SHALL be sourced from toolchains.bootlin.com and registered as Bazel toolchains. The build system SHALL be capable of producing blobs for every supported OS/architecture combination from a single host machine (Linux x86_64 build host).
+
+## Rationale
+
+Bazel provides hermetic, reproducible builds with first-class cross-compilation support via toolchain resolution. Bootlin provides pre-built GCC cross-compilation toolchains for a wide range of architectures, eliminating the need to build or maintain custom toolchains. Because the blobs use only raw syscalls (Linux/FreeBSD) or PEB-resolved APIs (Windows) and never link against any system library, the Linux-hosted GCC cross-compilers can produce correct code for all targets regardless of the target OS — the blob is a flat binary, not a linked executable targeting a specific OS's dynamic linker.
+
+## Derives From
+- VIS-001
+
+## Detailed Requirements
+
+### Bazel Workspace Configuration
+
+The Bazel workspace SHALL:
+
+1. Define a `WORKSPACE` (or `MODULE.bazel` for bzlmod) configuration that fetches Bootlin toolchain archives for each supported architecture.
+2. Register each toolchain with Bazel's toolchain resolution system, associating it with the correct `--cpu` / platform constraint.
+3. Pin toolchain versions (specific Bootlin archive URLs with SHA256 checksums) for reproducibility.
+
+### Supported Toolchains
+
+The following Bootlin toolchains (or equivalent) SHALL be registered:
+
+| Target Architecture | Bootlin Toolchain | GCC Target Triple |
+|---|---|---|
+| x86_64 | x86-64 glibc (or musl, or bare) | x86_64-linux-gnu |
+| i686 | x86-i686 glibc | i686-linux-gnu |
+| aarch64 | aarch64 glibc | aarch64-linux-gnu |
+| armv5 | armv5-eabi glibc | arm-linux-gnueabi |
+| mipsel32 | mipsel-32 glibc | mipsel-linux-gnu |
+| mipsbe32 | mips-32 glibc | mips-linux-gnu |
+
+Note: The exact Bootlin configuration names and glibc/musl/uclibc choice SHALL be determined during implementation. Since the blobs are freestanding (`-ffreestanding -nostdlib`), the libc variant in the toolchain is irrelevant — only the compiler and assembler matter.
+
+### Compilation Flags
+
+All blob compilation SHALL use the following base flags:
+
+- `-ffreestanding`: No hosted environment assumptions.
+- `-nostdlib`: Do not link the standard C library.
+- `-nostartfiles`: Do not link startup files (crt0, crti, etc.).
+- `-fno-builtin`: Do not use compiler builtins that may reference libc (or selectively allow safe builtins like `__builtin_memcpy` if the compiler inlines them).
+- `-fPIC` or `-fPIE`: Generate position-independent code.
+- `-ffunction-sections -fdata-sections`: Place each function and data object in its own section for dead-code elimination.
+- `-Os` or `-Oz`: Optimize for size.
+- `-Wall -Werror`: All warnings are errors.
+
+Additional per-architecture flags (e.g., `-march=armv5te -marm` for ARM mode, `-march=armv5te -mthumb` for Thumb mode, `-mips32 -EL` for mipsel) SHALL be set in the toolchain definition.
+
+### Build Targets
+
+The Bazel build SHALL define:
+
+1. A `cc_library` target for the syscall abstraction layer (per OS, per architecture).
+2. A `cc_library` target for the PEB/TEB walk and DJB2 resolution (Windows only).
+3. A `cc_binary` (or custom rule) target for each blob type, per OS, per architecture.
+4. A custom Bazel rule or genrule that invokes the linker with the custom linker script (REQ-012) and produces the ELF output.
+5. A custom Bazel rule or genrule that runs pyelftools extraction (REQ-013) to produce the final flat blob binary from the ELF.
+
+### Platform Definitions
+
+Bazel platform definitions SHALL be created for each OS/architecture combination:
+
+- `//platforms:linux_x86_64`
+- `//platforms:linux_i686`
+- `//platforms:linux_aarch64`
+- `//platforms:linux_armv5_arm`
+- `//platforms:linux_armv5_thumb`
+- `//platforms:linux_mipsel32`
+- `//platforms:linux_mipsbe32`
+- `//platforms:freebsd_x86_64`
+- `//platforms:freebsd_i686`
+- `//platforms:freebsd_aarch64`
+- `//platforms:freebsd_armv5_arm`
+- `//platforms:freebsd_armv5_thumb`
+- `//platforms:freebsd_mipsel32`
+- `//platforms:freebsd_mipsbe32`
+- `//platforms:windows_x86_64`
+- `//platforms:windows_aarch64`
+
+### Build-All Target
+
+A single Bazel target (e.g., `//blobs:all`) SHALL build every blob for every platform, producing the complete set of flat blob binaries ready for packaging into the Python wheel.
+
+## Acceptance Criteria
+
+1. Running `bazel build //blobs:all` on a Linux x86_64 host produces blob binaries for every supported OS/architecture/blob-type combination.
+2. The build is hermetic: no system-installed compilers are required (Bazel fetches Bootlin toolchains automatically).
+3. The build is reproducible: the same commit produces bit-for-bit identical blob binaries.
+4. Each blob binary is a flat, position-independent code blob with no ELF headers, no relocations, and no absolute addresses.
+
+## Related Decisions
+- ADR-002
+
+## Verified By
+- TEST-001
