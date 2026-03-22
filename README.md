@@ -5,6 +5,12 @@ arbitrary payloads on multiple operating systems and architectures. Eliminates
 the need for hand-writing shellcode by providing tested, cross-platform PIC
 stubs through a simple Python API.
 
+## User Story
+
+```text
+As a cybersecurity developer, I am sick and tired of writing assembly and shellcode in every single project I work on. It would be amazing if Opus just solved the problem for me and yeeted it into pypi.
+```
+
 ## Supported architectures
 
 | Architecture | Endianness | Bits | Status |

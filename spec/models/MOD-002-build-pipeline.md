@@ -67,11 +67,21 @@ Stages 2-3 are per-platform and executed sequentially per platform config by `st
 
 ## Build Matrix Size
 
-- 6 Linux platforms (x86_64, i686, aarch64, armv5_arm, mipsel32, mipsbe32)
-- Future: 7 FreeBSD + 2 Windows = 16 total
-- 1 blob type currently (hello); scales to 6 blob types per platform = 96 total
-- 1 runner per platform = 6 runners currently
+- 8 Linux platforms (x86_64, i686, aarch64, armv5_arm, armv5_thumb, s390x, mipsel32, mipsbe32)
+- Future: 8 FreeBSD + 2 Windows = 18 total
+- 1 blob type currently (hello); scales to 6 blob types per platform = 108 total
+- 1 runner per architecture = 8 runners currently
 - Total artifacts per full build: blobs + runners + 1 wheel
+
+## Code Generation
+
+The build pipeline relies on generated artifacts produced by `tools/generate.py` from the canonical registry `tools/registry.py` (see ADR-022). Generated artifacts include:
+
+- **C headers**: `src/include/picblobs/arch.h`, `syscall.h`, `picblobs.h`, and all `sys/*.h` wrappers.
+- **Bazel config**: `platforms/BUILD.bazel`, `toolchains/BUILD.bazel`, `.bazelrc` platform configs.
+- **Test runners**: `tests/runners/{os}/runner.c`.
+
+All generated files are committed to git. CI enforces freshness via `tools/generate.py --check`.
 
 ## Derives From
 - REQ-011

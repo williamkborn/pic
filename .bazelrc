@@ -55,5 +55,8 @@ test --test_env=PATH
 
 # CI settings
 build:ci --config=lint
+build:ci --action_env=PICBLOBS_REQUIRE_LINT_TOOLS=1
+test:ci --test_env=PICBLOBS_REQUIRE_LINT_TOOLS=1
+# Only effective with remote cache enabled (see --remote_cache above).
 build:ci --remote_download_minimal
 test:ci --test_output=all

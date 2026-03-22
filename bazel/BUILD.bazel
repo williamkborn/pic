@@ -3,6 +3,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "blob.bzl",
     "lint.bzl",
+    "platforms.bzl",
     "uv.bzl",
     "qemu_test.bzl",
 ])

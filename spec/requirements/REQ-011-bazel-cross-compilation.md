@@ -36,6 +36,7 @@ The following Bootlin toolchains (or equivalent) SHALL be registered:
 | armv5 | armv5-eabi glibc | arm-linux-gnueabi |
 | mipsel32 | mipsel-32 glibc | mipsel-linux-gnu |
 | mipsbe32 | mips-32 glibc | mips-linux-gnu |
+| s390x | s390x glibc | s390x-linux-gnu |
 
 Note: The exact Bootlin configuration names and glibc/musl/uclibc choice SHALL be determined during implementation. Since the blobs are freestanding (`-ffreestanding -nostdlib`), the libc variant in the toolchain is irrelevant — only the compiler and assembler matter.
 
@@ -51,6 +52,7 @@ All blob compilation SHALL use the following base flags:
 - `-ffunction-sections -fdata-sections`: Place each function and data object in its own section for dead-code elimination.
 - `-Os` or `-Oz`: Optimize for size.
 - `-Wall -Werror`: All warnings are errors.
+- `-fno-stack-protector`: Prevent references to `__stack_chk_fail_local` which is unavailable in freestanding mode.
 
 Additional per-architecture flags (e.g., `-march=armv5te -marm` for ARM mode, `-march=armv5te -mthumb` for Thumb mode, `-mips32 -EL` for mipsel) SHALL be set in the toolchain definition.
 
@@ -62,7 +64,7 @@ The Bazel build SHALL define:
 2. A `cc_library` target for the PEB/TEB walk and DJB2 resolution (Windows only).
 3. A `cc_binary` (or custom rule) target for each blob type, per OS, per architecture.
 4. A custom Bazel rule or genrule that invokes the linker with the custom linker script (REQ-012) and produces the ELF output.
-5. A custom Bazel rule or genrule that runs pyelftools extraction (REQ-013) to produce the final flat blob binary from the ELF.
+5. Extraction happens at runtime via pyelftools when the Python package loads a blob (see ADR-018), not at build time.
 
 ### Platform Definitions
 
@@ -75,6 +77,7 @@ Bazel platform definitions SHALL be created for each OS/architecture combination
 - `//platforms:linux_armv5_thumb`
 - `//platforms:linux_mipsel32`
 - `//platforms:linux_mipsbe32`
+- `//platforms:linux_s390x`
 - `//platforms:freebsd_x86_64`
 - `//platforms:freebsd_i686`
 - `//platforms:freebsd_aarch64`
@@ -82,16 +85,17 @@ Bazel platform definitions SHALL be created for each OS/architecture combination
 - `//platforms:freebsd_armv5_thumb`
 - `//platforms:freebsd_mipsel32`
 - `//platforms:freebsd_mipsbe32`
+- `//platforms:freebsd_s390x`
 - `//platforms:windows_x86_64`
 - `//platforms:windows_aarch64`
 
 ### Build-All Target
 
-A single Bazel target (e.g., `//blobs:all`) SHALL build every blob for every platform, producing the complete set of flat blob binaries ready for packaging into the Python wheel.
+Blob targets live under `//src/payload:` (e.g., `//src/payload:hello`). The `tools/stage_blobs.py` script (invoked as `picblobs build`) iterates over all platform configs and runs `bazel build --config={config}` for each, staging outputs into the Python package tree.
 
 ## Acceptance Criteria
 
-1. Running `bazel build //blobs:all` on a Linux x86_64 host produces blob binaries for every supported OS/architecture/blob-type combination.
+1. Running `picblobs build` on a Linux x86_64 host produces blob binaries for every supported OS/architecture/blob-type combination.
 2. The build is hermetic: no system-installed compilers are required (Bazel fetches Bootlin toolchains automatically).
 3. The build is reproducible: the same commit produces bit-for-bit identical blob binaries.
 4. Each blob binary is a flat, position-independent code blob with no ELF headers, no relocations, and no absolute addresses.

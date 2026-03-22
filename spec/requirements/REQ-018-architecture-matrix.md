@@ -39,8 +39,9 @@ Each OS/architecture combination produces 6 blob variants. The 6 blob types are:
 | armv5 (Thumb) | YES | YES | YES | YES | YES | YES |
 | mipsel32 | YES | YES | YES | YES | YES | YES |
 | mipsbe32 | YES | YES | YES | YES | YES | YES |
+| s390x | YES | YES | YES | YES | YES | YES |
 
-**Total Linux blobs: 7 architectures x 6 blob types = 42**
+**Total Linux blobs: 8 architectures x 6 blob types = 48**
 
 ### FreeBSD
 
@@ -53,8 +54,9 @@ Each OS/architecture combination produces 6 blob variants. The 6 blob types are:
 | armv5 (Thumb) | YES | YES | YES | YES | YES | YES |
 | mipsel32 | YES | YES | YES | YES | YES | YES |
 | mipsbe32 | YES | YES | YES | YES | YES | YES |
+| s390x | YES | YES | YES | YES | YES | YES |
 
-**Total FreeBSD blobs: 7 architectures x 6 blob types = 42**
+**Total FreeBSD blobs: 8 architectures x 6 blob types = 48**
 
 ### Windows
 
@@ -67,9 +69,9 @@ Each OS/architecture combination produces 6 blob variants. The 6 blob types are:
 
 ### Grand Total
 
-**96 blob binaries** in the wheel.
+**108 blob binaries** in the wheel.
 
-Note: The total is 96 because both Linux/FreeBSD and Windows have 6 blob types per architecture, but the reflective loader type differs (ELF vs PE). There is no Reflective ELF blob for Windows and no Reflective PE blob for Linux/FreeBSD.
+Note: The total is 108 because both Linux/FreeBSD and Windows have 6 blob types per architecture, but the reflective loader type differs (ELF vs PE). There is no Reflective ELF blob for Windows and no Reflective PE blob for Linux/FreeBSD.
 
 ### Architecture Details
 
@@ -82,6 +84,7 @@ Note: The total is 96 because both Linux/FreeBSD and Windows have 6 blob types p
 | armv5_thumb | ARMv5TE | Little | 32-bit | Thumb | Legacy embedded, routers (Thumb mode, 16-bit encoding) |
 | mipsel32 | MIPS32 | Little | 32-bit | MIPS | Embedded routers (little-endian MIPS) |
 | mipsbe32 | MIPS32 | Big | 32-bit | MIPS | Embedded routers (big-endian MIPS) |
+| s390x | z/Architecture | Big | 64-bit | z/Arch | IBM Z mainframes |
 
 ### Future Architecture Candidates
 
@@ -90,7 +93,6 @@ The following architectures are NOT in v1 but are candidates for future addition
 - RISC-V 64-bit (`riscv64`): Growing in embedded and server spaces.
 - RISC-V 32-bit (`riscv32`): Emerging in microcontrollers.
 - PowerPC 64-bit (`ppc64`, `ppc64le`): IBM POWER servers.
-- s390x: IBM Z mainframes.
 - MIPS64: High-end network equipment.
 - ARMv7 (Thumb-2): Cortex-M series microcontrollers, modern 32-bit ARM.
 
@@ -102,8 +104,8 @@ Adding a new architecture requires:
 
 ## Acceptance Criteria
 
-1. The Bazel build produces exactly 96 blob binaries matching the matrix above.
-2. The Python wheel contains all 96 blobs and their metadata.
+1. The Bazel build produces exactly 108 blob binaries matching the matrix above.
+2. The Python wheel contains all 108 blobs and their metadata.
 3. `picblobs.targets()` returns all entries from the matrix.
 4. Every cell marked YES passes its verification tests.
 

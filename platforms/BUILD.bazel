@@ -2,6 +2,10 @@
 
 package(default_visibility = ["//visibility:public"])
 
+# Custom target_os instead of @platforms//os:os — the blob OS is a
+# cross-compilation target property, not the execution OS. A Linux host
+# builds FreeBSD and Windows blobs; using @platforms//os would confuse
+# Bazel's toolchain resolution. This constraint is for blob target selection.
 constraint_setting(name = "target_os")
 
 constraint_value(name = "linux", constraint_setting = ":target_os")

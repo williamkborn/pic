@@ -87,6 +87,18 @@ The assembly stub SHALL implement the following ABI for each architecture:
 - Arguments: `$a0` through `$a3`; arguments 5 and 6 on stack per o32 ABI
 - Return: `$v0`; `$a3` indicates error
 
+### s390x (Linux)
+- Syscall instruction: `svc 0`
+- Syscall number: `r1`
+- Arguments: `r2`, `r3`, `r4`, `r5`, `r6`, `r7`
+- Return: `r2`
+
+### s390x (FreeBSD)
+- Syscall instruction: `svc 0`
+- Syscall number: `r1`
+- Arguments: `r2`, `r3`, `r4`, `r5`, `r6`, `r7`
+- Return: `r2`; carry flag equivalent indicates error
+
 ## Related Decisions
 - ADR-006
 

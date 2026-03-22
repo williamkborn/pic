@@ -55,6 +55,7 @@ REQ-004:
   title: Per-Architecture Syscall Number Tables
   file: requirements/REQ-004-syscall-number-tables.md
   derives_from: [REQ-002, REQ-003]
+  decided_by: [ADR-022]
   verified_by: [TEST-002]
 
 REQ-005:
@@ -132,7 +133,7 @@ REQ-013:
   title: ELF-to-Blob Extraction via pyelftools
   file: requirements/REQ-013-elf-extraction.md
   derives_from: [REQ-012]
-  decided_by: [ADR-007]
+  decided_by: [ADR-018]
   verified_by: [TEST-001]
 
 REQ-014:
@@ -304,6 +305,18 @@ ADR-021:
   title: Embedded Cross-Compiled Test Runners
   file: decisions/ADR-021-embedded-cross-compiled-runners.md
   related_to: [ADR-010, ADR-019]
+
+ADR-022:
+  type: decision
+  title: Registry-Driven Code Generation
+  file: decisions/ADR-022-registry-driven-code-generation.md
+  related_to: [REQ-001, REQ-002, REQ-004, REQ-011, ADR-004]
+
+ADR-023:
+  type: decision
+  title: s390x Architecture Addition
+  file: decisions/ADR-023-s390x-architecture.md
+  related_to: [REQ-001, REQ-018, ADR-002]
 
 # ============================================================
 # Design Model Artifacts

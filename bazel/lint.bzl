@@ -74,6 +74,10 @@ def _clang_tidy_aspect_impl(target, ctx):
             inputs = [src] + header_inputs,
             command = """
                 if ! command -v clang-tidy >/dev/null 2>&1; then
+                    if [ -n "$PICBLOBS_REQUIRE_LINT_TOOLS" ]; then
+                        echo "ERROR: clang-tidy not found but PICBLOBS_REQUIRE_LINT_TOOLS is set" >&2
+                        exit 1
+                    fi
                     echo "SKIP: clang-tidy not found" > {out}
                     exit 0
                 fi
@@ -120,6 +124,10 @@ def _clang_format_test_impl(ctx):
 set -euo pipefail
 
 if ! command -v clang-format >/dev/null 2>&1; then
+    if [ -n "$PICBLOBS_REQUIRE_LINT_TOOLS" ]; then
+        echo "ERROR: clang-format not found but PICBLOBS_REQUIRE_LINT_TOOLS is set" >&2
+        exit 1
+    fi
     echo "SKIP: clang-format not found"
     exit 0
 fi
@@ -196,6 +204,10 @@ def _cppcheck_test_impl(ctx):
 set -euo pipefail
 
 if ! command -v cppcheck >/dev/null 2>&1; then
+    if [ -n "$PICBLOBS_REQUIRE_LINT_TOOLS" ]; then
+        echo "ERROR: cppcheck not found but PICBLOBS_REQUIRE_LINT_TOOLS is set" >&2
+        exit 1
+    fi
     echo "SKIP: cppcheck not found"
     exit 0
 fi

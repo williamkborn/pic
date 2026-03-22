@@ -9,12 +9,12 @@ All blob testing runs on a single Linux x86_64 host using QEMU user-static for a
 ```
 Runner Type     | Architectures                                          | Count
 ----------------|--------------------------------------------------------|------
-Linux           | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   7
-                | mipsel32, mipsbe32                                     |
-FreeBSD         | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   7
-                | mipsel32, mipsbe32                                     |
+Linux           | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   8
+                | s390x, mipsel32, mipsbe32                              |
+FreeBSD         | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   8
+                | s390x, mipsel32, mipsbe32                              |
 Windows         | x86_64, aarch64                                        |   2
-                                                                   Total:  16
+                                                                   Total:  18
 ```
 
 ## Execution Model
@@ -144,6 +144,6 @@ A Python test harness orchestrates all test execution:
    g. Assert expected results.
 
 2. The harness manages QEMU user-static invocation, including:
-   - Architecture-specific QEMU binary selection (qemu-aarch64-static, qemu-mipsel-static, etc.).
+   - Architecture-specific QEMU binary selection (qemu-aarch64-static, qemu-s390x-static, qemu-mipsel-static, etc.).
    - Library path setup (Bootlin sysroot for dynamic test binaries, though most are freestanding).
    - Network configuration for stager tests (host-accessible loopback).

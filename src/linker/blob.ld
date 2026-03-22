@@ -77,6 +77,16 @@ SECTIONS
         KEEP(*(.config .config.*))
     }
 
+    /*
+     * Discarded sections — including all relocations (.rela.*, .rel.*).
+     *
+     * Relocations are discarded because blobs must be fully position-
+     * independent with no absolute references. If a blob ever contains
+     * a global pointer init or constructor pattern that emits relocations,
+     * the linker will silently produce wrong addresses at runtime.
+     * The QEMU test runner validates correct execution; add an explicit
+     * relocation-table-empty check if this becomes a concern.
+     */
     /DISCARD/ : {
         *(.comment)
         *(.note.*)

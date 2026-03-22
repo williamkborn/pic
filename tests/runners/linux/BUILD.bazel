@@ -7,15 +7,12 @@ a blob using real Linux syscalls (emulated by QEMU for non-native arches).
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//bazel:lint.bzl", "cppcheck_test")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__"])
 
 cc_library(
     name = "runner_obj",
     srcs = ["runner.c"] + glob(["start/*.h"]),
     copts = [
-        "-ffreestanding",
-        "-fno-builtin",
-        "-fno-stack-protector",
         "-iquote",
         "tests/runners/linux",
     ],

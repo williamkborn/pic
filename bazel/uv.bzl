@@ -82,7 +82,10 @@ def _uv_wheel_impl(ctx):
         tools = [],
         mnemonic = "UvBuild",
         progress_message = "Building Python wheel via uv",
-        use_default_shell_env = True,
+        env = {
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": "/tmp",
+        },
     )
 
     return [DefaultInfo(files = depset([wheel_output]))]

@@ -5,7 +5,7 @@ Accepted
 
 ## Statement
 
-picblobs SHALL maintain machine-readable syscall number tables for every supported OS and architecture combination. Each table SHALL map syscall names to their numeric identifiers. The tables SHALL be stored as C preprocessor defines in header files organized by OS and architecture. The tables SHALL be derived from authoritative sources and SHALL cite the specific OS kernel version from which they were extracted.
+picblobs SHALL maintain per-architecture syscall number mappings for every supported OS. These numbers SHALL be embedded inline within each syscall wrapper header (e.g., `picblobs/sys/mmap.h`) via `#ifdef` chains, rather than in separate table files. The mappings SHALL be derived from authoritative kernel sources and maintained in a canonical Python registry (`tools/registry.py`), from which C headers are generated.
 
 ## Rationale
 
@@ -17,48 +17,58 @@ Syscall numbers are the fundamental interface between user-space PIC and the ker
 
 ## Detailed Requirements
 
-### Table Format
+### Inline Format
 
-Each table SHALL be a C header file containing preprocessor defines of the form:
+Each generated syscall wrapper header contains per-architecture number definitions within `#ifdef` chains:
 
-- One define per syscall, using the kernel's canonical naming convention (e.g., `__NR_` prefix for Linux, `SYS_` prefix for FreeBSD).
-- A header comment documenting the source kernel version and extraction date.
+```c
+// In picblobs/sys/mmap.h (generated)
+#if defined(__x86_64__)
+#define __PIC_NR_mmap 9
+#elif defined(__i386__)
+#define __PIC_NR_mmap2 192
+#elif defined(__aarch64__)
+#define __PIC_NR_mmap 222
+// ... etc
+#endif
+```
 
-### Table Organization
+This approach co-locates the syscall number with the wrapper function that uses it, eliminating a separate layer of indirection.
 
-Tables SHALL be organized in the following directory structure within the C source tree:
+### Registry Organization
 
-- `include/{os}/{arch}/syscall_numbers.h` — e.g., `include/linux/x86_64/syscall_numbers.h`, `include/freebsd/aarch64/syscall_numbers.h`.
+The canonical syscall number data lives in `tools/registry.py` in the `SYSCALL_NUMBERS` dictionary, organized as:
 
-For FreeBSD, where syscall numbers are architecture-independent, a single shared table MAY be used with per-architecture includes that add any architecture-specific syscalls.
+```python
+SYSCALL_NUMBERS = {
+    "linux": {
+        "__x86_64__": {"read": 0, "write": 1, "mmap": 9, ...},
+        "__i386__":   {"read": 3, "write": 4, "mmap2": 192, ...},
+        ...
+    },
+    "freebsd": {
+        "_all_": {"read": 3, "write": 4, "mmap": 477, ...},
+    },
+}
+```
+
+Linux numbers are per-architecture (via GCC predefined macros). FreeBSD numbers are architecture-independent (`_all_` key).
 
 ### Source Authority
 
-- **Linux tables** SHALL be derived from the kernel's `arch/{arch}/include/generated/uapi/asm/unistd_64.h`, `unistd_32.h`, or equivalent generated headers for each architecture.
-- **FreeBSD tables** SHALL be derived from `sys/kern/syscalls.master` or the generated `sys/sys/syscall.h`.
-
-### Version Pinning
-
-Each table file SHALL document:
-
-1. The kernel/OS version it was extracted from (e.g., "Linux 6.8", "FreeBSD 14.0-RELEASE").
-2. The date of extraction.
-3. The method of extraction (manual, scripted, or tool reference).
+- **Linux**: Numbers derived from kernel `unistd.h` / syscall tables per architecture.
+- **FreeBSD**: Numbers derived from `sys/kern/syscalls.master`.
 
 ### Completeness
 
-The tables SHALL include every syscall defined in the source for that OS/architecture, including:
-
-- Deprecated syscalls (marked with a comment indicating deprecation).
-- Architecture-specific syscalls (e.g., `arch_prctl` on x86_64, `cacheflush` on MIPS/ARM).
-- Multiplexed syscalls where applicable (e.g., `socketcall` on Linux i686 if the architecture uses it instead of individual socket syscalls).
+The tables SHALL include every syscall that appears in any blob type's implementation. Architecture-specific variants (e.g., `mmap2` on 32-bit, `openat` on aarch64) are tracked as separate entries where the syscall number differs.
 
 ## Acceptance Criteria
 
-1. A table exists for every supported OS/architecture combination.
-2. Every syscall number in each table matches the cited kernel version's authoritative source.
-3. Each table file contains a version citation and extraction date.
-4. No syscall is missing from the table relative to the cited source.
+1. Every syscall used by blob code has a correct number for every supported OS/architecture combination.
+2. Numbers are generated from the registry — no hand-maintained number tables.
+3. `tools/generate.py --check` verifies generated headers match the registry.
+4. FreeBSD numbers are architecture-independent where the OS defines them as such.
 
 ## Verified By
 - TEST-002

@@ -48,8 +48,10 @@ def _qemu_blob_test_impl(ctx):
     # Generate the test script.
     script = ctx.actions.declare_file(ctx.attr.name + "_qemu_test.sh")
 
-    # For native x86_64 on x86_64 host, run directly without QEMU.
-    if arch == "x86_64":
+    host_arch = ctx.attr.host_arch
+
+    # Run natively when target arch matches host, otherwise use QEMU.
+    if arch == host_arch:
         run_cmd = "./{runner} ./{blob}".format(
             runner = runner.short_path,
             blob = blob_file.short_path,
@@ -109,6 +111,10 @@ qemu_blob_test = rule(
             values = ["linux", "freebsd", "windows"],
             doc = "Type of test runner (determines verification strategy).",
         ),
+        "host_arch": attr.string(
+            default = "x86_64",
+            doc = "Host architecture name. Tests matching this arch run natively without QEMU.",
+        ),
     },
     doc = "Runs a blob under a test runner via QEMU user-static.",
 )
@@ -119,6 +125,7 @@ def qemu_blob_test_suite(
         blobs,
         arch,
         runner_type,
+        host_arch = "x86_64",
         **kwargs):
     """Creates a qemu_blob_test for each blob in the list.
 
@@ -128,6 +135,7 @@ def qemu_blob_test_suite(
         blobs: Dict of {blob_name: blob_label}.
         arch: Target architecture.
         runner_type: Runner type (linux/freebsd/windows).
+        host_arch: Host architecture for native execution (default: x86_64).
         **kwargs: Passed to each test.
     """
     tests = []
@@ -139,6 +147,7 @@ def qemu_blob_test_suite(
             blob = blob_label,
             arch = arch,
             runner_type = runner_type,
+            host_arch = host_arch,
             **kwargs
         )
         tests.append(test_name)

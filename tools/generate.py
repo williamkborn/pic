@@ -571,6 +571,13 @@ def _gen_runner_c(os_name: str) -> str:
 
 def _gen_platforms_build() -> str:
     lines = [_BZL, '\npackage(default_visibility = ["//visibility:public"])\n\n']
+
+    lines.append(
+        "# Custom target_os instead of @platforms//os:os — the blob OS is a\n"
+        "# cross-compilation target property, not the execution OS. A Linux host\n"
+        "# builds FreeBSD and Windows blobs; using @platforms//os would confuse\n"
+        "# Bazel's toolchain resolution. This constraint is for blob target selection.\n"
+    )
     lines.append('constraint_setting(name = "target_os")\n\n')
 
     for os_name in OPERATING_SYSTEMS:
@@ -670,6 +677,33 @@ def _gen_bazelrc_block() -> str:
 
 
 # ============================================================
+# Bazel: bazel/platforms.bzl — BLOB_TARGETS dict
+# ============================================================
+
+
+def _gen_platforms_bzl() -> str:
+    lines = [
+        _BZL,
+        textwrap.dedent("""\
+
+        \"\"\"Platform target map — single source of truth for OS/arch combinations.
+
+        Loaded by blob.bzl and other rules that need the full platform matrix.
+        \"\"\"
+
+        BLOB_TARGETS = {
+        """),
+    ]
+    for os_name, os_def in OPERATING_SYSTEMS.items():
+        for arch_name in os_def.architectures:
+            key = f"{os_name}:{arch_name}"
+            val = f"//platforms:{os_name}_{arch_name}"
+            lines.append(f'    "{key}": "{val}",\n')
+    lines.append("}\n")
+    return "".join(lines)
+
+
+# ============================================================
 # Blob auto-discovery: payload BUILD.bazel
 # ============================================================
 
@@ -729,6 +763,7 @@ def main() -> int:
         # Bazel
         (PROJECT_ROOT / "platforms/BUILD.bazel", _gen_platforms_build()),
         (PROJECT_ROOT / "toolchains/BUILD.bazel", _gen_toolchains_build()),
+        (PROJECT_ROOT / "bazel/platforms.bzl", _gen_platforms_bzl()),
         # Blob targets
         (PROJECT_ROOT / "src/payload/BUILD.bazel", _gen_payload_build()),
     ]

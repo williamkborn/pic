@@ -139,7 +139,14 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "all_files",
-    srcs = glob(["**"]),
+    srcs = glob([
+        "bin/{triple}-*",
+        "bin/toolchain-wrapper",
+        "lib/gcc/{triple}/**",
+        "libexec/gcc/{triple}/**",
+        "{triple}/include/**",
+        "{triple}/lib/**",
+    ]),
 )
 
 filegroup(
@@ -179,6 +186,12 @@ filegroup(
     srcs = glob(["bin/{triple}-strip"]),
 )
 
+# DWP (DWARF packaging) is unused — dwp tool points to /usr/bin/false.
+filegroup(
+    name = "dwp_files",
+    srcs = [],
+)
+
 bootlin_config(name = "toolchain_config")
 
 cc_toolchain(
@@ -190,7 +203,7 @@ cc_toolchain(
     ar_files = ":ar_files",
     objcopy_files = ":objcopy_files",
     strip_files = ":strip_files",
-    dwp_files = ":all_files",
+    dwp_files = ":dwp_files",
 )
 """
 
@@ -215,10 +228,17 @@ def _bootlin_toolchain_repo_impl(ctx):
     }
     if sha256:
         download_kwargs["sha256"] = sha256
-    else:
+    elif ctx.os.environ.get("PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"):
         # buildifier: disable=print
         print("WARNING: Bootlin toolchain '{}' has no SHA256 pin. ".format(toolchain_id) +
               "Builds are not reproducible. Set sha256 in MODULE.bazel.")
+    else:
+        fail(
+            "Bootlin toolchain '{}' has no SHA256 pin. ".format(toolchain_id) +
+            "Unpinned toolchains are a supply-chain risk. Either:\n" +
+            "  1. Run with PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS=1 to fetch and print the hash, or\n" +
+            "  2. Set sha256 in MODULE.bazel after first fetch.",
+        )
 
     result = ctx.download_and_extract(**download_kwargs)
 
@@ -251,6 +271,7 @@ bootlin_toolchain_repo = repository_rule(
         "target_cpu": attr.string(mandatory = True),
         "toolchain_id": attr.string(mandatory = True),
     },
+    environ = ["PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"],
 )
 
 # --- Module extension ---
