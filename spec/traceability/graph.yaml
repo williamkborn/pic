@@ -1,6 +1,9 @@
 # picblobs Specification Graph
 # Generated: 2026-03-21
 # SGM Conformance Level: 1 (Minimal SGM)
+#
+# Note: implemented_by edges are intentionally absent — they will be
+# populated as implementation artifacts are created.
 
 # ============================================================
 # Vision Artifacts
@@ -15,7 +18,7 @@ VIS-002:
   type: vision
   title: Scope and Non-Goals
   file: vision/VIS-002-scope-and-non-goals.md
-  derives_from: [VIS-001]
+  refines: [VIS-001]
 
 # ============================================================
 # Requirement Artifacts
@@ -215,6 +218,7 @@ ADR-007:
   title: pyelftools for ELF-to-Blob Extraction
   file: decisions/ADR-007-pyelftools-extraction.md
   related_to: [REQ-013]
+  superseded_by: [ADR-018]
 
 ADR-008:
   type: decision
@@ -263,6 +267,43 @@ ADR-015:
   title: Instruction Cache Flush via Syscall
   file: decisions/ADR-015-icache-flush-via-syscall.md
   related_to: [REQ-007, REQ-008, REQ-010]
+
+ADR-016:
+  type: decision
+  title: Bazel 9 with bzlmod and Module Extensions for Project Structure
+  file: decisions/ADR-016-bazel-9-bzlmod-project-structure.md
+  related_to: [REQ-011, ADR-002]
+
+ADR-017:
+  type: decision
+  title: clang-tidy and cppcheck for C Linting and Static Analysis
+  file: decisions/ADR-017-c-linting-and-static-analysis.md
+  related_to: [REQ-011]
+
+ADR-018:
+  type: decision
+  title: Ship .so Files in Wheel with Runtime pyelftools Extraction
+  file: decisions/ADR-018-so-shipping-runtime-extraction.md
+  supersedes: [ADR-007]
+  related_to: [REQ-013]
+
+ADR-019:
+  type: decision
+  title: CLI Runner and Debug Facility
+  file: decisions/ADR-019-runner-debug-facility.md
+  related_to: [REQ-011, ADR-010, ADR-018]
+
+ADR-020:
+  type: decision
+  title: MIPS GOT Self-Relocation via Trampoline
+  file: decisions/ADR-020-mips-self-relocation.md
+  related_to: [REQ-001, REQ-004]
+
+ADR-021:
+  type: decision
+  title: Embedded Cross-Compiled Test Runners
+  file: decisions/ADR-021-embedded-cross-compiled-runners.md
+  related_to: [ADR-010, ADR-019]
 
 # ============================================================
 # Design Model Artifacts

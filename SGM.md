@@ -569,6 +569,19 @@ When replacing requirements or design intent:
 - replacement artifacts MUST declare supersession
 - trace links SHOULD remain historically valid
 
+### 18.4 Implementation Discovery
+
+When implementation work reveals that a specification artifact is infeasible, incomplete, or incorrect, the finding MUST flow back into the specification through a formal amendment rather than silent divergence.
+
+The RECOMMENDED process is:
+
+1. The implementer documents the discovery: what was attempted, what failed or proved infeasible, and why.
+2. The affected specification artifact is updated or superseded to reflect the corrected understanding.
+3. Dependent artifacts (decisions, models, verification) are updated as needed to maintain graph coherency.
+4. The specification amendment and the implementation change MAY land in the same change set or in explicitly linked change sets.
+
+Implementation discoveries are a normal part of the development process, not a failure of specification. The purpose of this feedback loop is to ensure the graph remains an accurate representation of intent rather than an aspirational document that silently diverges from reality.
+
 ## 19. Review Process
 
 Projects using SGM SHOULD review changes at the specification layer, not only at the implementation layer.

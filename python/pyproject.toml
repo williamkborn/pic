@@ -1,0 +1,36 @@
+[project]
+name = "picblobs"
+version = "0.1.0"
+description = "Position-independent code blob library"
+requires-python = ">=3.10"
+license = "MIT"
+readme = "README.md"
+
+dependencies = [
+    "pyelftools>=0.31",
+]
+
+[project.scripts]
+picblobs = "picblobs.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pycparser>=2.22",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["picblobs"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Blob .so files and cross-compiled runners, staged by `picblobs build`.
+"picblobs/_blobs" = "picblobs/_blobs"
+"picblobs/_runners" = "picblobs/_runners"
+"picblobs/_generated" = "picblobs/_generated"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

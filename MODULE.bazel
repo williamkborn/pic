@@ -1,0 +1,93 @@
+"""picblobs — position-independent code blob library."""
+
+module(
+    name = "picblobs",
+    version = "0.1.0",
+)
+
+# --- C/C++ rules ---
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# --- Python rules ---
+bazel_dep(name = "rules_python", version = "1.7.0")
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+pip.parse(
+    hub_name = "pip",
+    python_version = "3.11",
+    requirements_lock = "//python:requirements.txt",
+)
+
+use_repo(pip, "pip")
+
+# --- Bootlin cross-compilation toolchains ---
+bootlin = use_extension("//toolchains:bootlin.bzl", "bootlin")
+
+bootlin.toolchain(
+    name = "x86_64",
+    arch = "x86-64",
+    extra_cflags = ["-march=x86-64"],
+    sha256 = "",  # TODO: pin after first fetch
+    triple = "x86_64-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "i686",
+    arch = "x86-i686",
+    extra_cflags = ["-march=i686"],
+    sha256 = "",  # TODO: pin after first fetch
+    triple = "i686-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "aarch64",
+    arch = "aarch64",
+    extra_cflags = [],
+    sha256 = "",  # TODO: pin after first fetch
+    triple = "aarch64-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "armv5",
+    arch = "armv5-eabi",
+    extra_cflags = ["-march=armv5te"],
+    sha256 = "",  # TODO: pin after first fetch
+    triple = "arm-buildroot-linux-gnueabi",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "mipsel32",
+    arch = "mips32el",
+    extra_cflags = ["-mips32", "-EL"],
+    sha256 = "",  # TODO: pin after first fetch
+    triple = "mipsel-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "mipsbe32",
+    arch = "mips32",
+    extra_cflags = ["-mips32", "-EB"],
+    sha256 = "",  # TODO: pin after first fetch
+    triple = "mips-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+# Register all Bootlin toolchains.
+use_repo(
+    bootlin,
+    "bootlin_aarch64",
+    "bootlin_armv5",
+    "bootlin_i686",
+    "bootlin_mipsbe32",
+    "bootlin_mipsel32",
+    "bootlin_x86_64",
+)
+
+register_toolchains("//toolchains:all")

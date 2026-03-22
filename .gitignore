@@ -1,1 +1,31 @@
 .DS_Store
+
+# Bazel
+/bazel-*
+/.bazel-cache/
+MODULE.bazel.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.whl
+.venv/
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Core dumps
+*.core
+
+# Binaries
+python/picblobs/_runners/**/runner
+python/picblobs/_blobs/**/*.so
+

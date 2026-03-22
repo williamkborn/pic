@@ -1,0 +1,82 @@
+"""Python package build targets."""
+
+load("@pip//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//bazel:uv.bzl", "uv_wheel")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "pyproject.toml",
+    "requirements.txt",
+])
+
+filegroup(
+    name = "package_dir",
+    srcs = glob(["**"]),
+)
+
+# --- Library ---
+
+py_library(
+    name = "picblobs",
+    srcs = glob(["picblobs/**/*.py"]),
+    imports = ["."],
+    deps = [
+        requirement("pyelftools"),
+    ],
+)
+
+# --- Tests ---
+
+py_test(
+    name = "test_extractor",
+    size = "small",
+    srcs = ["tests/test_extractor.py"],
+    main = "tests/test_extractor.py",
+    imports = ["."],
+    deps = [
+        ":picblobs",
+        requirement("pytest"),
+    ],
+    data = ["tests/conftest.py"],
+)
+
+py_test(
+    name = "test_runner",
+    size = "small",
+    srcs = ["tests/test_runner.py"],
+    main = "tests/test_runner.py",
+    imports = ["."],
+    deps = [
+        ":picblobs",
+        requirement("pytest"),
+    ],
+    data = [
+        "tests/conftest.py",
+        "//tests/runners/linux:runner",
+    ],
+)
+
+py_test(
+    name = "test_cli",
+    size = "small",
+    srcs = ["tests/test_cli.py"],
+    main = "tests/test_cli.py",
+    imports = ["."],
+    deps = [
+        ":picblobs",
+        requirement("pytest"),
+    ],
+    data = ["tests/conftest.py"],
+)
+
+# The wheel target — depends on all blobs being built first.
+# Uncomment and populate `blobs` once blob targets exist.
+# uv_wheel(
+#     name = "wheel",
+#     package_dir = ":package_dir",
+#     blobs = ["//src/blob:all"],
+#     generated_srcs = ["//tools:config_codegen"],
+#     wheel_name = "picblobs-0.1.0-py3-none-any.whl",
+# )

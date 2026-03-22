@@ -1,0 +1,12 @@
+"""Build tools — config codegen."""
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Config codegen — pycparser-based C header → Python ctypes tool (REQ-014).
+py_binary(
+    name = "config_codegen",
+    srcs = ["config_codegen.py"],
+    main = "config_codegen.py",
+)

@@ -1,0 +1,55 @@
+# picblobs Bazel configuration
+
+# Build settings
+build --incompatible_enable_cc_toolchain_resolution
+build --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+# Freestanding C compilation defaults (applied via toolchain, listed here for reference)
+# -ffreestanding -nostdlib -nostartfiles -fno-builtin -fPIC
+# -ffunction-sections -fdata-sections -Os -Wall -Werror
+
+# Linker: dead-code elimination is handled by the toolchain config
+# via -Wl,--gc-sections (not --linkopt, which bypasses gcc driver).
+
+# Strict sandbox
+build --sandbox_default_allow_network=false
+
+# Reproducibility
+build --stamp=false
+build --nolegacy_external_runfiles
+
+# Remote caching (uncomment and configure for CI)
+# build --remote_cache=grpcs://cache.example.com
+
+# Platform configs — use with: bazel build --config=linux_x86_64 //...
+build:linux_x86_64     --platforms=//platforms:linux_x86_64
+build:linux_i686        --platforms=//platforms:linux_i686
+build:linux_aarch64     --platforms=//platforms:linux_aarch64
+build:linux_armv5_arm   --platforms=//platforms:linux_armv5_arm
+build:linux_armv5_thumb --platforms=//platforms:linux_armv5_thumb
+build:linux_mipsel32    --platforms=//platforms:linux_mipsel32
+build:linux_mipsbe32    --platforms=//platforms:linux_mipsbe32
+
+build:freebsd_x86_64     --platforms=//platforms:freebsd_x86_64
+build:freebsd_i686        --platforms=//platforms:freebsd_i686
+build:freebsd_aarch64     --platforms=//platforms:freebsd_aarch64
+build:freebsd_armv5_arm   --platforms=//platforms:freebsd_armv5_arm
+build:freebsd_armv5_thumb --platforms=//platforms:freebsd_armv5_thumb
+build:freebsd_mipsel32    --platforms=//platforms:freebsd_mipsel32
+build:freebsd_mipsbe32    --platforms=//platforms:freebsd_mipsbe32
+
+build:windows_x86_64   --platforms=//platforms:windows_x86_64
+build:windows_aarch64   --platforms=//platforms:windows_aarch64
+
+# Lint config
+build:lint --aspects=//bazel:lint.bzl%clang_tidy_aspect
+build:lint --output_groups=lint_results
+
+# Test settings
+test --test_output=errors
+test --test_verbose_timeout_warnings
+
+# CI settings
+build:ci --config=lint
+build:ci --remote_download_minimal
+test:ci --test_output=all

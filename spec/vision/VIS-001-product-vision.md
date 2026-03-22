@@ -3,6 +3,10 @@
 ## Status
 Accepted
 
+## Specification Intent
+
+This specification describes the aspirational end-state of the picblobs system. Requirements, design models, and verification artifacts define the complete intended capability of the project at full maturity — not a scoped delivery milestone. Individual features and subsystems will be implemented incrementally, and intermediate states of the codebase are not expected to satisfy every requirement simultaneously. The specification exists to ensure that the full vision is captured durably so that incremental implementation decisions remain coherent with the intended whole.
+
 ## Mission
 
 picblobs is a general-purpose Python library that provides pre-compiled, position-independent code (PIC) blobs for loading and executing arbitrary payloads on arbitrary operating systems and architectures. It exists so that any project needing raw PIC stubs — offensive security tooling, security research, embedded systems testing, fuzzing harnesses, or cross-platform loaders — can obtain correct, tested blobs through a simple Python API without hand-writing shellcode.

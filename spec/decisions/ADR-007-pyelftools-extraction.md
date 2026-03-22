@@ -1,7 +1,7 @@
 # ADR-007: pyelftools for ELF-to-Blob Extraction
 
 ## Status
-Accepted
+Superseded by ADR-018
 
 ## Context
 

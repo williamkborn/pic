@@ -1,131 +1,111 @@
 # MOD-003: Blob Binary Layout
 
 ## Status
-Accepted
+Accepted (amended Sprint 1)
 
 ## Description
 
-This model describes the internal memory layout of a picblobs PIC blob at three stages: as a linked ELF, as an extracted flat binary, and as a fully-assembled blob with config struct appended by the Python API.
+This model describes the memory layout of a PIC blob at each stage of its lifecycle, from linked shared object to runtime execution.
 
-## Stage 1: Linked ELF (output of linker)
+## Stage 1: Linked Shared Object (.so)
 
-```
-+==========================================+
-| ELF Header                               |  <- Standard ELF header (not part of blob)
-+------------------------------------------+
-| Program Headers                          |  <- Describe segments (not part of blob)
-+==========================================+
-| .text                                    |  <- Entry point at offset 0 of this section
-|   .text.entry (blob entry function)      |     Ordered first by linker script
-|   .text.* (all other code)               |     Merged from -ffunction-sections
-+------------------------------------------+
-| .rodata                                  |  <- String literals, constant tables,
-|   Precomputed DJB2 hashes (Windows)      |     hash values, lookup tables
-|   Syscall number constants (if in rodata)|
-+------------------------------------------+
-| .data                                    |  <- Mutable initialized globals
-|   (typically empty or very small)        |     Blobs should prefer stack variables
-+------------------------------------------+
-| .bss                                     |  <- Zero-initialized globals
-|   (typically empty or very small)        |     Used for resolved function pointer cache
-+------------------------------------------+
-| .config                                  |  <- Config section
-|   __config_start symbol points here      |     Placeholder bytes matching struct size
-|   Config struct placeholder (zeroed)     |     C code references via extern symbol
-|   __config_end symbol points here        |
-+==========================================+
-| Section Headers                          |  <- ELF section metadata (not part of blob)
-| Symbol Table                             |  <- Contains __blob_start, __blob_end, etc.
-+==========================================+
-
-Linker-exported symbols:
-  __blob_start  = start of .text
-  __blob_end    = end of .bss (or .data if no .bss)
-  __config_start = start of .config
-  __config_end   = end of .config
-```
-
-## Stage 2: Extracted Flat Binary (output of pyelftools tool)
+The Bazel build produces an ELF shared object with a custom linker script controlling section placement. All sections are 16-byte aligned, base address 0.
 
 ```
-Offset 0x0000:
-+==========================================+
-| .text content                            |  <- Raw machine code, entry at offset 0
-|   Entry function                         |
-|   Syscall wrappers (only used ones)      |
-|   PEB walk (Windows blobs only)          |
-|   Blob-specific logic                    |
-+------------------------------------------+
-| .rodata content                          |  <- Immediately follows .text
-|   Constants, hash tables                 |
-+------------------------------------------+
-| .data content (if any)                   |  <- Follows .rodata
-+------------------------------------------+
-| .bss zero bytes (if any)                 |  <- Follows .data (zeros in flat binary)
-+==========================================+
-  ^                                        ^
-  |                                        |
-  blob_start (offset 0)                    config_offset (recorded in metadata)
+Offset  Section              Content                    Macro
+──────  ───────────────────  ─────────────────────────  ──────────
+0x0000  .text.pic_trampoline MIPS self-reloc trampoline (auto, MIPS only)
+        .text.pic_entry      Entry point (_start)       PIC_ENTRY
+        .text.pic_code       Helper functions           PIC_TEXT
+        .text                Remaining code
+        .plt                 PLT stubs (if any)
+        .rodata              Read-only data             PIC_RODATA
+        .got                 Global offset table
+        .data                Initialized data           PIC_DATA
+        .data.rel.ro         Relocation read-only data
+        .bss                 Zero-initialized data      PIC_BSS
+──────  ── __blob_end ──────────────────────────────────────────────
+        .config              Config struct              PIC_CONFIG
+──────  ───────────────────────────────────────────────────────────
 
-Metadata JSON emitted alongside:
-{
-  "blob_size": <size of this flat binary>,
-  "config_offset": <byte offset where config should be appended>,
-  "entry_offset": 0,
-  "sections": [...],
-  "target_os": "linux",
-  "target_arch": "x86_64",
-  "blob_type": "alloc_jump",
-  "build_hash": "<sha256>"
-}
-
-Note: config_offset == blob_size in the normal case (config is appended
-at the end). They may differ if .bss is included in the binary but the
-config attaches after .bss.
+Non-loadable (metadata, not extracted):
+        .symtab              Symbol table (for pyelftools)
+        .strtab              String table
+        .shstrtab            Section header strings
 ```
 
-## Stage 3: Fully Assembled Blob (output of Python API `.build()`)
+### Symbols
+
+| Symbol | Location | Purpose |
+|---|---|---|
+| `__blob_start` | Start of `.text.pic_trampoline` | First byte of blob code |
+| `__blob_end` | After `.bss` | End of blob data |
+| `__config_start` | Start of `.config` | Where config struct begins |
+| `__got_start` | Start of `.got` | GOT bounds for MIPS self-relocation |
+| `__got_end` | End of `.got` | GOT bounds for MIPS self-relocation |
+
+### Discarded Sections
+
+The linker script discards: `.comment`, `.note.*`, `.eh_frame`, `.eh_frame_hdr`, `.hash`, `.gnu.hash`, `.dynsym`, `.dynstr`, `.dynamic`, `.rela.*`, `.rel.*`, `.interp`.
+
+## Stage 2: Extracted Flat Binary
+
+At runtime, `picblobs._extractor.extract()` reads the `.so` via pyelftools and produces a `BlobData` object containing:
+
+- `code`: bytes from `__blob_start` to `__blob_end` (only SHF_ALLOC sections)
+- `config_offset`: `__config_start - __blob_start`
+- `sections`: dict of section names to (offset, size) tuples
+- `sha256`: hash of the code bytes
+
+The extraction reads only allocated sections (SHF_ALLOC flag), skipping `.symtab`/`.strtab` which have `sh_addr=0`.
+
+## Stage 3: Prepared Blob (for execution)
+
+The runner (or Python API) prepares a flat binary file:
 
 ```
-Offset 0x0000:
-+==========================================+
-| Extracted flat binary                    |  <- Copied from wheel's bundled .bin file
-| (code + rodata + data + bss)             |
-+==========================================+
-| Config struct (serialized by Python)     |  <- Appended at config_offset
-|   version: uint16                        |     Serialized via struct.pack (ADR-009)
-|   [blob-type-specific fixed fields]      |     Native endianness of target arch
-|   (includes length fields for each       |
-|    variable-length region below)         |
-|------------------------------------------|
-|   [variable-length trailing data]        |     Inline, immediately after fixed fields
-|   (payload bytes, paths, etc.)           |     In declaration order, no padding
-|   Variable data runs to end of config    |
-+==========================================+
-
-This is the final bytes object returned by .build().
-The blob's __config_start reference (a PC-relative offset
-baked in at compile time) points exactly to the start of
-the config struct region.
+[extracted code bytes][config struct at config_offset]
 ```
 
-## PC-Relative Config Access
+The test runner mmaps this into an RWX region and jumps to offset 0.
 
-The C code accesses the config struct as:
+## Position Independence
 
-```
-(conceptual, not actual code)
-extern struct config __config_start;
-// The compiler emits a PC-relative load to the offset
-// where .config was placed by the linker script.
-// Since the blob is position-independent, this offset
-// is relative to the current instruction pointer and
-// remains valid regardless of where the blob is loaded.
-```
+### x86_64, aarch64, ARM (armv5)
 
-The critical invariant: the byte distance from any instruction in `.text` to `__config_start` is fixed at link time and does not change when the blob is loaded at an arbitrary address. This is guaranteed by PIC compilation (`-fPIC`) and the linker script's deterministic section ordering.
+These architectures use PC-relative addressing for data references. No relocation needed at load time — the code works at any address.
+
+### i686
+
+Uses `@GOTOFF` relative to a PC-discovered GOT base. The GOT is in the blob, so the offset is constant. Works at any address without patching.
+
+### MIPS32 (mipsel, mipsbe)
+
+MIPS32 has no PC-relative data instructions. PIC code uses the GOT via `$gp`, and GOT entries contain link-time absolute addresses.
+
+The blob solves this with a self-relocation trampoline at byte 0:
+
+1. `.text.pic_trampoline` uses `bal` to discover runtime PC
+2. Computes `$t9` = runtime address of `_start`
+3. Passes runtime base in `$s0`
+4. Calls `_start` — GCC's `.cpload $t9` sets `$gp` correctly
+5. `PIC_SELF_RELOCATE()` patches GOT entries by adding the base delta
+
+After relocation, GOT-relative data accesses resolve to correct runtime addresses.
+
+## Section Placement Macros
+
+Source files use macros from `picblobs/section.h`:
+
+| Macro | Section | Purpose |
+|---|---|---|
+| `PIC_ENTRY` | `.text.pic_entry` | Entry point (one per blob) |
+| `PIC_TEXT` | `.text.pic_code` | General code |
+| `PIC_RODATA` | `.rodata.pic` | Read-only data (strings, tables) |
+| `PIC_DATA` | `.data.pic` | Writable initialized data |
+| `PIC_BSS` | `.bss.pic` | Zero-initialized data |
+| `PIC_CONFIG` | `.config` | Config struct |
 
 ## Derives From
 - REQ-012
-- REQ-013
-- REQ-014
+- ADR-003

@@ -1,0 +1,12 @@
+"""Test payloads — minimal PIC programs for verifying the blob pipeline."""
+
+load("//bazel:blob.bzl", "pic_blob")
+
+package(default_visibility = ["//visibility:public"])
+
+pic_blob(
+    name = "hello",
+    srcs = ["hello.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)

@@ -1,0 +1,3 @@
+"""Top-level test targets for picblobs."""
+
+package(default_visibility = ["//visibility:public"])

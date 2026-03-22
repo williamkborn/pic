@@ -59,8 +59,8 @@ edge_types:
 
   refines:
     description: "Artifact provides a more specific or decomposed form of another."
-    valid_sources: [requirement]
-    valid_targets: [requirement]
+    valid_sources: [vision, requirement]
+    valid_targets: [vision, requirement]
 
   constrains:
     description: "Artifact imposes rules or limits on another."

@@ -1,0 +1,3 @@
+"""Source tree root — see subdirectories for build targets."""
+
+package(default_visibility = ["//visibility:public"])

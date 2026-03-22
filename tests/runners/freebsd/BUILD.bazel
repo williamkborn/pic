@@ -1,0 +1,28 @@
+"""FreeBSD test runners — test-mode shim verification."""
+
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//bazel:lint.bzl", "cppcheck_test")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "runner",
+    srcs = ["runner.c"],
+    copts = [
+        "-ffreestanding",
+        "-fno-builtin",
+    ],
+    linkopts = [
+        "-nostdlib",
+        "-nostartfiles",
+    ],
+    deps = [
+        "//src/include/picblobs:headers",
+    ],
+)
+
+cppcheck_test(
+    name = "runner_cppcheck",
+    srcs = ["runner.c"],
+    include_dirs = ["src/include"],
+)

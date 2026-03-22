@@ -3,7 +3,7 @@
 ## Status
 Accepted
 
-## Derives From
+## Refines
 - VIS-001
 
 ## Scope
