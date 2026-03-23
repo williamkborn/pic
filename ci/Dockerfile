@@ -1,19 +1,21 @@
 # picblobs development environment — Fedora 43
 #
-# Includes: Bazel 9, Python 3.14, QEMU user-static (all arches),
-# clang-format, clang-tidy, uv, and all Python dev dependencies.
+# Always targets linux/amd64 — Bazel, Bootlin toolchains, and the
+# cross-compiled blob runners are x86_64 binaries.  On Apple Silicon
+# this runs under Rosetta / QEMU transparently via Docker Desktop.
 #
 # Build:
-#   docker build -t picblobs-dev -f ci/Dockerfile .
+#   docker build --platform linux/amd64 -t picblobs-dev -f ci/Dockerfile .
 #
 # Run interactive:
-#   docker run --rm -it -v "$PWD":/workspace picblobs-dev
+#   docker run --platform linux/amd64 --rm -it -v "$PWD":/workspace picblobs-dev
 #
 # Run full CI check:
-#   docker run --rm -v "$PWD":/workspace picblobs-dev bash -c \
+#   docker run --platform linux/amd64 --rm -v "$PWD":/workspace picblobs-dev bash -c \
 #     'cd /workspace && python tools/generate.py --check && python tools/fmt.py --check && python tools/stage_blobs.py && python -m pytest python/tests/ -v'
 
-FROM registry.fedoraproject.org/fedora:43
+# check=skip=FromPlatformFlagConstDisallowed
+FROM --platform=linux/amd64 registry.fedoraproject.org/fedora:43
 
 # Avoid interactive prompts during install.
 ENV DNFP="dnf -y --setopt=install_weak_deps=False"
@@ -65,6 +67,15 @@ RUN for bin in \
 # Bootlin toolchain SHA256 hashes are not yet pinned in MODULE.bazel.
 # Allow unpinned fetches so Bazel can download the cross-compilers.
 ENV PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS=1
+
+# ── Non-root user ────────────────────────────────────────────────
+# dev.sh maps the container UID/GID to match the host user so that
+# files created inside the container are owned correctly on the host.
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g "$GID" dev 2>/dev/null || true \
+    && useradd -m -u "$UID" -g "$GID" -s /bin/bash dev
+USER dev
 
 # ── Workspace ─────────────────────────────────────────────────────
 WORKDIR /workspace
