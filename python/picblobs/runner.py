@@ -10,6 +10,7 @@ Manages the lifecycle of running a PIC blob under QEMU user-static:
 from __future__ import annotations
 
 import dataclasses
+import functools
 import logging
 import platform
 import shutil
@@ -141,6 +142,39 @@ def prepare_blob(
 
     blob_file.write_bytes(bytes(data))
     return blob_file
+
+
+# Architectures whose PIC blobs write to the GOT at runtime.
+# QEMU's self-modifying-code detection for these targets crashes under
+# Rosetta 2 (Apple Silicon Docker Desktop) because the GOT lives on the
+# same page as executable code.
+_QEMU_MIPS_ARCHES: frozenset[str] = frozenset({"mipsel32", "mipsbe32"})
+
+
+@functools.cache
+def is_rosetta() -> bool:
+    """Detect Rosetta 2 x86_64 emulation (e.g. Docker Desktop on Apple Silicon).
+
+    Under Rosetta, /proc/cpuinfo reports ``vendor_id : VirtualApple``,
+    whereas real x86_64 hardware reports GenuineIntel or AuthenticAMD.
+    """
+    if platform.machine() != "x86_64":
+        return False
+    try:
+        cpuinfo = Path("/proc/cpuinfo").read_text()
+    except (FileNotFoundError, OSError):
+        return False
+    return "VirtualApple" in cpuinfo
+
+
+def is_arch_skip_rosetta(arch: str) -> bool:
+    """Return True if *arch* should be skipped under Rosetta.
+
+    QEMU MIPS user-static crashes when running PIC blobs that perform GOT
+    self-relocation on the same page as executable code.  This is a known
+    QEMU/Rosetta incompatibility — the blobs work on native x86_64 hosts.
+    """
+    return arch in _QEMU_MIPS_ARCHES and is_rosetta()
 
 
 def _is_native_arch(arch: str) -> bool:

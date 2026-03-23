@@ -200,7 +200,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     Discovers what's in the package — no build system knowledge.
     """
     from picblobs import list_blobs
-    from picblobs.runner import run_so
+    from picblobs.runner import is_arch_skip_rosetta, run_so
 
     blob_type = args.type
     target_os = args.os
@@ -226,10 +226,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     passed = 0
     failed = 0
+    skipped = 0
     errors = []
 
     blob_dir = Path(__file__).parent / "_blobs"
     for _, os_name, arch in available:
+        if is_arch_skip_rosetta(arch):
+            log.info("  %-14s  SKIP (QEMU %s crashes under Rosetta)", arch, arch)
+            skipped += 1
+            continue
+
         so = blob_dir / os_name / arch / f"{blob_type}.so"
         try:
             result = run_so(str(so), runner_type=os_name, timeout=args.timeout)
@@ -246,11 +252,13 @@ def cmd_verify(args: argparse.Namespace) -> int:
             failed += 1
             errors.append(arch)
 
-    total = passed + failed
+    total = passed + failed + skipped
+    parts = [f"{passed}/{total} passed"]
+    if skipped:
+        parts.append(f"{skipped} skipped")
     if errors:
-        log.info("%d/%d passed  (failed: %s)", passed, total, ", ".join(errors))
-    else:
-        log.info("%d/%d passed", passed, total)
+        parts.append(f"failed: {', '.join(errors)}")
+    log.info("  ".join(parts))
     return 1 if failed else 0
 
 
