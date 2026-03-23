@@ -29,10 +29,57 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 
 - [Bazel 9](https://bazel.build/) (see `.bazelversion`)
 - [QEMU user-static](https://www.qemu.org/) for cross-architecture testing
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) for Python tooling
+- Python 3.10+
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip/venv
 
 Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/).
+
+## Python environment setup
+
+All Python commands in this README assume you have an activated environment
+with the project's dependencies installed. Pick **one** of the options below.
+
+### Option A: uv (recommended)
+
+[uv](https://github.com/astral-sh/uv) manages the virtualenv and
+dependencies in one step:
+
+```bash
+cd python
+uv venv                     # creates .venv/
+uv pip install -e '.[dev]'  # installs picblobs + dev deps (pytest, pycparser, …)
+source .venv/bin/activate
+```
+
+### Option B: pip + venv
+
+```bash
+cd python
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+```
+
+### Option C: Docker / Podman (no local setup)
+
+A Fedora 43 dev container with all dependencies pre-installed is provided
+in `ci/`. It works on both x86_64 and Apple Silicon (runs as linux/amd64
+under Rosetta):
+
+```bash
+ci/dev.sh                   # interactive shell inside the container
+ci/dev.sh python -m picblobs verify   # run a command and exit
+```
+
+See `ci/Dockerfile` for the full environment definition.
+
+### Verifying your environment
+
+After setup, you should be able to run:
+
+```bash
+python -c "import picblobs; print(picblobs.__version__)"
+```
 
 ## Quick start
 
