@@ -54,9 +54,10 @@ Each OS/architecture combination produces 6 blob variants. The 6 blob types are:
 | armv5 (Thumb) | YES | YES | YES | YES | YES | YES |
 | mipsel32 | YES | YES | YES | YES | YES | YES |
 | mipsbe32 | YES | YES | YES | YES | YES | YES |
-| s390x | YES | YES | YES | YES | YES | YES |
 
-**Total FreeBSD blobs: 8 architectures x 6 blob types = 48**
+**Total FreeBSD blobs: 7 architectures x 6 blob types = 42**
+
+Note: s390x FreeBSD support is deferred (see ADR-023). FreeBSD does not officially support s390x, so there is no upstream ABI to target.
 
 ### Windows
 
@@ -69,9 +70,9 @@ Each OS/architecture combination produces 6 blob variants. The 6 blob types are:
 
 ### Grand Total
 
-**108 blob binaries** in the wheel.
+**102 blob binaries** in the wheel (48 Linux + 42 FreeBSD + 12 Windows).
 
-Note: The total is 108 because both Linux/FreeBSD and Windows have 6 blob types per architecture, but the reflective loader type differs (ELF vs PE). There is no Reflective ELF blob for Windows and no Reflective PE blob for Linux/FreeBSD.
+Note: The reflective loader type differs per OS family (ELF vs PE). There is no Reflective ELF blob for Windows and no Reflective PE blob for Linux/FreeBSD. FreeBSD has 7 architectures (s390x deferred per ADR-023).
 
 ### Architecture Details
 
@@ -104,8 +105,8 @@ Adding a new architecture requires:
 
 ## Acceptance Criteria
 
-1. The Bazel build produces exactly 108 blob binaries matching the matrix above.
-2. The Python wheel contains all 108 blobs and their metadata.
+1. The Bazel build produces exactly 102 blob binaries matching the matrix above.
+2. The Python wheel contains all 102 blobs and their metadata.
 3. `picblobs.targets()` returns all entries from the matrix.
 4. Every cell marked YES passes its verification tests.
 

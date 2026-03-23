@@ -11,10 +11,10 @@ Runner Type     | Architectures                                          | Count
 ----------------|--------------------------------------------------------|------
 Linux           | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   8
                 | s390x, mipsel32, mipsbe32                              |
-FreeBSD         | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   8
-                | s390x, mipsel32, mipsbe32                              |
+FreeBSD         | x86_64, i686, aarch64, armv5_arm, armv5_thumb,         |   7
+                | mipsel32, mipsbe32                                     |
 Windows         | x86_64, aarch64                                        |   2
-                                                                   Total:  18
+                                                                   Total:  17
 ```
 
 ## Execution Model

@@ -8,7 +8,8 @@ stubs through a simple Python API.
 ## User Story
 
 ```text
-As a cybersecurity developer, I am sick and tired of writing assembly and shellcode in every single project I work on. It would be amazing if Opus just solved the problem for me and yeeted it into pypi.
+As a cybersecurity developer, I am sick and tired of writing assembly and shellcode.
+It would be amazing if Opus just solved the problem for me and yeeted it into pypi.
 ```
 
 ## Supported architectures

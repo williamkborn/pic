@@ -20,11 +20,11 @@ Minimizing assembly to a single function per architecture achieves several goals
 
 ## Acceptance Criteria
 
-1. Each supported architecture has exactly one assembly source file containing one exported function.
+1. Each supported architecture has exactly one header file (`src/include/picblobs/syscall/{arch}.h`) containing one `static inline` function implemented via GCC inline assembly.
 2. The function signature accepts a syscall number and up to six integer-width arguments.
 3. The function returns the raw syscall return value (not errno-transformed).
-4. No other file in the codebase for that architecture contains inline assembly or assembly source, with the sole exception of architecture-specific register access required for Windows PEB/TEB resolution (see REQ-005).
-5. The assembly function is callable from C with the platform's standard C calling convention for that architecture.
+4. No other file in the codebase for that architecture contains inline assembly, with the sole exception of architecture-specific register access required for Windows PEB/TEB resolution (see REQ-005) and the MIPS trampoline emitted by `section.h` (see ADR-020).
+5. The inline assembly function is callable from C with the platform's standard C calling convention for that architecture.
 
 ## Syscall ABI Per Architecture
 
@@ -93,7 +93,8 @@ The assembly stub SHALL implement the following ABI for each architecture:
 - Arguments: `r2`, `r3`, `r4`, `r5`, `r6`, `r7`
 - Return: `r2`
 
-### s390x (FreeBSD)
+### s390x (FreeBSD) — deferred
+- FreeBSD does not officially support s390x. This ABI is documented for completeness but is not implemented in v1 (see ADR-023).
 - Syscall instruction: `svc 0`
 - Syscall number: `r1`
 - Arguments: `r2`, `r3`, `r4`, `r5`, `r6`, `r7`

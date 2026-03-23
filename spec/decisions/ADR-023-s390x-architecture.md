@@ -39,7 +39,7 @@ The `old_mmap` variant SHALL be implemented as a custom body in the `SyscallDef`
 ## Consequences
 
 - Total Linux architectures increases from 7 to 8.
-- Total blobs increases from 96 to 108 (8 additional Linux blobs, one per blob type). FreeBSD s390x support is deferred.
+- Total blobs increases from 96 to 102 (6 additional Linux blobs, one per blob type). FreeBSD s390x support is deferred — FreeBSD does not officially support s390x.
 - The `uses_old_mmap` trait in the registry introduces a third mmap variant alongside `mmap` (direct) and `mmap2` (page-shifted offset), requiring a distinct code path in the generated `pic_mmap` wrapper.
 - CI runtime increases marginally due to one additional QEMU-emulated test suite.
 - The 8-architecture matrix now covers: both endiannesses (little and big), both bit-widths (32 and 64), and all three mmap calling conventions (`mmap`, `mmap2`, `old_mmap`).

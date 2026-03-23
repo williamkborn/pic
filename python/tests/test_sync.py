@@ -121,10 +121,11 @@ class TestPlatformConfigSync:
             )
 
     def test_blob_targets_has_all_platforms(self) -> None:
-        content = _read_file("bazel/blob.bzl")
+        content = _read_file("bazel/platforms.bzl")
         for os_name, arch_name in all_platforms():
-            assert f'"{arch_name}"' in content, (
-                f"Architecture '{arch_name}' missing from blob.bzl"
+            key = f"{os_name}:{arch_name}"
+            assert f'"{key}"' in content, (
+                f"Platform '{key}' missing from platforms.bzl BLOB_TARGETS"
             )
 
 

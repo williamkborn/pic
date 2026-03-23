@@ -29,3 +29,6 @@ build/
 python/picblobs/_runners/**/runner
 python/picblobs/_blobs/**/*.so
 
+# Debug build artifacts
+/debug/
+

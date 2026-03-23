@@ -12,7 +12,8 @@ Accepted
 
 1. **Target operating systems**: Linux, FreeBSD, Windows.
 2. **Target architectures (v1)**:
-   - Linux and FreeBSD: x86_64, i686, aarch64, armv5 (ARM mode and Thumb mode), s390x, mipsel32, mipsbe32.
+   - Linux: x86_64, i686, aarch64, armv5 (ARM mode and Thumb mode), s390x, mipsel32, mipsbe32.
+   - FreeBSD: x86_64, i686, aarch64, armv5 (ARM mode and Thumb mode), mipsel32, mipsbe32 (s390x deferred — no upstream FreeBSD support).
    - Windows: x86_64, aarch64.
 3. **Blob types (v1)**:
    - Alloc-and-jump: allocate RWX memory, copy a payload into it, transfer execution.

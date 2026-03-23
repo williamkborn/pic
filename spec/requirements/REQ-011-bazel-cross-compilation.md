@@ -85,7 +85,6 @@ Bazel platform definitions SHALL be created for each OS/architecture combination
 - `//platforms:freebsd_armv5_thumb`
 - `//platforms:freebsd_mipsel32`
 - `//platforms:freebsd_mipsbe32`
-- `//platforms:freebsd_s390x`
 - `//platforms:windows_x86_64`
 - `//platforms:windows_aarch64`
 

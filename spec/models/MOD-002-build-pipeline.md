@@ -18,7 +18,7 @@ This model describes the complete build pipeline from C source to staged Python 
 
 ### Stage 2: C Compilation
 
-- **Input**: C source files (syscall wrappers, blob logic), assembly stubs, C headers.
+- **Input**: C source files (syscall wrappers, blob logic), inline assembly headers, C headers.
 - **Action**: For each target platform (OS/arch combination), the corresponding Bootlin GCC cross-compiler compiles C source.
 - **Flags**: `-ffreestanding -nostdlib -nostartfiles -fno-builtin -fno-stack-protector -fPIC -ffunction-sections -fdata-sections -Os -Wall -Werror` plus architecture-specific flags.
 - **Output**: Object files (`.o`) archived into `.a` per platform.
@@ -68,9 +68,9 @@ Stages 2-3 are per-platform and executed sequentially per platform config by `st
 ## Build Matrix Size
 
 - 8 Linux platforms (x86_64, i686, aarch64, armv5_arm, armv5_thumb, s390x, mipsel32, mipsbe32)
-- Future: 8 FreeBSD + 2 Windows = 18 total
-- 1 blob type currently (hello); scales to 6 blob types per platform = 108 total
-- 1 runner per architecture = 8 runners currently
+- 7 FreeBSD platforms (all except s390x, deferred per ADR-023) + 2 Windows = 17 total
+- 6 blob types per platform = 102 total blobs at full build-out
+- 1 runner per platform = 17 runners at full build-out
 - Total artifacts per full build: blobs + runners + 1 wheel
 
 ## Code Generation

@@ -50,22 +50,20 @@ This model describes the layered architecture of the syscall abstraction system 
                           | #define constants used by
                           v
 +============================================================+
-| Layer 1: Assembly Syscall Primitive                        |
+| Layer 1: Assembly Syscall Primitive (inline asm in headers) |
 |                                                            |
-|   src/arch/x86_64/syscall.S                                |
-|     long raw_syscall(long nr, long a1, ..., long a6);     |
+|   src/include/picblobs/syscall/x86_64.h                    |
+|     static inline long pic_raw_syscall(...);               |
 |                                                            |
-|   src/arch/i686/syscall.S                                  |
-|   src/arch/aarch64/syscall.S                               |
-|   src/arch/armv5/syscall.S     (ARM mode)                  |
-|   src/arch/armv5/syscall_thumb.S (Thumb mode)              |
-|   src/arch/mipsel32/syscall.S                              |
-|   src/arch/mipsbe32/syscall.S                              |
-|   src/arch/s390x/syscall.S                                 |
+|   src/include/picblobs/syscall/i386.h                      |
+|   src/include/picblobs/syscall/aarch64.h                   |
+|   src/include/picblobs/syscall/arm.h       (ARM + Thumb)   |
+|   src/include/picblobs/syscall/mips.h      (LE + BE)       |
+|   src/include/picblobs/syscall/s390x.h                     |
 |                                                            |
-|   One file per architecture. Each contains exactly one     |
-|   exported function. This is the ONLY assembly in the      |
-|   project (for Linux/FreeBSD targets).                     |
+|   One header per architecture. Each contains exactly one   |
+|   static inline function using GCC inline asm. This is the |
+|   ONLY assembly in the project (for Linux/FreeBSD targets).|
 +============================================================+
                           |
                           | executes
@@ -97,12 +95,9 @@ Each header is self-contained: it includes the architecture-specific syscall num
 
 ### i686 Linux vs FreeBSD
 
-On i686, Linux passes syscall arguments in registers (`ebx`, `ecx`, `edx`, `esi`, `edi`, `ebp`), while FreeBSD passes them on the stack. The assembly stub MUST differ between Linux and FreeBSD on i686. This means:
+On i686, Linux passes syscall arguments in registers (`ebx`, `ecx`, `edx`, `esi`, `edi`, `ebp`), while FreeBSD passes them on the stack. The inline assembly primitive MUST differ between Linux and FreeBSD on i686. The `src/include/picblobs/syscall/i386.h` header uses `#ifdef PICBLOBS_OS_FREEBSD` to select the correct convention at compile time.
 
-- `src/arch/i686/syscall_linux.S` — uses register-based convention.
-- `src/arch/i686/syscall_freebsd.S` — uses stack-based convention.
-
-This is the one case where the assembly stub is per-OS as well as per-arch. All other architectures use the same instruction and register convention for both Linux and FreeBSD.
+This is the one case where the assembly primitive is per-OS as well as per-arch. All other architectures use the same instruction and register convention for both Linux and FreeBSD.
 
 ### MIPS Stack Arguments
 
@@ -110,11 +105,7 @@ On MIPS o32 ABI, only four arguments fit in registers (`$a0`-`$a3`). Arguments 5
 
 ### armv5 ARM vs Thumb
 
-Two separate assembly stubs exist for armv5:
-- `src/arch/armv5/syscall.S` — ARM mode (`svc #0` in 32-bit ARM encoding).
-- `src/arch/armv5/syscall_thumb.S` — Thumb mode (`svc #0` in 16-bit Thumb encoding).
-
-The Thumb blob is compiled entirely in Thumb mode (`-mthumb`), and the syscall stub must also be Thumb.
+A single header `src/include/picblobs/syscall/arm.h` provides the inline assembly primitive for armv5. The same source compiles correctly in both ARM mode and Thumb mode — the compiler emits the appropriate `svc #0` encoding based on the `-mthumb` flag. The Thumb blob is compiled entirely in Thumb mode (`-mthumb`).
 
 ### s390x old_mmap
 

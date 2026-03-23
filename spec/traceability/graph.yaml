@@ -121,7 +121,7 @@ REQ-011:
 
 REQ-012:
   type: requirement
-  title: Custom Per-OS Linker Scripts
+  title: Custom Linker Script for Blob Binary Layout
   file: requirements/REQ-012-linker-scripts.md
   derives_from: [VIS-001]
   decided_by: [ADR-003]
@@ -173,6 +173,14 @@ REQ-018:
   file: requirements/REQ-018-architecture-matrix.md
   derives_from: [VIS-001, VIS-002]
   verified_by: [TEST-001, TEST-008]
+
+REQ-019:
+  type: requirement
+  title: Debug Build Variant and Developer Tooling
+  file: requirements/REQ-019-debug-build-and-tooling.md
+  derives_from: [VIS-001, REQ-011]
+  decided_by: [ADR-024]
+  verified_by: [TEST-010]
 
 # ============================================================
 # Decision Artifacts
@@ -318,6 +326,12 @@ ADR-023:
   file: decisions/ADR-023-s390x-architecture.md
   related_to: [REQ-001, REQ-018, ADR-002]
 
+ADR-024:
+  type: decision
+  title: Debug Build Variant and Developer Tooling Strategy
+  file: decisions/ADR-024-debug-build-variant.md
+  related_to: [REQ-019, REQ-011, ADR-019]
+
 # ============================================================
 # Design Model Artifacts
 # ============================================================
@@ -444,3 +458,9 @@ TEST-009:
   verifies: [REQ-012]
   decided_by: [ADR-003]
   modeled_by: [MOD-003]
+
+TEST-010:
+  type: verification
+  title: Debug Build and Developer Tooling Verification
+  file: verification/TEST-010-debug-build-verification.md
+  verifies: [REQ-019]

@@ -255,6 +255,44 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 # ============================================================
+# listing
+# ============================================================
+
+
+def cmd_listing(args: argparse.Namespace) -> int:
+    """Produce a full disassembly listing of a blob .so file."""
+    from picblobs._objdump import disassemble_full, find_objdump, has_debug_info
+
+    target_os, target_arch = _parse_target(args.target)
+
+    if args.so:
+        so_path = args.so
+    else:
+        blob_dir = Path(__file__).parent / "_blobs"
+        so_path = str(blob_dir / target_os / target_arch / f"{args.type}.so")
+
+    if not Path(so_path).exists():
+        log.error("File not found: %s", so_path)
+        return 1
+
+    try:
+        objdump = find_objdump(target_arch)
+    except FileNotFoundError as e:
+        log.error("%s", e)
+        return 1
+
+    has_debug = has_debug_info(so_path, objdump)
+    try:
+        output = disassemble_full(so_path, objdump, source=has_debug)
+    except RuntimeError as e:
+        log.error("%s", e)
+        return 1
+
+    sys.stdout.write(output)
+    return 0
+
+
+# ============================================================
 # test
 # ============================================================
 
@@ -384,6 +422,26 @@ def main(argv: list[str] | None = None) -> int:
         "--timeout", type=float, default=30.0, help="Per-blob timeout in seconds"
     )
 
+    # --- listing ---
+    p_listing = sub.add_parser(
+        "listing",
+        help="Full disassembly listing of a blob .so",
+        description=(
+            "Produce a full disassembly listing via cross-toolchain objdump.\n"
+            "Works with release .so files (no source interleaving) or debug\n"
+            ".so files (with source interleaving if DWARF info is present).\n\n"
+            "Examples:\n"
+            "  picblobs listing hello linux:x86_64\n"
+            "  picblobs listing --so path/to/hello.so linux:aarch64\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_listing.add_argument("type", nargs="?", default="", help="Blob type")
+    p_listing.add_argument(
+        "target", nargs="?", default=DEFAULT_TARGET, help="os:arch"
+    )
+    p_listing.add_argument("--so", default="", help="Direct path to .so file")
+
     # --- test ---
     p_test = sub.add_parser("test", help="Run pytest test suite")
     p_test.add_argument("--os", default="", help="Filter by OS")
@@ -400,7 +458,7 @@ def main(argv: list[str] | None = None) -> int:
     verbose = getattr(args, "debug", False) or getattr(args, "verbose", False)
     _setup_logging(verbose)
 
-    if args.command in ("run", "info", "extract"):
+    if args.command in ("run", "info", "extract", "listing"):
         so = getattr(args, "so", "")
         blob_type = getattr(args, "type", "")
         if not so and not blob_type:
@@ -412,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         "extract": cmd_extract,
         "run": cmd_run,
         "verify": cmd_verify,
+        "listing": cmd_listing,
         "test": cmd_test,
     }
 

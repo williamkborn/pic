@@ -43,6 +43,7 @@ RUNNER_LABEL = "//tests/runners/{runner_type}:runner"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BLOB_DIR = PROJECT_ROOT / "python" / "picblobs" / "_blobs"
 RUNNER_DIR = PROJECT_ROOT / "python" / "picblobs" / "_runners"
+DEBUG_BLOB_DIR = PROJECT_ROOT / "debug"
 
 
 def discover_blob_targets() -> list[str]:
@@ -94,10 +95,16 @@ def build_and_stage(
     targets: list[str],
     configs: list[str],
     no_runners: bool = False,
+    debug: bool = False,
 ) -> tuple[int, int]:
-    """Build and stage blobs+runners. Returns (passed, total)."""
+    """Build and stage blobs+runners. Returns (passed, total).
+
+    If debug=True, builds with _debug configs and stages to debug/ instead
+    of the Python package tree. Runners are not built in debug mode.
+    """
     total = 0
     passed = 0
+    output_dir = DEBUG_BLOB_DIR if debug else BLOB_DIR
 
     for config_key in configs:
         if config_key not in PLATFORM_CONFIGS:
@@ -107,16 +114,20 @@ def build_and_stage(
         bazel_config, runner_type = PLATFORM_CONFIGS[config_key]
         os_name, arch_name = config_key.split(":")
 
+        if debug:
+            bazel_config = f"{bazel_config}_debug"
+
         labels = []
         for blob_name in targets:
             labels.append(BLOB_LABEL_TEMPLATE.format(name=blob_name))
-        if not no_runners:
+        if not no_runners and not debug:
             labels.append(RUNNER_LABEL.format(runner_type=runner_type))
 
-        log.info("  [%s] building... ", config_key)
+        mode = "debug" if debug else "release"
+        log.info("  [%s] (%s) building... ", config_key, mode)
         if not bazel_build(bazel_config, labels):
             log.error("  [%s] BUILD FAIL", config_key)
-            total += len(targets) + (0 if no_runners else 1)
+            total += len(targets) + (0 if (no_runners or debug) else 1)
             continue
         log.info("  [%s] OK", config_key)
 
@@ -124,7 +135,7 @@ def build_and_stage(
             total += 1
             label = BLOB_LABEL_TEMPLATE.format(name=blob_name)
             src = find_bazel_output(label, ".so")
-            dest = BLOB_DIR / os_name / arch_name / f"{blob_name}.so"
+            dest = output_dir / os_name / arch_name / f"{blob_name}.so"
 
             tag = f"    {blob_name}.so -> {os_name}/{arch_name}"
             if stage_file(src, dest):
@@ -133,7 +144,7 @@ def build_and_stage(
             else:
                 log.error("%-50s NOT FOUND: %s", tag, src)
 
-        if not no_runners:
+        if not no_runners and not debug:
             total += 1
             runner_label = RUNNER_LABEL.format(runner_type=runner_type)
             src = find_bazel_output(runner_label, ".bin")
@@ -170,6 +181,11 @@ def main() -> int:
         action="store_true",
         help="Skip building/staging test runners",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Build debug variants (with -g and PIC_LOG) staged to debug/",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
@@ -177,7 +193,9 @@ def main() -> int:
     if args.targets is None:
         args.targets = discover_blob_targets()
 
-    passed, total = build_and_stage(args.targets, args.configs, args.no_runners)
+    passed, total = build_and_stage(
+        args.targets, args.configs, args.no_runners, args.debug
+    )
 
     log.info("%d/%d staged", passed, total)
     if passed < total:

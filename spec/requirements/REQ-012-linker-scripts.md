@@ -1,4 +1,4 @@
-# REQ-012: Custom Per-OS Linker Scripts
+# REQ-012: Custom Linker Script for Blob Binary Layout
 
 ## Status
 Accepted

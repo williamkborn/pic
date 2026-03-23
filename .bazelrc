@@ -44,6 +44,47 @@ build:windows_x86_64        --platforms=//platforms:windows_x86_64
 build:windows_aarch64       --platforms=//platforms:windows_aarch64
 # END GENERATED PLATFORM CONFIGS
 
+# Debug platform configs — same optimization as release, adds -g and -DPIC_LOG_ENABLE.
+# Usage: bazel build --config=linux_x86_64_debug //src/payload:hello
+# BEGIN GENERATED DEBUG CONFIGS
+build:linux_x86_64_debug          --platforms=//platforms:linux_x86_64
+build:linux_x86_64_debug          --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_i686_debug            --platforms=//platforms:linux_i686
+build:linux_i686_debug            --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_aarch64_debug         --platforms=//platforms:linux_aarch64
+build:linux_aarch64_debug         --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_armv5_arm_debug       --platforms=//platforms:linux_armv5_arm
+build:linux_armv5_arm_debug       --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_armv5_thumb_debug     --platforms=//platforms:linux_armv5_thumb
+build:linux_armv5_thumb_debug     --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_s390x_debug           --platforms=//platforms:linux_s390x
+build:linux_s390x_debug           --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_mipsel32_debug        --platforms=//platforms:linux_mipsel32
+build:linux_mipsel32_debug        --copt=-g --copt=-DPIC_LOG_ENABLE
+build:linux_mipsbe32_debug        --platforms=//platforms:linux_mipsbe32
+build:linux_mipsbe32_debug        --copt=-g --copt=-DPIC_LOG_ENABLE
+
+build:freebsd_x86_64_debug        --platforms=//platforms:freebsd_x86_64
+build:freebsd_x86_64_debug        --copt=-g --copt=-DPIC_LOG_ENABLE
+build:freebsd_i686_debug          --platforms=//platforms:freebsd_i686
+build:freebsd_i686_debug          --copt=-g --copt=-DPIC_LOG_ENABLE
+build:freebsd_aarch64_debug       --platforms=//platforms:freebsd_aarch64
+build:freebsd_aarch64_debug       --copt=-g --copt=-DPIC_LOG_ENABLE
+build:freebsd_armv5_arm_debug     --platforms=//platforms:freebsd_armv5_arm
+build:freebsd_armv5_arm_debug     --copt=-g --copt=-DPIC_LOG_ENABLE
+build:freebsd_armv5_thumb_debug   --platforms=//platforms:freebsd_armv5_thumb
+build:freebsd_armv5_thumb_debug   --copt=-g --copt=-DPIC_LOG_ENABLE
+build:freebsd_mipsel32_debug      --platforms=//platforms:freebsd_mipsel32
+build:freebsd_mipsel32_debug      --copt=-g --copt=-DPIC_LOG_ENABLE
+build:freebsd_mipsbe32_debug      --platforms=//platforms:freebsd_mipsbe32
+build:freebsd_mipsbe32_debug      --copt=-g --copt=-DPIC_LOG_ENABLE
+
+build:windows_x86_64_debug        --platforms=//platforms:windows_x86_64
+build:windows_x86_64_debug        --copt=-g --copt=-DPIC_LOG_ENABLE
+build:windows_aarch64_debug       --platforms=//platforms:windows_aarch64
+build:windows_aarch64_debug       --copt=-g --copt=-DPIC_LOG_ENABLE
+# END GENERATED DEBUG CONFIGS
+
 # Lint config
 build:lint --aspects=//bazel:lint.bzl%clang_tidy_aspect
 build:lint --output_groups=lint_results
