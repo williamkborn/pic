@@ -170,11 +170,13 @@ def main() -> int:
         default=None,
         help="Blob target names (default: auto-discovered from BUILD.bazel)",
     )
+    # Default to Linux configs only — FreeBSD/Windows runners are not yet buildable.
+    _linux_configs = [k for k in PLATFORM_CONFIGS if k.startswith("linux:")]
     parser.add_argument(
         "--configs",
         nargs="*",
-        default=list(PLATFORM_CONFIGS.keys()),
-        help="Platform configs as os:arch (default: all)",
+        default=_linux_configs,
+        help="Platform configs as os:arch (default: all linux)",
     )
     parser.add_argument(
         "--no-runners",
