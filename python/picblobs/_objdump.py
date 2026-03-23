@@ -32,26 +32,24 @@ _TOOLS_DIR = Path(__file__).resolve().parent.parent.parent / "tools"
 def _find_bazel_toolchain_objdump(arch: str) -> str | None:
     """Search for objdump in the Bazel output tree (Bootlin toolchains)."""
     project_root = Path(__file__).resolve().parent.parent.parent
-    bazel_bin = project_root / "bazel-bin"
-
-    # Bazel external directory — Bootlin toolchains unpack here.
-    bazel_external = project_root / "bazel-picblobs" / "external"
-    if not bazel_external.exists():
-        bazel_external = project_root / "bazel-out" / ".." / "external"
 
     candidates = list(OBJDUMP_BINARIES.get(arch, []))
     if not candidates:
         return None
 
-    # Search common Bazel external paths.
-    for search_root in [bazel_external, bazel_bin]:
-        if not search_root.exists():
-            continue
-        # The Bootlin toolchain objdump is typically at:
-        # external/{toolchain}/bin/{triple}-objdump
+    # Find the Bazel execroot symlink (bazel-{dirname}/external/).
+    # Bazel creates a convenience symlink named bazel-{workspace_dir_name}.
+    search_roots = []
+    for p in project_root.iterdir():
+        if p.name.startswith("bazel-") and p.is_symlink():
+            ext = p / "external"
+            if ext.exists():
+                search_roots.append(ext)
+
+    for search_root in search_roots:
         for candidate in candidates:
-            # Try a quick glob — Bootlin unpacks into a bin/ directory.
-            matches = list(search_root.rglob(f"bin/{candidate}"))
+            # Bootlin toolchains unpack to external/+bootlin+bootlin_{arch}/bin/
+            matches = list(search_root.glob(f"*/bin/{candidate}"))
             if matches:
                 return str(matches[0])
 
