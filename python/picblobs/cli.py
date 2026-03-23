@@ -437,9 +437,7 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_listing.add_argument("type", nargs="?", default="", help="Blob type")
-    p_listing.add_argument(
-        "target", nargs="?", default=DEFAULT_TARGET, help="os:arch"
-    )
+    p_listing.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="os:arch")
     p_listing.add_argument("--so", default="", help="Direct path to .so file")
 
     # --- test ---

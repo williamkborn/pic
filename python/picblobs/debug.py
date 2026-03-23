@@ -200,9 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     # --- info ---
     p_info = sub.add_parser("info", help="Show blob metadata")
     p_info.add_argument("type", nargs="?", default="", help="Blob type")
-    p_info.add_argument(
-        "target", nargs="?", default=DEFAULT_TARGET, help="os:arch"
-    )
+    p_info.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="os:arch")
     p_info.add_argument("--so", default="", help="Direct path to .so file")
 
     # --- extract ---
@@ -218,9 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     # --- run ---
     p_run = sub.add_parser("run", help="Run a blob under QEMU")
     p_run.add_argument("type", nargs="?", default="", help="Blob type")
-    p_run.add_argument(
-        "target", nargs="?", default=DEFAULT_TARGET, help="os:arch"
-    )
+    p_run.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="os:arch")
     p_run.add_argument("--so", default="", help="Direct path to .so file")
     p_run.add_argument("--config-hex", default="", help="Config struct as hex string")
     p_run.add_argument("--payload", default="", help="Read config from file")
@@ -253,9 +249,7 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_disasm.add_argument("type", nargs="?", default="", help="Blob type")
-    p_disasm.add_argument(
-        "target", nargs="?", default=DEFAULT_TARGET, help="os:arch"
-    )
+    p_disasm.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="os:arch")
     p_disasm.add_argument(
         "-f", "--function", default="", help="Function name to disassemble"
     )
@@ -275,9 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_listing.add_argument("type", nargs="?", default="", help="Blob type")
-    p_listing.add_argument(
-        "target", nargs="?", default=DEFAULT_TARGET, help="os:arch"
-    )
+    p_listing.add_argument("target", nargs="?", default=DEFAULT_TARGET, help="os:arch")
     p_listing.add_argument("--so", default="", help="Direct path to .so file")
 
     # --- test ---

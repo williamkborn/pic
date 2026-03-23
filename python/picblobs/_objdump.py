@@ -15,7 +15,11 @@ from pathlib import Path
 # Architecture → (toolchain-specific objdump, fallback system objdump).
 # For x86_64, the system objdump usually works directly.
 OBJDUMP_BINARIES: dict[str, list[str]] = {
-    "x86_64": ["x86_64-buildroot-linux-gnu-objdump", "x86_64-linux-gnu-objdump", "objdump"],
+    "x86_64": [
+        "x86_64-buildroot-linux-gnu-objdump",
+        "x86_64-linux-gnu-objdump",
+        "objdump",
+    ],
     "i686": ["i686-buildroot-linux-gnu-objdump", "i686-linux-gnu-objdump"],
     "aarch64": ["aarch64-buildroot-linux-gnu-objdump", "aarch64-linux-gnu-objdump"],
     "armv5_arm": ["arm-buildroot-linux-gnueabi-objdump", "arm-linux-gnueabi-objdump"],

@@ -5,8 +5,8 @@
  * patches the GOT so rodata references work at any load address.
  */
 
-#include "picblobs/os/linux.h"
 #include "picblobs/log.h"
+#include "picblobs/os/linux.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/exit.h"

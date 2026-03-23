@@ -33,10 +33,7 @@
  * Internal: write a single character to stderr.
  */
 PIC_TEXT
-static inline void _pic_log_putc(char c)
-{
-	pic_write(2, &c, 1);
-}
+static inline void _pic_log_putc(char c) { pic_write(2, &c, 1); }
 
 /*
  * Internal: write a null-terminated string to stderr.
@@ -137,8 +134,8 @@ static inline void _pic_log_fmt(const char *fmt, ...)
 			_pic_log_putd((long)__builtin_va_arg(ap, long));
 			break;
 		case 'x':
-			_pic_log_putx(
-				(unsigned long)__builtin_va_arg(ap, unsigned long));
+			_pic_log_putx((unsigned long)__builtin_va_arg(
+				ap, unsigned long));
 			break;
 		case 's':
 			_pic_log_puts(__builtin_va_arg(ap, const char *));
