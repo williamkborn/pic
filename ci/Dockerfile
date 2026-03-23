@@ -68,6 +68,10 @@ RUN for bin in \
 # Allow unpinned fetches so Bazel can download the cross-compilers.
 ENV PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS=1
 
+# Let `python -m picblobs` and `import picblobs` work from the project root
+# without requiring `cd python/` or `pip install -e`.
+ENV PYTHONPATH=/workspace/python
+
 # ── Non-root user ────────────────────────────────────────────────
 # dev.sh maps the container UID/GID to match the host user so that
 # files created inside the container are owned correctly on the host.
