@@ -199,9 +199,13 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     Discovers what's in the package — no build system knowledge.
     Groups output by OS, then by blob type.
+
+    For ul_exec blobs, compiles a static "Hello, ET_EXEC!" test binary
+    per architecture using the Bootlin cross-toolchains, packs it into
+    the config, and verifies it executes correctly.
     """
-    from picblobs import list_blobs
-    from picblobs.runner import is_arch_skip_rosetta, run_so
+    from picblobs import get_blob, list_blobs
+    from picblobs.runner import is_arch_skip_rosetta, run_blob, run_so
 
     filter_types = set(args.type) if args.type else None
     filter_oses = set(args.os) if args.os else None
@@ -243,11 +247,17 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 skipped += 1
                 continue
 
-            so = blob_dir / os_name / arch / f"{blob_type}.so"
             try:
-                result = run_so(
-                    str(so), runner_type=os_name, timeout=args.timeout,
-                )
+                if blob_type == "ul_exec":
+                    result = _verify_ul_exec(
+                        os_name, arch, args.timeout,
+                    )
+                else:
+                    so = blob_dir / os_name / arch / f"{blob_type}.so"
+                    result = run_so(
+                        str(so), runner_type=os_name, timeout=args.timeout,
+                    )
+
                 stdout = result.stdout.decode(errors="replace").strip()
                 if result.exit_code == 0:
                     log.info("  %-20s  OK   %r", label, stdout)
@@ -259,6 +269,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
                     )
                     failed += 1
                     errors.append(f"{blob_type}/{label}")
+            except _VerifySkip as e:
+                log.info("  %-20s  SKIP (%s)", label, e)
+                skipped += 1
             except Exception as e:
                 log.error("  %-20s  ERROR: %s", label, e)
                 failed += 1
@@ -273,6 +286,32 @@ def cmd_verify(args: argparse.Namespace) -> int:
         parts.append(f"failed: {', '.join(errors)}")
     log.info("  ".join(parts))
     return 1 if failed else 0
+
+
+class _VerifySkip(Exception):
+    """Raised to skip a verify entry with a reason."""
+
+
+def _verify_ul_exec(
+    os_name: str, arch: str, timeout: float,
+) -> "RunResult":
+    """Verify ul_exec by compiling and executing a test ELF.
+
+    Compiles a static 'Hello, ET_EXEC!' binary for the target
+    architecture using the Bootlin cross-compiler, packs it into
+    the ul_exec config, and runs the blob.
+    """
+    from picblobs import get_blob
+    from picblobs._cross_compile import build_ul_exec_config, compile_hello_et_exec
+    from picblobs.runner import RunResult, run_blob
+
+    elf_data = compile_hello_et_exec(arch)
+    if elf_data is None:
+        raise _VerifySkip(f"no cross-compiler for {arch}")
+
+    blob = get_blob("ul_exec", os_name, arch)
+    config = build_ul_exec_config(elf_data, arch, argv=["verify"])
+    return run_blob(blob, config=config, timeout=timeout)
 
 
 # ============================================================

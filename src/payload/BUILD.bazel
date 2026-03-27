@@ -18,3 +18,10 @@ pic_blob(
     linker_script = "//src/linker:blob.ld",
 )
 
+pic_blob(
+    name = "ul_exec",
+    srcs = ["ul_exec.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
