@@ -774,7 +774,11 @@ def main() -> int:
         targets.append((path, _gen_syscall_header(sdef)))
 
     # Per-OS runner.c files.
+    # The Windows runner is hand-written (mock TEB/PEB, not a generic loader)
+    # and must NOT be overwritten by the generator.
     for os_name in OPERATING_SYSTEMS:
+        if os_name == "windows":
+            continue
         runner_c = _gen_runner_c(os_name)
         if runner_c:
             path = PROJECT_ROOT / f"tests/runners/{os_name}/runner.c"

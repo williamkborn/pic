@@ -259,7 +259,7 @@ _register_os(
 _register_os(
     OperatingSystem(
         name="windows",
-        architectures=["x86_64", "aarch64"],
+        architectures=["x86_64", "i686", "aarch64"],
     )
 )
 

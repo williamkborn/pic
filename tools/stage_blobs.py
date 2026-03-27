@@ -59,9 +59,9 @@ def discover_blob_targets() -> list[str]:
     return targets or ["hello"]
 
 
-def bazel_build(config: str, labels: list[str]) -> bool:
-    """Run bazel build for a config+labels. Returns True on success."""
-    cmd = ["bazel", "build", f"--config={config}"] + labels
+def bazel_build(configs: list[str], labels: list[str]) -> bool:
+    """Run bazel build for configs+labels. Returns True on success."""
+    cmd = ["bazel", "build"] + [f"--config={c}" for c in configs] + labels
     result = subprocess.run(cmd, capture_output=True, cwd=PROJECT_ROOT)
     if result.returncode != 0:
         for line in result.stderr.decode().splitlines():
@@ -114,24 +114,66 @@ def build_and_stage(
         bazel_config, runner_type = PLATFORM_CONFIGS[config_key]
         os_name, arch_name = config_key.split(":")
 
+        bazel_configs = [bazel_config]
         if debug:
-            bazel_config = f"{bazel_config}_debug"
+            bazel_configs.append("debug")
 
-        labels = []
+        # Filter targets to those compatible with this OS.
+        # Blobs with an OS suffix (e.g. hello_windows) only build for that OS.
+        # Blobs without a suffix are unix-only (use raw syscalls, not Win API).
+        os_targets = []
         for blob_name in targets:
-            labels.append(BLOB_LABEL_TEMPLATE.format(name=blob_name))
-        if not no_runners and not debug:
-            labels.append(RUNNER_LABEL.format(runner_type=runner_type))
+            parts = blob_name.rsplit("_", 1)
+            if len(parts) == 2 and parts[1] in ("linux", "freebsd", "windows"):
+                # Explicit OS suffix — must match.
+                if parts[1] != os_name:
+                    continue
+            else:
+                # No OS suffix — unix blob, skip for Windows.
+                if os_name == "windows":
+                    continue
+            os_targets.append(blob_name)
+
+        blob_labels = []
+        for blob_name in os_targets:
+            blob_labels.append(BLOB_LABEL_TEMPLATE.format(name=blob_name))
+
+        want_runner = not no_runners and not debug
+        runner_label = RUNNER_LABEL.format(runner_type=runner_type) if want_runner else ""
+
+        if not blob_labels and not runner_label:
+            continue
 
         mode = "debug" if debug else "release"
-        log.info("  [%s] (%s) building... ", config_key, mode)
-        if not bazel_build(bazel_config, labels):
-            log.error("  [%s] BUILD FAIL", config_key)
-            total += len(targets) + (0 if (no_runners or debug) else 1)
-            continue
-        log.info("  [%s] OK", config_key)
 
-        for blob_name in targets:
+        # Build blobs with the target platform config.
+        if blob_labels:
+            log.info("  [%s] (%s) building blobs... ", config_key, mode)
+            if not bazel_build(bazel_configs, blob_labels):
+                log.error("  [%s] BLOB BUILD FAIL", config_key)
+                total += len(os_targets)
+                blob_labels = []  # skip staging
+            else:
+                log.info("  [%s] blobs OK", config_key)
+
+        # Build runner. The Windows/FreeBSD runners are Linux binaries
+        # (mock environments), so they must be built with a Linux config.
+        if runner_label:
+            if os_name in ("windows", "freebsd"):
+                runner_bazel_config = f"linux_{arch_name}"
+                runner_configs = [runner_bazel_config]
+            else:
+                runner_configs = list(bazel_configs)
+            log.info("  [%s] (%s) building runner... ", config_key, mode)
+            if not bazel_build(runner_configs, [runner_label]):
+                log.error("  [%s] RUNNER BUILD FAIL", config_key)
+                runner_label = ""  # skip staging
+            else:
+                log.info("  [%s] runner OK", config_key)
+
+        for blob_name in os_targets:
+            if not blob_labels:
+                break  # build failed, skip staging
             total += 1
             label = BLOB_LABEL_TEMPLATE.format(name=blob_name)
             src = find_bazel_output(label, ".so")
@@ -144,9 +186,8 @@ def build_and_stage(
             else:
                 log.error("%-50s NOT FOUND: %s", tag, src)
 
-        if not no_runners and not debug:
+        if runner_label:
             total += 1
-            runner_label = RUNNER_LABEL.format(runner_type=runner_type)
             src = find_bazel_output(runner_label, ".bin")
             dest = RUNNER_DIR / runner_type / arch_name / "runner"
 
@@ -170,13 +211,16 @@ def main() -> int:
         default=None,
         help="Blob target names (default: auto-discovered from BUILD.bazel)",
     )
-    # Default to Linux configs only — FreeBSD/Windows runners are not yet buildable.
-    _linux_configs = [k for k in PLATFORM_CONFIGS if k.startswith("linux:")]
+    # Default to Linux + Windows configs. FreeBSD runners are not yet buildable.
+    _default_configs = [
+        k for k in PLATFORM_CONFIGS
+        if k.startswith("linux:") or k.startswith("windows:")
+    ]
     parser.add_argument(
         "--configs",
         nargs="*",
-        default=_linux_configs,
-        help="Platform configs as os:arch (default: all linux)",
+        default=_default_configs,
+        help="Platform configs as os:arch (default: linux + windows)",
     )
     parser.add_argument(
         "--no-runners",

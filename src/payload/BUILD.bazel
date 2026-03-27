@@ -11,3 +11,10 @@ pic_blob(
     linker_script = "//src/linker:blob.ld",
 )
 
+pic_blob(
+    name = "hello_windows",
+    srcs = ["hello_windows.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+

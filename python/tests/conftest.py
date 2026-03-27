@@ -29,6 +29,13 @@ from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms
 
 sys.path.pop(0)
 
+# Import payload defs (same directory).
+# payload_defs lives in the same directory as this conftest.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from payload_defs import all_payload_combos  # noqa: E402
+
+sys.path.pop(0)
+
 
 def _runners_exist() -> bool:
     return _RUNNER_CHECK_PATH.exists()
@@ -79,6 +86,20 @@ def linux_arch(request: pytest.FixtureRequest) -> str:
 )
 def platform_pair(request: pytest.FixtureRequest) -> tuple[str, str]:
     """Parametrized fixture: yields each (os, arch) pair."""
+    return request.param
+
+
+# ============================================================
+# Payload test fixtures (TEST-011)
+# ============================================================
+
+
+@pytest.fixture(
+    params=all_payload_combos(),
+    ids=[f"{bt}:{os}:{arch}" for bt, os, arch in all_payload_combos()],
+)
+def payload_combo(request: pytest.FixtureRequest) -> tuple[str, str, str]:
+    """Parametrized fixture: yields (blob_type, target_os, target_arch)."""
     return request.param
 
 
@@ -162,15 +183,26 @@ def pytest_collection_modifyitems(
             params = getattr(item, "callspec", None)
             if params:
                 p = params.params
-                if filter_os and p.get("target_os", "") != filter_os:
+
+                # Support both individual params and tuple-based payload_combo.
+                param_os = p.get("target_os", "")
+                param_arch = p.get("target_arch", "")
+                param_type = p.get("blob_type", "")
+
+                # Extract from payload_combo tuple if present.
+                combo = p.get("payload_combo")
+                if combo is not None:
+                    param_type, param_os, param_arch = combo
+
+                if filter_os and param_os and param_os != filter_os:
                     item.add_marker(
                         pytest.mark.skip(reason=f"Filtered: os!={filter_os}")
                     )
-                if filter_arch and p.get("target_arch", "") != filter_arch:
+                if filter_arch and param_arch and param_arch != filter_arch:
                     item.add_marker(
                         pytest.mark.skip(reason=f"Filtered: arch!={filter_arch}")
                     )
-                if filter_type and p.get("blob_type", "") != filter_type:
+                if filter_type and param_type and param_type != filter_type:
                     item.add_marker(
                         pytest.mark.skip(reason=f"Filtered: type!={filter_type}")
                     )

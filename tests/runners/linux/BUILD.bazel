@@ -7,7 +7,7 @@ a blob using real Linux syscalls (emulated by QEMU for non-native arches).
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//bazel:lint.bzl", "cppcheck_test")
 
-package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__"])
+package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
 
 cc_library(
     name = "runner_obj",

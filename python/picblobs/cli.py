@@ -195,34 +195,38 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    """Run a blob on every available architecture. The smoke test.
+    """Run all staged blobs on every available architecture. The smoke test.
 
     Discovers what's in the package — no build system knowledge.
+    Groups output by OS, then by blob type.
     """
     from picblobs import list_blobs
     from picblobs.runner import is_arch_skip_rosetta, run_so
 
-    blob_type = args.type
-    target_os = args.os
+    filter_types = set(args.type) if args.type else None
+    filter_oses = set(args.os) if args.os else None
     filter_arches = set(args.arch) if args.arch else None
 
-    # Discover what's actually in the package for this blob type + OS.
-    available = [
-        (bt, os_name, arch)
-        for bt, os_name, arch in list_blobs()
-        if bt == blob_type and os_name == target_os
-    ]
-
+    # Discover everything staged in the package.
+    available = list_blobs()
+    if filter_types:
+        available = [(bt, o, a) for bt, o, a in available if bt in filter_types]
+    if filter_oses:
+        available = [(bt, o, a) for bt, o, a in available if o in filter_oses]
     if filter_arches:
         available = [(bt, o, a) for bt, o, a in available if a in filter_arches]
 
     if not available:
-        log.error("No blobs found for %s/%s. Nothing to verify.", blob_type, target_os)
-        if not filter_arches:
-            log.error("Available blobs:")
-            for bt, o, a in list_blobs():
-                log.error("  %s %s:%s", bt, o, a)
+        log.error("No blobs found. Nothing to verify.")
+        log.error("Available blobs:")
+        for bt, o, a in list_blobs():
+            log.error("  %s %s:%s", bt, o, a)
         return 1
+
+    # Group by (os, blob_type) for readable output.
+    groups: dict[tuple[str, str], list[str]] = {}
+    for bt, os_name, arch in available:
+        groups.setdefault((os_name, bt), []).append(arch)
 
     passed = 0
     failed = 0
@@ -230,29 +234,38 @@ def cmd_verify(args: argparse.Namespace) -> int:
     errors = []
 
     blob_dir = Path(__file__).parent / "_blobs"
-    for _, os_name, arch in available:
-        if is_arch_skip_rosetta(arch):
-            log.info("  %-14s  SKIP (QEMU %s crashes under Rosetta)", arch, arch)
-            skipped += 1
-            continue
+    for (os_name, blob_type), arches in sorted(groups.items()):
+        log.info("[%s] %s", os_name, blob_type)
+        for arch in sorted(arches):
+            label = f"{os_name}:{arch}"
+            if is_arch_skip_rosetta(arch):
+                log.info("  %-20s  SKIP (Rosetta)", label)
+                skipped += 1
+                continue
 
-        so = blob_dir / os_name / arch / f"{blob_type}.so"
-        try:
-            result = run_so(str(so), runner_type=os_name, timeout=args.timeout)
-            stdout = result.stdout.decode(errors="replace").strip()
-            if result.exit_code == 0:
-                log.info("  %-14s  exit=0   %r", arch, stdout)
-                passed += 1
-            else:
-                log.error("  %-14s  exit=%-4d %r  FAIL", arch, result.exit_code, stdout)
+            so = blob_dir / os_name / arch / f"{blob_type}.so"
+            try:
+                result = run_so(
+                    str(so), runner_type=os_name, timeout=args.timeout,
+                )
+                stdout = result.stdout.decode(errors="replace").strip()
+                if result.exit_code == 0:
+                    log.info("  %-20s  OK   %r", label, stdout)
+                    passed += 1
+                else:
+                    log.error(
+                        "  %-20s  FAIL exit=%-4d %r",
+                        label, result.exit_code, stdout,
+                    )
+                    failed += 1
+                    errors.append(f"{blob_type}/{label}")
+            except Exception as e:
+                log.error("  %-20s  ERROR: %s", label, e)
                 failed += 1
-                errors.append(arch)
-        except Exception as e:
-            log.error("  %-14s  ERROR: %s", arch, e)
-            failed += 1
-            errors.append(arch)
+                errors.append(f"{blob_type}/{label}")
 
     total = passed + failed + skipped
+    log.info("")
     parts = [f"{passed}/{total} passed"]
     if skipped:
         parts.append(f"{skipped} skipped")
@@ -406,25 +419,36 @@ def main(argv: list[str] | None = None) -> int:
     # --- verify ---
     p_verify = sub.add_parser(
         "verify",
-        help="Run a blob on all architectures in the package",
+        help="Run all staged blobs on every architecture",
         description=(
-            "Smoke test: run a blob on every architecture available in the\n"
-            "package. Discovers what's present — no build system knowledge.\n\n"
+            "Smoke test: run every staged blob on every architecture available\n"
+            "in the package. Discovers what's present — no build system knowledge.\n\n"
             "Examples:\n"
-            "  picblobs verify                                # hello on all linux arches\n"
+            "  picblobs verify                                # all blobs, all OSes\n"
             "  picblobs verify --arch x86_64 --arch mipsel32  # specific arches\n"
-            "  picblobs verify --type alloc_jump               # different blob\n"
-            "  picblobs verify --os freebsd                    # freebsd arches\n"
+            "  picblobs verify --type hello                    # one blob type\n"
+            "  picblobs verify --os linux                      # linux only\n"
+            "  picblobs verify --os linux --os windows         # linux + windows\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_verify.add_argument("--type", default="hello", help="Blob type (default: hello)")
-    p_verify.add_argument("--os", default="linux", help="Target OS (default: linux)")
+    p_verify.add_argument(
+        "--type",
+        action="append",
+        default=[],
+        help="Blob type filter (repeatable, default: all)",
+    )
+    p_verify.add_argument(
+        "--os",
+        action="append",
+        default=[],
+        help="Target OS filter (repeatable, default: all)",
+    )
     p_verify.add_argument(
         "--arch",
         action="append",
         default=[],
-        help="Architecture (repeatable, default: all available)",
+        help="Architecture filter (repeatable, default: all)",
     )
     p_verify.add_argument(
         "--timeout", type=float, default=30.0, help="Per-blob timeout in seconds"

@@ -32,7 +32,7 @@ bootlin.toolchain(
     name = "x86_64",
     arch = "x86-64",
     extra_cflags = ["-march=x86-64"],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "932823ca9a3e067e7e2a29810a666d20c9cc5bb550de947f6879e38ace1aa955",
     triple = "x86_64-buildroot-linux-gnu",
     version = "2024.05-1",
 )
@@ -41,7 +41,7 @@ bootlin.toolchain(
     name = "i686",
     arch = "x86-i686",
     extra_cflags = ["-march=i686"],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "023e4f03cd212b5545c4c184238693b61b40fa36d257b84546100a92ea2c1d8b",
     triple = "i686-buildroot-linux-gnu",
     version = "2024.05-1",
 )
@@ -50,7 +50,7 @@ bootlin.toolchain(
     name = "aarch64",
     arch = "aarch64",
     extra_cflags = [],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "b0fad860eb94b503a56d66ca8b9ba06d2d4826943e37ebd1d7217423f6ea5bb2",
     triple = "aarch64-buildroot-linux-gnu",
     version = "2024.05-1",
 )
@@ -59,7 +59,7 @@ bootlin.toolchain(
     name = "armv5",
     arch = "armv5-eabi",
     extra_cflags = ["-march=armv5te"],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "13f2bea0b06fe560fe60d199cd9d3fb1f20e2335bcc79b90c5130c3916a3ed92",
     triple = "arm-buildroot-linux-gnueabi",
     version = "2024.05-1",
 )
@@ -68,7 +68,7 @@ bootlin.toolchain(
     name = "s390x",
     arch = "s390x-z13",
     extra_cflags = ["-march=z13"],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "b37ed02693a370f28434c34655c64bcb96dc0d428a92ddbc99feb5608bcf64a1",
     triple = "s390x-buildroot-linux-gnu",
     version = "2024.05-1",
 )
@@ -77,7 +77,7 @@ bootlin.toolchain(
     name = "mipsel32",
     arch = "mips32el",
     extra_cflags = ["-mips32", "-EL"],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "d0139b6ade7f3b72a5f9c33814696af817661e826c9c501f6cefcab4ac684c8f",
     triple = "mipsel-buildroot-linux-gnu",
     version = "2024.05-1",
 )
@@ -86,7 +86,7 @@ bootlin.toolchain(
     name = "mipsbe32",
     arch = "mips32",
     extra_cflags = ["-mips32", "-EB"],
-    sha256 = "",  # TODO: pin after first fetch
+    sha256 = "677402719c545e49eb71c3d27a5f495af38f60463b40ed705e24e43a9834c137",
     triple = "mips-buildroot-linux-gnu",
     version = "2024.05-1",
 )

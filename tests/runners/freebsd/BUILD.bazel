@@ -3,7 +3,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("//bazel:lint.bzl", "cppcheck_test")
 
-package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__"])
+package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
 
 cc_binary(
     name = "runner",
