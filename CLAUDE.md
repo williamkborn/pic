@@ -422,7 +422,7 @@ Located in `/tools/registry.py` — **single source of truth** for all platforms
 |---|---|---|
 | linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, s390x, mipsel32, mipsbe32 | linux |
 | freebsd | x86_64, i686, aarch64, armv5_arm, armv5_thumb, mipsel32, mipsbe32 | freebsd |
-| windows | x86_64, aarch64 | windows |
+| windows | x86_64, i686, aarch64 | windows |
 
 #### Supported Architectures
 
