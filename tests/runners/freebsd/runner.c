@@ -17,8 +17,9 @@
  * Usage: ./runner <blob.bin>
  */
 
+#include "picblobs/os/linux.h"
 #include "picblobs/sys/exit.h"
-#include "picblobs/sys/linux/nr.h"
+#include "picblobs/sys/exit_group.h"
 #include "picblobs/syscall.h"
 #include "picblobs/types.h"
 
