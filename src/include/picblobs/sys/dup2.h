@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_DUP2_H
 #define PICBLOBS_SYS_DUP2_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -18,6 +20,10 @@
 
 #if defined(__x86_64__)
 #define __NR_dup2 33
+#elif defined(__i386__)
+#define __NR_dup2 63
+#elif defined(__arm__)
+#define __NR_dup2 63
 #elif defined(__s390x__)
 #define __NR_dup2 63
 #else
@@ -37,5 +43,4 @@ static inline long pic_dup2(int oldfd, int newfd)
 {
 	return pic_syscall2(__NR_dup2, oldfd, newfd);
 }
-
 #endif /* PICBLOBS_SYS_DUP2_H */

@@ -5,6 +5,16 @@
 #ifndef PICBLOBS_SYS_SOCKET_H
 #define PICBLOBS_SYS_SOCKET_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+static inline long pic_socket(int domain, int type, int protocol)
+{
+	return __pic_plat->socket(domain, type, protocol);
+}
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -46,4 +56,5 @@ static inline long pic_socket(int domain, int type, int protocol)
 	return pic_syscall3(__NR_socket, domain, type, protocol);
 }
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_SOCKET_H */

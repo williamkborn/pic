@@ -5,6 +5,16 @@
 #ifndef PICBLOBS_SYS_CONNECT_H
 #define PICBLOBS_SYS_CONNECT_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
+{
+	return __pic_plat->connect(sockfd, addr, addrlen);
+}
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -46,4 +56,5 @@ static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
 	return pic_syscall3(__NR_connect, sockfd, (long)addr, addrlen);
 }
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_CONNECT_H */

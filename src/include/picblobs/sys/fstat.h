@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_FSTAT_H
 #define PICBLOBS_SYS_FSTAT_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -18,6 +20,10 @@
 
 #if defined(__x86_64__)
 #define __NR_fstat 5
+#elif defined(__i386__)
+#define __NR_fstat 108
+#elif defined(__arm__)
+#define __NR_fstat 108
 #elif defined(__s390x__)
 #define __NR_fstat 108
 #else
@@ -37,5 +43,4 @@ static inline long pic_fstat(int fd, void *statbuf)
 {
 	return pic_syscall2(__NR_fstat, fd, (long)statbuf);
 }
-
 #endif /* PICBLOBS_SYS_FSTAT_H */

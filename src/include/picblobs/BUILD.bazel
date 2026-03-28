@@ -9,3 +9,10 @@ cc_library(
     hdrs = glob(["**/*.h"]),
     strip_include_prefix = "//src/include",
 )
+
+# Raw header files without cc_library wrapping — used by genrule
+# targets that compile with g++ directly (e.g., Mbed OS test runner).
+filegroup(
+    name = "raw_headers",
+    srcs = glob(["**/*.h"]),
+)

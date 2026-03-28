@@ -103,4 +103,21 @@ use_repo(
     "bootlin_x86_64",
 )
 
+# --- ARM GNU bare-metal toolchain for Cortex-M (hosted-mode PIC blobs) ---
+arm_none_eabi = use_extension("//toolchains:arm_none_eabi.bzl", "arm_none_eabi")
+
+arm_none_eabi.toolchain(
+    url = "https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz",
+    strip_prefix = "arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi",
+    sha256 = "95c011cee430e64dd6087c75c800f04b9c49832cc1000127a92a97f9c8d83af4",
+    extra_cflags = ["-mcpu=cortex-m4", "-mthumb", "-mfloat-abi=soft"],
+)
+
+use_repo(arm_none_eabi, "arm_none_eabi")
+
+# --- QEMU user-mode static (system prerequisite, wrapped for Bazel) ---
+qemu = use_extension("//toolchains:qemu.bzl", "qemu")
+
+use_repo(qemu, "qemu_arm_static")
+
 register_toolchains("//toolchains:all")

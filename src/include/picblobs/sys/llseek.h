@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_LLSEEK_H
 #define PICBLOBS_SYS_LLSEEK_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -41,5 +43,4 @@ static inline long pic_llseek(int fd, unsigned long offset_high,
 	return pic_syscall5(
 		__NR_llseek, fd, offset_high, offset_low, (long)result, whence);
 }
-
 #endif /* PICBLOBS_SYS_LLSEEK_H */

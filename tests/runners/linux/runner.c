@@ -101,7 +101,14 @@ int runner_main(int argc, char **argv)
 
 	pic_close(fd);
 
+	/* On ARM Thumb, function pointers must have bit 0 set to stay
+	 * in Thumb mode. The mmap'd address is page-aligned (bit 0 = 0),
+	 * so without this fixup BLX would switch to ARM mode. */
+#ifdef __thumb__
+	((void (*)(void))((pic_uintptr)mem | 1))();
+#else
 	((void (*)(void))mem)();
+#endif
 
 	pic_exit_group(RUNNER_ERROR);
 }

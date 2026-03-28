@@ -113,6 +113,12 @@ EXPECTATIONS: dict[str, PayloadExpectation] = {
         needs_config=True,
         timeout=15.0,
     ),
+    "nacl_hello": PayloadExpectation(
+        blob_type="nacl_hello",
+        stdout=b"NaCl OK\n",
+        exit_code=0,
+        timeout=15.0,
+    ),
 }
 
 
@@ -127,6 +133,7 @@ PAYLOAD_PLATFORMS: dict[str, list[str]] = {
     "stager_fd": ["linux", "freebsd", "windows"],
     "stager_pipe": ["linux", "freebsd", "windows"],
     "stager_mmap": ["linux", "freebsd"],
+    "nacl_hello": ["linux", "freebsd"],
 }
 
 

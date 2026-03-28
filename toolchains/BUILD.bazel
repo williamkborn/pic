@@ -3,6 +3,16 @@
 package(default_visibility = ["//visibility:public"])
 
 toolchain(
+    name = "arm_none_eabi",
+    toolchain = "@arm_none_eabi//:cc_toolchain",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+    target_compatible_with = [
+        "@platforms//cpu:arm",
+        "//platforms:baremetal",
+    ],
+)
+
+toolchain(
     name = "bootlin_x86_64",
     toolchain = "@bootlin_x86_64//:cc_toolchain",
     toolchain_type = "@rules_cc//cc:toolchain_type",

@@ -5,6 +5,13 @@
 #ifndef PICBLOBS_SYS_CLOSE_H
 #define PICBLOBS_SYS_CLOSE_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+static inline long pic_close(int fd) { return __pic_plat->close(fd); }
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -43,4 +50,5 @@
 /* --- Wrapper --- */
 static inline long pic_close(int fd) { return pic_syscall1(__NR_close, fd); }
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_CLOSE_H */

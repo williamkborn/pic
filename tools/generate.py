@@ -307,6 +307,27 @@ def _gen_syscall_header(sdef: SyscallDef) -> str:
     lines.append(f"/* picblobs/sys/{sdef.name}.h — {sdef.wrapper}() syscall. */\n")
     lines.append(f"/* Supported: {', '.join(supported_oses)} */\n\n")
     lines.append(f"#ifndef {guard}\n#define {guard}\n\n")
+    lines.append(f'#include "picblobs/types.h"\n\n')
+
+    # Hosted-mode path: delegate to pic_platform vtable.
+    if sdef.hosted_call:
+        lines.append("#ifdef PIC_PLATFORM_HOSTED\n")
+        lines.append('#include "picblobs/platform.h"\n')
+        attrs = ""
+        if sdef.noreturn:
+            attrs = "__attribute__((noreturn))\n"
+        lines.append(
+            f"{attrs}static inline {sdef.return_type} {sdef.wrapper}({sdef.params}) {{\n"
+        )
+        if sdef.return_type == "void":
+            lines.append(f"\t{sdef.hosted_call};\n")
+            if sdef.noreturn:
+                lines.append("\t__builtin_unreachable();\n")
+        else:
+            lines.append(f"\treturn {sdef.hosted_call};\n")
+        lines.append("}\n")
+        lines.append("#else /* !PIC_PLATFORM_HOSTED */\n\n")
+
     lines.append(f'#include "picblobs/arch.h"\n')
     lines.append(f'#include "picblobs/syscall.h"\n\n')
 
@@ -427,7 +448,9 @@ def _gen_syscall_header(sdef: SyscallDef) -> str:
             lines.append(f"    return {call};\n")
         lines.append("}\n")
 
-    lines.append(f"\n#endif /* {guard} */\n")
+    if sdef.hosted_call:
+        lines.append("\n#endif /* !PIC_PLATFORM_HOSTED */\n")
+    lines.append(f"#endif /* {guard} */\n")
     return "".join(lines)
 
 
@@ -555,7 +578,14 @@ def _gen_runner_c(os_name: str) -> str:
 
             pic_close(fd);
 
+            /* On ARM Thumb, function pointers must have bit 0 set to stay
+             * in Thumb mode. The mmap'd address is page-aligned (bit 0 = 0),
+             * so without this fixup BLX would switch to ARM mode. */
+        #ifdef __thumb__
+            ((void (*)(void))((pic_uintptr)mem | 1))();
+        #else
             ((void (*)(void))mem)();
+        #endif
 
             pic_exit_group(RUNNER_ERROR);
         }
@@ -628,6 +658,30 @@ def _gen_platforms_build() -> str:
             )
         lines.append("\n")
 
+    # Bare-metal Cortex-M4 (Mbed OS / STM32 hosted-mode blobs).
+    lines.append("# Bare-metal constraints (Cortex-M4 / Mbed OS)\n")
+    lines.append('constraint_setting(name = "float_abi")\n')
+    lines.append(
+        'constraint_value(name = "softfloat", constraint_setting = ":float_abi")\n'
+    )
+    lines.append(
+        'constraint_value(name = "hardfloat", constraint_setting = ":float_abi")\n\n'
+    )
+    lines.append('constraint_setting(name = "runtime")\n')
+    lines.append(
+        'constraint_value(name = "baremetal", constraint_setting = ":runtime")\n\n'
+    )
+    lines.append(
+        "platform(\n"
+        '    name = "cortexm4_baremetal",\n'
+        "    constraint_values = [\n"
+        '        "@platforms//cpu:arm",\n'
+        '        ":baremetal",\n'
+        '        ":softfloat",\n'
+        "    ],\n"
+        ")\n\n"
+    )
+
     return "".join(lines)
 
 
@@ -638,6 +692,21 @@ def _gen_platforms_build() -> str:
 
 def _gen_toolchains_build() -> str:
     lines = [_BZL, '\npackage(default_visibility = ["//visibility:public"])\n\n']
+
+    # ARM GNU bare-metal toolchain (must be registered before Bootlin ARM
+    # so that cortexm4_baremetal resolves to arm_none_eabi, not bootlin_armv5).
+    lines.append(
+        "toolchain(\n"
+        '    name = "arm_none_eabi",\n'
+        '    toolchain = "@arm_none_eabi//:cc_toolchain",\n'
+        '    toolchain_type = "@rules_cc//cc:toolchain_type",\n'
+        "    target_compatible_with = [\n"
+        '        "@platforms//cpu:arm",\n'
+        '        "//platforms:baremetal",\n'
+        "    ],\n"
+        ")\n\n"
+    )
+
     seen: set[str] = set()
     for arch in ARCHITECTURES.values():
         if arch.bootlin_arch in seen:
@@ -708,6 +777,12 @@ def _gen_platforms_bzl() -> str:
 # ============================================================
 
 
+def _blob_needs_hosted(source: Path) -> bool:
+    """Check if a blob source uses the hosted platform abstraction."""
+    content = source.read_text()
+    return "PIC_PLATFORM_HOSTED" in content
+
+
 def _gen_payload_build() -> str:
     """Generate src/payload/BUILD.bazel by scanning for .c files."""
     payload_dir = PROJECT_ROOT / "src/payload"
@@ -715,16 +790,28 @@ def _gen_payload_build() -> str:
     if not c_files:
         return ""
 
+    # Check which blobs need hosted variants and extract_bin.
+    hosted_blobs = [s for s in c_files if _blob_needs_hosted(payload_dir / f"{s}.c")]
+
     lines = [
         _BZL,
         textwrap.dedent("""\
 
         load("//bazel:blob.bzl", "pic_blob")
+        """),
+    ]
+
+    # Only load extract_bin if there are blobs that need it.
+    if hosted_blobs:
+        lines.append('load("//src/payload:extract.bzl", "extract_bin")\n')
+
+    lines.append(
+        textwrap.dedent("""\
 
         package(default_visibility = ["//visibility:public"])
 
-        """),
-    ]
+        """)
+    )
 
     for stem in c_files:
         lines.append(
@@ -738,6 +825,31 @@ def _gen_payload_build() -> str:
 
             """)
         )
+
+        if stem in hosted_blobs:
+            lines.append(
+                textwrap.dedent(f"""\
+                extract_bin(
+                    name = "{stem}_bin",
+                    src = ":{stem}",
+                )
+
+                pic_blob(
+                    name = "{stem}_hosted",
+                    srcs = ["{stem}.c"],
+                    local_defines = ["PIC_PLATFORM_HOSTED"],
+                    deps = ["//src/include/picblobs:headers"],
+                    linker_script = "//src/linker:blob.ld",
+                )
+
+                extract_bin(
+                    name = "{stem}_hosted_bin",
+                    src = ":{stem}_hosted",
+                )
+
+                """)
+            )
+
     return "".join(lines)
 
 

@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_MMAP_H
 #define PICBLOBS_SYS_MMAP_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -78,5 +80,4 @@ static inline void *pic_mmap(
 		__NR_mmap, (long)addr, len, prot, flags, fd, offset);
 #endif
 }
-
 #endif /* PICBLOBS_SYS_MMAP_H */

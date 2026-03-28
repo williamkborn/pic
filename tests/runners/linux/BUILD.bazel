@@ -9,6 +9,10 @@ load("//bazel:lint.bzl", "cppcheck_test")
 
 package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
 
+exports_files([
+    "runner_hosted.c",
+])
+
 cc_library(
     name = "runner_obj",
     srcs = ["runner.c"] + glob(["start/*.h"]),
@@ -45,4 +49,37 @@ cppcheck_test(
     name = "runner_cppcheck",
     srcs = ["runner.c"],
     include_dirs = ["src/include"],
+)
+
+# Hosted-mode runner — passes pic_platform vtable to blobs instead of
+# relying on raw syscalls. Used to test the PIC_PLATFORM_HOSTED code path
+# without needing real Mbed OS hardware.
+cc_library(
+    name = "runner_hosted_obj",
+    srcs = ["runner_hosted.c"] + glob(["start/*.h"]),
+    copts = [
+        "-iquote",
+        "tests/runners/linux",
+    ],
+    deps = [
+        "//src/include/picblobs:headers",
+    ],
+)
+
+genrule(
+    name = "runner_hosted",
+    srcs = [":runner_hosted_obj"],
+    outs = ["runner_hosted.bin"],
+    cmd = " ".join([
+        "$(CC)",
+        "-nostdlib",
+        "-nostartfiles",
+        "-static",
+        "-Wl,--whole-archive",
+        "$(location :runner_hosted_obj)",
+        "-Wl,--no-whole-archive",
+        "-o $@",
+    ]),
+    executable = True,
+    toolchains = ["@rules_cc//cc:current_cc_toolchain"],
 )

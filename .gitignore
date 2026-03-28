@@ -29,6 +29,16 @@ build/
 python/picblobs/_runners/**/runner
 python/picblobs/_blobs/**/*.so
 
+# Claude Code
+.claude/
+
+# Mbed OS build artifacts
+mbed/BUILD/
+mbed/.build/
+mbed/mbed-os/
+mbed/blobs/*.bin
+mbed/blobs/*.h
+
 # Debug build artifacts
 /debug/
 

@@ -5,6 +5,17 @@
 #ifndef PICBLOBS_SYS_EXIT_GROUP_H
 #define PICBLOBS_SYS_EXIT_GROUP_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+__attribute__((noreturn)) static inline void pic_exit_group(int code)
+{
+	__pic_plat->exit_group(code);
+	__builtin_unreachable();
+}
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -47,4 +58,5 @@ __attribute__((noreturn)) static inline void pic_exit_group(int code)
 	__builtin_unreachable();
 }
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_EXIT_GROUP_H */

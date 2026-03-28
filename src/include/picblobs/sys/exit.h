@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_EXIT_H
 #define PICBLOBS_SYS_EXIT_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -46,5 +48,4 @@ __attribute__((noreturn)) static inline void pic_exit(int code)
 	pic_syscall1(__NR_exit, code);
 	__builtin_unreachable();
 }
-
 #endif /* PICBLOBS_SYS_EXIT_H */

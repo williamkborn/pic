@@ -5,6 +5,16 @@
 #ifndef PICBLOBS_SYS_READ_H
 #define PICBLOBS_SYS_READ_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+static inline long pic_read(int fd, void *buf, pic_size_t count)
+{
+	return __pic_plat->read(fd, buf, count);
+}
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -46,4 +56,5 @@ static inline long pic_read(int fd, void *buf, pic_size_t count)
 	return pic_syscall3(__NR_read, fd, (long)buf, count);
 }
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_READ_H */

@@ -24,6 +24,7 @@ def pic_blob(
         hdrs = None,
         linker_script = None,
         copts = None,
+        local_defines = None,
         linkopts = None,
         **kwargs):
     """Compile and link a PIC blob as a shared object.
@@ -39,12 +40,14 @@ def pic_blob(
         hdrs: Header files.
         linker_script: Label for the custom linker script.
         copts: Additional C compiler flags.
+        local_defines: Preprocessor defines (e.g., ["PIC_PLATFORM_HOSTED"]).
         linkopts: Additional linker flags.
         **kwargs: Passed through to generated targets.
     """
     deps = deps or []
     hdrs = hdrs or []
     copts = copts or []
+    local_defines = local_defines or []
     linkopts = linkopts or []
     lib_name = name + "_obj"
 
@@ -53,6 +56,7 @@ def pic_blob(
         srcs = srcs,
         hdrs = hdrs,
         copts = copts,
+        local_defines = local_defines,
         deps = deps,
         **kwargs
     )

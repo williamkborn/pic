@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_OPEN_H
 #define PICBLOBS_SYS_OPEN_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -58,5 +60,4 @@ static inline long pic_open(const char *path, int flags, int mode)
 	return pic_syscall3(__NR_open, (long)path, flags, mode);
 #endif
 }
-
 #endif /* PICBLOBS_SYS_OPEN_H */

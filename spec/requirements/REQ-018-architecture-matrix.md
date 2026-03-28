@@ -87,6 +87,16 @@ Note: The reflective loader type differs per OS family (ELF vs PE). There is no 
 | mipsbe32 | MIPS32 | Big | 32-bit | MIPS | Embedded routers (big-endian MIPS) |
 | s390x | z/Architecture | Big | 64-bit | z/Arch | IBM Z mainframes |
 
+### Bare-Metal / Embedded Targets
+
+In addition to the Linux/FreeBSD/Windows blob matrix, picblobs supports hosted-mode blobs compiled for bare-metal Cortex-M4 (Mbed OS). These blobs use the `PIC_PLATFORM_HOSTED` vtable interface and are compiled with the `arm-none-eabi` GCC toolchain.
+
+| Identifier | ISA | Endianness | Word Size | Instruction Mode | Notes |
+|---|---|---|---|---|---|
+| cortexm4_baremetal | ARMv7E-M | Little | 32-bit | Thumb-2 | Cortex-M4 bare-metal (Mbed OS 5.15) |
+
+Cortex-M4 Thumb-2 blobs are verified by running them under QEMU user-mode via the Linux Thumb hosted runner, proving the compiled code is correct without requiring real hardware.
+
 ### Future Architecture Candidates
 
 The following architectures are NOT in v1 but are candidates for future addition:
@@ -95,10 +105,9 @@ The following architectures are NOT in v1 but are candidates for future addition
 - RISC-V 32-bit (`riscv32`): Emerging in microcontrollers.
 - PowerPC 64-bit (`ppc64`, `ppc64le`): IBM POWER servers.
 - MIPS64: High-end network equipment.
-- ARMv7 (Thumb-2): Cortex-M series microcontrollers, modern 32-bit ARM.
 
 Adding a new architecture requires:
-1. A Bootlin toolchain registration in Bazel.
+1. A Bootlin toolchain registration in Bazel (or arm-none-eabi for bare-metal targets).
 2. A syscall assembly stub.
 3. Syscall number tables for the supported OSes on that architecture.
 4. QEMU user-static support for testing.
