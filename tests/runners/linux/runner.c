@@ -8,41 +8,39 @@
  */
 
 #include "picblobs/os/linux.h"
+#include "picblobs/sys/read.h"
+#include "picblobs/sys/open.h"
 #include "picblobs/sys/close.h"
-#include "picblobs/sys/exit.h"
-#include "picblobs/sys/exit_group.h"
 #include "picblobs/sys/lseek.h"
 #include "picblobs/sys/mmap.h"
 #include "picblobs/sys/mprotect.h"
-#include "picblobs/sys/open.h"
-#include "picblobs/sys/read.h"
+#include "picblobs/sys/exit.h"
+#include "picblobs/sys/exit_group.h"
 
 #define RUNNER_ERROR 127
 
-static long file_size(int fd)
-{
-	long end = pic_lseek(fd, 0, PIC_SEEK_END);
-	if (end < 0) {
-		return -1;
-	}
-	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0) {
-		return -1;
-	}
-	return end;
+static long file_size(int fd) {
+    long end = pic_lseek(fd, 0, PIC_SEEK_END);
+    if (end < 0) {
+        return -1;
+    }
+    if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0) {
+        return -1;
+    }
+    return end;
 }
 
-static long read_all(int fd, void *buf, pic_size_t count)
-{
-	pic_u8 *p = (pic_u8 *)buf;
-	pic_size_t done = 0;
-	while (done < count) {
-		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0) {
-			return -1;
-		}
-		done += (pic_size_t)n;
-	}
-	return (long)done;
+static long read_all(int fd, void *buf, pic_size_t count) {
+    pic_u8 *p = (pic_u8 *)buf;
+    pic_size_t done = 0;
+    while (done < count) {
+        long n = pic_read(fd, p + done, count - done);
+        if (n <= 0) {
+            return -1;
+        }
+        done += (pic_size_t)n;
+    }
+    return (long)done;
 }
 
 /* Per-architecture _start — dispatched to start/{arch}.h files. */
@@ -69,39 +67,48 @@ static long read_all(int fd, void *buf, pic_size_t count)
 #error "Unsupported architecture for _start — add start/{arch}.h"
 #endif
 
-int runner_main(int argc, char **argv)
-{
-	if (argc < 2) {
-		pic_exit_group(RUNNER_ERROR);
-	}
+int runner_main(int argc, char **argv) {
+    if (argc < 2) {
+        pic_exit_group(RUNNER_ERROR);
+    }
 
-	int fd = (int)pic_open(argv[1], PIC_O_RDONLY, 0);
-	if (fd < 0) {
-		pic_exit_group(RUNNER_ERROR);
-	}
+    int fd = (int)pic_open(argv[1], PIC_O_RDONLY, 0);
+    if (fd < 0) {
+        pic_exit_group(RUNNER_ERROR);
+    }
 
-	long size = file_size(fd);
-	if (size <= 0) {
-		pic_close(fd);
-		pic_exit_group(RUNNER_ERROR);
-	}
+    long size = file_size(fd);
+    if (size <= 0) {
+        pic_close(fd);
+        pic_exit_group(RUNNER_ERROR);
+    }
 
-	void *mem = pic_mmap(PIC_NULL, (pic_size_t)size,
-		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
-		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)mem == -1) {
-		pic_close(fd);
-		pic_exit_group(RUNNER_ERROR);
-	}
+    void *mem = pic_mmap(
+        PIC_NULL, (pic_size_t)size,
+        PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
+        PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS,
+        -1, 0
+    );
+    if ((long)mem == -1) {
+        pic_close(fd);
+        pic_exit_group(RUNNER_ERROR);
+    }
 
-	if (read_all(fd, mem, (pic_size_t)size) < 0) {
-		pic_close(fd);
-		pic_exit_group(RUNNER_ERROR);
-	}
+    if (read_all(fd, mem, (pic_size_t)size) < 0) {
+        pic_close(fd);
+        pic_exit_group(RUNNER_ERROR);
+    }
 
-	pic_close(fd);
+    pic_close(fd);
 
-	((void (*)(void))mem)();
+    /* On ARM Thumb, function pointers must have bit 0 set to stay
+     * in Thumb mode. The mmap'd address is page-aligned (bit 0 = 0),
+     * so without this fixup BLX would switch to ARM mode. */
+#ifdef __thumb__
+    ((void (*)(void))((pic_uintptr)mem | 1))();
+#else
+    ((void (*)(void))mem)();
+#endif
 
-	pic_exit_group(RUNNER_ERROR);
+    pic_exit_group(RUNNER_ERROR);
 }

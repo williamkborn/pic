@@ -192,6 +192,11 @@ filegroup(
     srcs = [],
 )
 
+filegroup(
+    name = "readelf_files",
+    srcs = glob(["bin/{triple}-readelf"]),
+)
+
 bootlin_config(name = "toolchain_config")
 
 cc_toolchain(

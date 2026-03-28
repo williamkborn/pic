@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_MPROTECT_H
 #define PICBLOBS_SYS_MPROTECT_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -12,22 +14,22 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_mprotect 74
+#define __NR_mprotect         74
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_mprotect 10
+#define __NR_mprotect         10
 #elif defined(__i386__)
-#define __NR_mprotect 125
+#define __NR_mprotect         125
 #elif defined(__aarch64__)
-#define __NR_mprotect 226
+#define __NR_mprotect         226
 #elif defined(__arm__)
-#define __NR_mprotect 125
+#define __NR_mprotect         125
 #elif defined(__mips__)
-#define __NR_mprotect 4125
+#define __NR_mprotect         4125
 #elif defined(__s390x__)
-#define __NR_mprotect 125
+#define __NR_mprotect         125
 #else
 #error "Unsupported architecture for pic_mprotect()"
 #endif
@@ -41,15 +43,13 @@
 #endif
 
 /* --- Constants --- */
-#define PIC_PROT_NONE 0x0
-#define PIC_PROT_READ 0x1
-#define PIC_PROT_WRITE 0x2
-#define PIC_PROT_EXEC 0x4
+#define PIC_PROT_NONE    0x0
+#define PIC_PROT_READ    0x1
+#define PIC_PROT_WRITE   0x2
+#define PIC_PROT_EXEC    0x4
 
 /* --- Wrapper --- */
-static inline long pic_mprotect(void *addr, pic_size_t len, int prot)
-{
-	return pic_syscall3(__NR_mprotect, (long)addr, len, prot);
+static inline long pic_mprotect(void *addr, pic_size_t len, int prot) {
+    return pic_syscall3(__NR_mprotect, (long)addr, len, prot);
 }
-
 #endif /* PICBLOBS_SYS_MPROTECT_H */

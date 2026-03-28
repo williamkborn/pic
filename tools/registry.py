@@ -307,6 +307,13 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "munmap": 91,
             "socket": 359,
             "connect": 362,
+            "accept": 364,
+            "bind": 361,
+            "listen": 363,
+            "setsockopt": 366,
+            "dup2": 63,
+            "pipe": 42,
+            "fstat": 108,
             "exit": 1,
             "exit_group": 252,
         },
@@ -321,6 +328,10 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "munmap": 215,
             "socket": 198,
             "connect": 203,
+            "accept": 202,
+            "bind": 200,
+            "listen": 201,
+            "setsockopt": 208,
             "exit": 93,
             "exit_group": 94,
         },
@@ -336,6 +347,13 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "munmap": 91,
             "socket": 281,
             "connect": 283,
+            "accept": 285,
+            "bind": 282,
+            "listen": 284,
+            "setsockopt": 294,
+            "dup2": 63,
+            "pipe": 42,
+            "fstat": 108,
             "exit": 1,
             "exit_group": 248,
         },
@@ -372,6 +390,10 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "munmap": 4091,
             "socket": 4183,
             "connect": 4170,
+            "accept": 4168,
+            "bind": 4169,
+            "listen": 4174,
+            "setsockopt": 4181,
             "exit": 4001,
             "exit_group": 4246,
         },
@@ -389,6 +411,10 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "munmap": 73,
             "socket": 97,
             "connect": 98,
+            "accept": 30,
+            "bind": 104,
+            "listen": 106,
+            "setsockopt": 105,
             "exit": 1,
             "exit_group": 431,
         },
@@ -433,6 +459,10 @@ class SyscallDef:
     custom_body: str = ""
     # Related constants to embed in this syscall's header.
     constants: str = ""
+    # Hosted-mode vtable call expression (e.g., "__pic_plat->write(fd, buf, count)").
+    # When set, a PIC_PLATFORM_HOSTED block is generated that delegates to the
+    # pic_platform vtable instead of issuing a raw syscall.
+    hosted_call: str = ""
 
 
 SYSCALL_DEFS: dict[str, SyscallDef] = {}
@@ -452,6 +482,7 @@ _def_syscall(
         params="int fd, void *buf, pic_size_t count",
         call_args="fd, (long)buf, count",
         arg_count=3,
+        hosted_call="__pic_plat->read(fd, buf, count)",
     )
 )
 
@@ -463,6 +494,7 @@ _def_syscall(
         params="int fd, const void *buf, pic_size_t count",
         call_args="fd, (long)buf, count",
         arg_count=3,
+        hosted_call="__pic_plat->write(fd, buf, count)",
     )
 )
 
@@ -474,6 +506,7 @@ _def_syscall(
         params="int fd",
         call_args="fd",
         arg_count=1,
+        hosted_call="__pic_plat->close(fd)",
     )
 )
 
@@ -546,6 +579,7 @@ _def_syscall(
         call_args="code",
         arg_count=1,
         noreturn=True,
+        hosted_call="__pic_plat->exit_group(code)",
     )
 )
 
@@ -620,6 +654,7 @@ _def_syscall(
         params="int domain, int type, int protocol",
         call_args="domain, type, protocol",
         arg_count=3,
+        hosted_call="__pic_plat->socket(domain, type, protocol)",
     )
 )
 
@@ -631,6 +666,7 @@ _def_syscall(
         params="int sockfd, const void *addr, pic_size_t addrlen",
         call_args="sockfd, (long)addr, addrlen",
         arg_count=3,
+        hosted_call="__pic_plat->connect(sockfd, addr, addrlen)",
     )
 )
 
@@ -642,6 +678,7 @@ _def_syscall(
         params="int sockfd, void *addr, void *addrlen",
         call_args="sockfd, (long)addr, (long)addrlen",
         arg_count=3,
+        hosted_call="__pic_plat->accept(sockfd, addr, addrlen)",
     )
 )
 
@@ -653,6 +690,7 @@ _def_syscall(
         params="int sockfd, const void *addr, pic_size_t addrlen",
         call_args="sockfd, (long)addr, addrlen",
         arg_count=3,
+        hosted_call="__pic_plat->bind(sockfd, addr, addrlen)",
     )
 )
 
@@ -664,6 +702,7 @@ _def_syscall(
         params="int sockfd, int backlog",
         call_args="sockfd, backlog",
         arg_count=2,
+        hosted_call="__pic_plat->listen(sockfd, backlog)",
     )
 )
 
@@ -675,6 +714,7 @@ _def_syscall(
         params="int sockfd, int level, int optname, const void *optval, pic_size_t optlen",
         call_args="sockfd, level, optname, (long)optval, optlen",
         arg_count=5,
+        hosted_call="__pic_plat->setsockopt(sockfd, level, optname, optval, optlen)",
     )
 )
 

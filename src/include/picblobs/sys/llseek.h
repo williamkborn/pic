@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_LLSEEK_H
 #define PICBLOBS_SYS_LLSEEK_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -17,11 +19,11 @@
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__i386__)
-#define __NR_llseek 140
+#define __NR_llseek           140
 #elif defined(__arm__)
-#define __NR_llseek 140
+#define __NR_llseek           140
 #elif defined(__mips__)
-#define __NR_llseek 4140
+#define __NR_llseek           4140
 #else
 #error "Unsupported architecture for pic_llseek()"
 #endif
@@ -35,11 +37,7 @@
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_llseek(int fd, unsigned long offset_high,
-	unsigned long offset_low, void *result, unsigned int whence)
-{
-	return pic_syscall5(
-		__NR_llseek, fd, offset_high, offset_low, (long)result, whence);
+static inline long pic_llseek(int fd, unsigned long offset_high, unsigned long offset_low, void *result, unsigned int whence) {
+    return pic_syscall5(__NR_llseek, fd, offset_high, offset_low, (long)result, whence);
 }
-
 #endif /* PICBLOBS_SYS_LLSEEK_H */

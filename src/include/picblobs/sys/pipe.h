@@ -5,6 +5,8 @@
 #ifndef PICBLOBS_SYS_PIPE_H
 #define PICBLOBS_SYS_PIPE_H
 
+#include "picblobs/types.h"
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -17,9 +19,13 @@
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_pipe 22
+#define __NR_pipe             22
+#elif defined(__i386__)
+#define __NR_pipe             42
+#elif defined(__arm__)
+#define __NR_pipe             42
 #elif defined(__s390x__)
-#define __NR_pipe 42
+#define __NR_pipe             42
 #else
 #error "Unsupported architecture for pic_pipe()"
 #endif
@@ -33,9 +39,7 @@
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_pipe(int *pipefd)
-{
-	return pic_syscall1(__NR_pipe, (long)pipefd);
+static inline long pic_pipe(int *pipefd) {
+    return pic_syscall1(__NR_pipe, (long)pipefd);
 }
-
 #endif /* PICBLOBS_SYS_PIPE_H */

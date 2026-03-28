@@ -24,6 +24,7 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 | s390x (z13) | big | 64 | verified |
 | mipsel32 | little | 32 | verified |
 | mipsbe32 | big | 32 | verified |
+| Cortex-M4 (Thumb-2, bare-metal) | little | 32 | verified |
 
 ## Prerequisites
 
@@ -32,7 +33,8 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip/venv
 
-Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/).
+Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/) for
+Linux cross-compilation and [ARM GNU](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) for bare-metal Cortex-M4 targets.
 
 ## Python environment setup
 

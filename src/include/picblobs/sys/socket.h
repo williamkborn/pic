@@ -5,6 +5,15 @@
 #ifndef PICBLOBS_SYS_SOCKET_H
 #define PICBLOBS_SYS_SOCKET_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+static inline long pic_socket(int domain, int type, int protocol) {
+	return __pic_plat->socket(domain, type, protocol);
+}
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -12,22 +21,22 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_socket 97
+#define __NR_socket           97
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_socket 41
+#define __NR_socket           41
 #elif defined(__i386__)
-#define __NR_socket 359
+#define __NR_socket           359
 #elif defined(__aarch64__)
-#define __NR_socket 198
+#define __NR_socket           198
 #elif defined(__arm__)
-#define __NR_socket 281
+#define __NR_socket           281
 #elif defined(__mips__)
-#define __NR_socket 4183
+#define __NR_socket           4183
 #elif defined(__s390x__)
-#define __NR_socket 359
+#define __NR_socket           359
 #else
 #error "Unsupported architecture for pic_socket()"
 #endif
@@ -41,9 +50,9 @@
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_socket(int domain, int type, int protocol)
-{
-	return pic_syscall3(__NR_socket, domain, type, protocol);
+static inline long pic_socket(int domain, int type, int protocol) {
+    return pic_syscall3(__NR_socket, domain, type, protocol);
 }
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_SOCKET_H */

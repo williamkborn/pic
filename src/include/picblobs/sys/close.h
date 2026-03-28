@@ -5,6 +5,15 @@
 #ifndef PICBLOBS_SYS_CLOSE_H
 #define PICBLOBS_SYS_CLOSE_H
 
+#include "picblobs/types.h"
+
+#ifdef PIC_PLATFORM_HOSTED
+#include "picblobs/platform.h"
+static inline long pic_close(int fd) {
+	return __pic_plat->close(fd);
+}
+#else /* !PIC_PLATFORM_HOSTED */
+
 #include "picblobs/arch.h"
 #include "picblobs/syscall.h"
 
@@ -12,22 +21,22 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_close 6
+#define __NR_close            6
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_close 3
+#define __NR_close            3
 #elif defined(__i386__)
-#define __NR_close 6
+#define __NR_close            6
 #elif defined(__aarch64__)
-#define __NR_close 57
+#define __NR_close            57
 #elif defined(__arm__)
-#define __NR_close 6
+#define __NR_close            6
 #elif defined(__mips__)
-#define __NR_close 4006
+#define __NR_close            4006
 #elif defined(__s390x__)
-#define __NR_close 6
+#define __NR_close            6
 #else
 #error "Unsupported architecture for pic_close()"
 #endif
@@ -41,6 +50,9 @@
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_close(int fd) { return pic_syscall1(__NR_close, fd); }
+static inline long pic_close(int fd) {
+    return pic_syscall1(__NR_close, fd);
+}
 
+#endif /* !PIC_PLATFORM_HOSTED */
 #endif /* PICBLOBS_SYS_CLOSE_H */
