@@ -12,19 +12,56 @@ As a cybersecurity developer, I am sick and tired of writing assembly and shellc
 It would be amazing if Opus just solved the problem for me and yeeted it into pypi.
 ```
 
-## Supported architectures
+## Platform support
 
-| Architecture | Endianness | Bits | Status |
+### Architectures
+
+| Architecture | Endianness | Bits | Traits |
 |---|---|---|---|
-| x86_64 | little | 64 | verified |
-| i686 | little | 32 | verified |
-| aarch64 | little | 64 | verified |
-| armv5 (ARM mode) | little | 32 | verified |
-| armv5 (Thumb mode) | little | 32 | verified |
-| s390x (z13) | big | 64 | verified |
-| mipsel32 | little | 32 | verified |
-| mipsbe32 | big | 32 | verified |
-| Cortex-M4 (Thumb-2, bare-metal) | little | 32 | verified |
+| x86_64 | little | 64 | |
+| i686 | little | 32 | uses_mmap2 |
+| aarch64 | little | 64 | openat_only |
+| armv5 (ARM mode) | little | 32 | uses_mmap2 |
+| armv5 (Thumb mode) | little | 32 | uses_mmap2 |
+| s390x (z13) | big | 64 | uses_old_mmap |
+| mipsel32 | little | 32 | uses_mmap2, needs_got_reloc |
+| mipsbe32 | big | 32 | uses_mmap2, needs_got_reloc |
+
+### Operating systems
+
+| OS | Architectures | Blob types | Runner |
+|---|---|---|---|
+| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, s390x, mipsel32, mipsbe32 | hello (+ future: alloc_jump, stagers, reflective_elf) | Direct execution via QEMU user-static |
+| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, mipsel32, mipsbe32 | hello (+ future: alloc_jump, stagers, reflective_elf) | Syscall shim (WIP) |
+| Windows | x86_64, i686, aarch64 | hello_windows (+ future: alloc_jump, stagers, reflective_pe) | Mock TEB/PEB on Linux |
+
+### Current blob inventory
+
+| Blob | OS | Description |
+|---|---|---|
+| `hello` | Linux, FreeBSD | Write "Hello, world!" via raw syscalls and exit |
+| `hello_windows` | Windows | Write "Hello, world!" via PEB walk + DJB2 hash resolution of kernel32.dll exports (GetStdHandle, WriteFile, ExitProcess) |
+
+### Verified status
+
+```
+$ picblobs verify
+[linux] hello
+  linux:aarch64         OK   'Hello, world!'
+  linux:armv5_arm       OK   'Hello, world!'
+  linux:armv5_thumb     OK   'Hello, world!'
+  linux:i686            OK   'Hello, world!'
+  linux:mipsbe32        OK   'Hello, world!'
+  linux:mipsel32        OK   'Hello, world!'
+  linux:s390x           OK   'Hello, world!'
+  linux:x86_64          OK   'Hello, world!'
+[windows] hello_windows
+  windows:aarch64       OK   'Hello, world!'
+  windows:i686          OK   'Hello, world!'
+  windows:x86_64        OK   'Hello, world!'
+
+11/11 passed
+```
 
 ## Prerequisites
 
@@ -33,64 +70,32 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip/venv
 
-Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/) for
-Linux cross-compilation and [ARM GNU](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) for bare-metal Cortex-M4 targets.
-
-## Python environment setup
-
-All Python commands in this README assume you have an activated environment
-with the project's dependencies installed. Pick **one** of the options below.
-
-### Option A: uv (recommended)
-
-[uv](https://github.com/astral-sh/uv) manages the virtualenv and
-dependencies in one step:
-
-```bash
-cd python
-uv venv                     # creates .venv/
-uv pip install -e '.[dev]'  # installs picblobs + dev deps (pytest, pycparser, …)
-source .venv/bin/activate
-```
-
-### Option B: pip + venv
-
-```bash
-cd python
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-```
-
-### Option C: Docker / Podman (no local setup)
-
-A Fedora 43 dev container with all dependencies pre-installed is provided
-in `ci/`. It works on both x86_64 and Apple Silicon (runs as linux/amd64
-under Rosetta):
-
-```bash
-ci/dev.sh                   # interactive shell inside the container
-ci/dev.sh python -m picblobs verify   # run a command and exit
-```
-
-See `ci/Dockerfile` for the full environment definition.
-
-### Verifying your environment
-
-After setup, you should be able to run:
-
-```bash
-python -c "import picblobs; print(picblobs.__version__)"
-```
+Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/).
 
 ## Quick start
 
 ```bash
-# Build hello blob + test runners for all Linux architectures
-python tools/stage_blobs.py
+# Set up Python environment
+source sourceme
+
+# Build and stage all blobs + runners
+./buildall
 
 # Verify everything works
-python -m picblobs verify
+picblobs verify
+
+# Run the full test suite
+./testall
+```
+
+### Docker / Podman (no local setup)
+
+A Fedora 43 dev container with all dependencies pre-installed is provided
+in `ci/`:
+
+```bash
+ci/dev.sh                          # interactive shell
+ci/dev.sh python -m picblobs verify   # run a command and exit
 ```
 
 ## Building
@@ -98,84 +103,171 @@ python -m picblobs verify
 The build system is Bazel 9 with bzlmod. Cross-compilation toolchains are
 fetched from Bootlin automatically on first build.
 
-### Build a single architecture
+Targets describe **what** to build. Configs describe **how** to build it.
+
+### Build a single platform
 
 ```bash
-bazel build --config=linux_x86_64 //src/payload:hello
-bazel build --config=linux_s390x //src/payload:hello
-bazel build --config=linux_mipsel32 //src/payload:hello
+bazel build //release:full --config=linux_x86_64
+bazel build //release:full --config=linux_x86_64 --config=debug
 ```
 
-### Build and stage all architectures
-
-Staging copies the built `.so` blobs and test runner binaries into the Python
-package tree at `python/picblobs/_blobs/` and `python/picblobs/_runners/`:
+### Build a single blob
 
 ```bash
-python tools/stage_blobs.py
+bazel build --config=linux_aarch64 //src/payload:hello
+bazel build --config=windows_x86_64 //src/payload:hello_windows
+```
+
+### Build and stage all platforms
+
+```bash
+./buildall
+```
+
+This runs `tools/stage_blobs.py`, which builds all blobs and runners for
+Linux and Windows, then copies outputs into the Python package tree:
+
+```
+python/picblobs/_blobs/{os}/{arch}/{name}.so
+python/picblobs/_runners/{runner_type}/{arch}/runner
 ```
 
 Build specific targets or platforms:
 
 ```bash
-python tools/stage_blobs.py --targets hello --configs linux:x86_64 linux:aarch64
+python tools/stage_blobs.py --targets hello --configs linux:x86_64
+python tools/stage_blobs.py --configs windows:x86_64 windows:i686 windows:aarch64
 ```
 
 ### Available platform configs
 
-All configs are defined in `.bazelrc`:
+Generated by `tools/generate.py` from `tools/registry.py`:
 
 ```
 linux_x86_64  linux_i686  linux_aarch64  linux_armv5_arm  linux_armv5_thumb
 linux_s390x  linux_mipsel32  linux_mipsbe32
+
+freebsd_x86_64  freebsd_i686  freebsd_aarch64  freebsd_armv5_arm
+freebsd_armv5_thumb  freebsd_mipsel32  freebsd_mipsbe32
+
+windows_x86_64  windows_i686  windows_aarch64
 ```
+
+### Build mode configs
+
+| Config | Effect |
+|---|---|
+| *(default)* | Optimized (`-Os` from toolchain) |
+| `--config=debug` | Adds `-g` and `-DPIC_LOG_ENABLE`, `strip=never` |
+| `--config=release` | Explicit `strip=always` |
+
+Platform and build mode are orthogonal: `--config=linux_x86_64 --config=debug`.
 
 ## Running blobs
 
-The `picblobs` CLI operates on blobs already built into the package. It has no
+The `picblobs` CLI operates on blobs staged in the package. It has no
 knowledge of the build system.
 
 ```bash
-# Run hello on x86_64 (native)
-python -m picblobs run hello
+# Run hello on x86_64 (native — no QEMU)
+picblobs run hello
 
-# Run hello on a specific architecture (via QEMU)
-python -m picblobs run hello linux:aarch64
-python -m picblobs run hello linux:s390x
+# Run hello on a cross architecture (via QEMU)
+picblobs run hello linux:aarch64
 
-# Run a .so file directly (for development)
-python -m picblobs run --so bazel-bin/src/payload/hello.so linux:mipsel32
+# Run hello_windows through the mock TEB/PEB runner
+picblobs run hello_windows windows:x86_64
 
-# Verify all architectures
-python -m picblobs verify
+# Run a .so file directly (development)
+picblobs run --so bazel-bin/src/payload/hello.so linux:mipsel32
 
-# Verify specific architectures
-python -m picblobs verify --arch x86_64 --arch mipsel32
+# Verify all staged blobs on all architectures
+picblobs verify
+
+# Verify a specific OS
+picblobs verify --os windows
 
 # List all blobs in the package
-python -m picblobs list
+picblobs list
 
 # Show blob metadata
-python -m picblobs info hello linux:x86_64
+picblobs info hello linux:x86_64
+picblobs info hello_windows windows:i686
 ```
 
 ## Testing
 
+### Full test suite
+
 ```bash
-# Run the full test suite (60 tests)
-python -m pytest python/tests/ -v
+./testall
+```
 
-# Run only the sync/consistency tests
-python -m pytest python/tests/test_sync.py -v
+Runs all unit tests, sync tests, and payload execution tests. Currently 104 tests pass (11 payload execution tests across Linux and Windows, plus unit/sync/structural tests). Unimplemented payload types skip gracefully.
 
-# Run tests filtered by architecture
-python -m picblobs test --arch x86_64
+### Filtered runs
+
+```bash
+./testall -v                           # verbose output
+./testall --payload-only               # only payload execution tests
+./testall --unit-only                  # only unit/sync tests
+./testall --os linux --arch x86_64     # filter by platform
+./testall --type hello                 # filter by blob type
+./testall -k test_payload_hello        # pytest -k expression
+```
+
+### Via picblobs CLI
+
+```bash
+picblobs test                          # run pytest
+picblobs test -v -k test_sync         # specific tests
+picblobs test --os linux --arch x86_64 # filtered
+```
+
+### Test architecture
+
+Tests are organized by category:
+
+| File | What it tests |
+|---|---|
+| `test_payload_hello.py` | hello + hello_windows execution on all platforms, structural checks |
+| `test_payload_alloc_jump.py` | alloc_jump execution + edge cases (skips until implemented) |
+| `test_payload_reflective.py` | reflective_elf + reflective_pe (skips until implemented) |
+| `test_payload_stager.py` | TCP, FD, pipe, mmap stagers with infrastructure fixtures (skips until implemented) |
+| `test_extractor.py` | ELF extraction via pyelftools |
+| `test_runner.py` | QEMU runner orchestration, blob preparation |
+| `test_cli.py` | CLI argument parsing and commands |
+| `test_sync.py` | Registry sync: generated files, platform configs, syscall tables |
+
+Payload tests are **registry-driven**: the test matrix is `blob_type x os x arch`, generated from `tools/registry.py`. Tests auto-skip when a blob or runner isn't staged. Adding a new payload and building it is sufficient to activate its tests.
+
+See `spec/verification/TEST-011-payload-pytest-suite.md` for the full test specification.
+
+## Test runners
+
+All testing runs on a Linux x86_64 host using QEMU user-static for architecture emulation. Three runner types handle the three target OSes:
+
+| Runner | How it works | Binary type |
+|---|---|---|
+| **Linux** | Loads blob into RWX memory, jumps to it. Blob executes real Linux syscalls, emulated by QEMU. End-to-end integration test. | Freestanding Linux binary, per-arch |
+| **Windows** | Constructs mock TEB/PEB/LDR structures with fake kernel32.dll export table. Blob resolves APIs via DJB2 hash, calls mock implementations (GetStdHandle -> fd, WriteFile -> Linux write, ExitProcess -> exit_group). | Freestanding Linux binary, per-arch |
+| **FreeBSD** | Syscall shim at fixed address validates FreeBSD syscall numbers and arguments. (WIP) | Freestanding Linux binary, per-arch |
+
+The Windows runner is **hand-written** (not generated) because it has complex mock logic. It supports x86_64 (gs-based TEB), i686 (fs-based TEB via set_thread_area), and aarch64 (tpidr_el0-based TEB). Build it with a Linux config since it's a Linux binary:
+
+```bash
+bazel build --config=linux_x86_64 //tests/runners/windows:runner
+bazel build --config=linux_i686 //tests/runners/windows:runner
+bazel build --config=linux_aarch64 //tests/runners/windows:runner
 ```
 
 ## Writing a blob
 
 A blob is a freestanding C program that runs at any address. Include the
 target OS header first, then the syscall wrappers you need:
+
+### Linux blob
 
 ```c
 #include "picblobs/os/linux.h"
@@ -190,42 +282,64 @@ static const char msg[] = "Hello, world!\n";
 PIC_ENTRY
 void _start(void)
 {
-	PIC_SELF_RELOCATE();
-	pic_write(1, msg, sizeof(msg) - 1);
-	pic_exit_group(0);
+    PIC_SELF_RELOCATE();
+    pic_write(1, msg, sizeof(msg) - 1);
+    pic_exit_group(0);
 }
 ```
 
-Each `sys/*.h` header is a self-contained module: it includes the syscall
-numbers for every supported OS/architecture combination, the constants,
-and the wrapper function. No central header needed.
+### Windows blob
 
-Drop the `.c` file into `src/payload/`, run `python tools/generate.py`, and
-it will be picked up automatically.
+```c
+#include "picblobs/os/windows.h"
+#include "picblobs/section.h"
+#include "picblobs/reloc.h"
+#include "picblobs/win/resolve.h"
+
+/* DJB2 hashes of API function names */
+#define HASH_KERNEL32       0x7040EE75
+#define HASH_GetStdHandle   0xF178843C
+#define HASH_WriteFile      0x663CECB0
+#define HASH_ExitProcess    0xB769339E
+
+PIC_RODATA
+static const char msg[] = "Hello, world!\n";
+
+PIC_ENTRY
+void _start(void)
+{
+    PIC_SELF_RELOCATE();
+    void *k32 = pic_resolve_module(HASH_KERNEL32);
+    void *(*GetStdHandle)(unsigned long) = pic_resolve_export(k32, HASH_GetStdHandle);
+    // ... resolve and call APIs
+}
+```
+
+Each `sys/*.h` header is a self-contained module with syscall numbers for every
+OS/architecture combination, constants, and wrapper function.
+
+Drop a `.c` file into `src/payload/`, run `python tools/generate.py`, and it
+will be picked up automatically.
 
 ## Code generation
 
-Most boilerplate files are generated from the canonical registry at
-`tools/registry.py`. After modifying the registry, regenerate:
+Most boilerplate is generated from `tools/registry.py`:
 
 ```bash
-python tools/generate.py
+python tools/generate.py           # regenerate all
+python tools/generate.py --check   # verify freshness (CI)
 ```
 
-This generates:
-- `src/include/picblobs/arch.h` (architecture traits)
-- `src/include/picblobs/syscall.h` (dispatcher to per-arch primitives)
-- `src/include/picblobs/picblobs.h` (convenience header)
-- `src/include/picblobs/sys/*.h` (per-syscall modules with numbers + wrappers)
-- `platforms/BUILD.bazel`, `toolchains/BUILD.bazel`, `.bazelrc` (Bazel config)
-- `src/payload/BUILD.bazel` (auto-discovered blob targets)
-- `tests/runners/*/runner.c` (dispatcher to per-arch `_start` stubs)
+Generated files:
+- `src/include/picblobs/arch.h` — architecture trait macros
+- `src/include/picblobs/syscall.h` — dispatcher to per-arch asm primitives
+- `src/include/picblobs/picblobs.h` — convenience header
+- `src/include/picblobs/sys/*.h` — per-syscall modules (numbers + wrappers)
+- `platforms/BUILD.bazel`, `bazel/platforms.bzl`, `.bazelrc` — Bazel platform configs
+- `src/payload/BUILD.bazel` — auto-discovered blob targets
+- `tests/runners/linux/runner.c`, `tests/runners/freebsd/runner.c` — test runner dispatchers
 
-To verify generated files are up to date:
-
-```bash
-python tools/generate.py --check
-```
+**Note:** `tests/runners/windows/runner.c` is **not** generated. It is hand-written because the mock TEB/PEB environment requires specialized logic per architecture.
 
 ## Adding a new architecture
 
@@ -238,9 +352,8 @@ python tools/generate.py --check
 7. Run `python -m pytest python/tests/test_sync.py -v` (catches anything missed)
 8. Build, stage, verify:
    ```bash
-   bazel build --config=linux_{arch} //src/payload:hello //tests/runners/linux:runner
    python tools/stage_blobs.py --configs linux:{arch}
-   python -m picblobs verify --arch {arch}
+   picblobs verify --arch {arch}
    ```
 
 ## Adding a new syscall
@@ -253,76 +366,85 @@ The generated `sys/{name}.h` will contain the numbers, OS guards, and wrapper.
 
 ## Formatting and linting
 
-### Formatting
-
-C code follows Linux kernel style (`.clang-format`). Python uses ruff defaults.
-
 ```bash
-python tools/fmt.py            # format all C and Python files in place
-python tools/fmt.py --check    # verify formatting without modifying (CI)
-```
-
-`fmt.py` runs clang-format on all `.c`/`.h` files under `src/` and `tests/`,
-and ruff on all `.py` files under `python/` and `tools/`. Generated files are
-included — the generator produces formatted output, so the two are idempotent.
-
-### Linting
-
-```bash
-bazel build --config=lint //src/... //tests/...   # clang-tidy via aspect
-```
-
-The lint aspect runs clang-tidy on every `cc_library` target in the build graph.
-Configuration is in `.clang-tidy`. Warnings are errors.
-
-### CI checks
-
-```bash
-bazel test //tools:format_check     # verify formatting
-bazel test //tools:generate_check   # verify generated files are fresh
-bazel build --config=lint //src/... # clang-tidy
-```
-
-Or all at once:
-
-```bash
-bazel test //tools:all && bazel build --config=lint //src/... //tests/...
+python tools/fmt.py            # format all C and Python files
+python tools/fmt.py --check    # verify formatting (CI)
+bazel build --config=lint //src/... //tests/...   # clang-tidy
 ```
 
 ## Project structure
 
 ```
 tools/
-  registry.py          # canonical platform/syscall registry
-  generate.py          # generates all derived files
+  registry.py          # canonical platform/syscall registry (single source of truth)
+  generate.py          # generates all derived files from registry
   stage_blobs.py       # copies bazel outputs into Python package tree
   fmt.py               # format all C and Python files
-  fmt_check.sh         # Bazel test wrapper for format check
-  generate_check.sh    # Bazel test wrapper for codegen freshness
 
 src/
   include/picblobs/
-    arch.h             # [generated] architecture traits
+    arch.h             # [generated] architecture trait macros
     types.h            # portable types (no libc)
     syscall.h          # [generated] dispatcher to per-arch asm
     syscall/           # per-arch syscall primitives (hand-written)
     section.h          # section placement macros + MIPS trampoline
     reloc.h            # MIPS GOT self-relocation
     picblobs.h         # [generated] convenience header
-    os/                # OS selection headers
+    os/                # OS selection headers (linux.h, freebsd.h, windows.h)
     sys/               # [generated] per-syscall modules
-  payload/             # blob source files
+    win/               # Windows PEB/TEB walk, DJB2 hash, PE export parsing
+  payload/             # blob source files (hello.c, hello_windows.c)
   linker/blob.ld       # custom linker script
 
-tests/runners/linux/
-  runner.c             # [generated] test runner dispatcher
-  start/               # per-arch _start stubs (hand-written)
+tests/runners/
+  linux/
+    runner.c           # [generated] Linux test runner dispatcher
+    start/             # per-arch _start stubs (hand-written, 8 arches)
+  windows/
+    runner.c           # [hand-written] mock TEB/PEB environment
+    start/             # per-arch _start stubs (x86_64, i386, aarch64)
+  freebsd/
+    runner.c           # [generated] FreeBSD syscall shim (WIP)
+    start/             # per-arch _start stubs
 
-python/picblobs/
-  __init__.py          # public API: get_blob(), list_blobs()
-  _extractor.py        # runtime ELF extraction via pyelftools
-  runner.py            # QEMU execution orchestration
-  cli.py               # CLI: list, info, extract, run, verify, test
-  _blobs/              # staged .so files (built by Bazel)
-  _runners/            # staged runner binaries (built by Bazel)
+release/
+  BUILD.bazel          # aggregate target: //release:full
+
+python/
+  picblobs/
+    __init__.py        # public API: get_blob(), list_blobs(), BlobData
+    _extractor.py      # runtime ELF extraction via pyelftools
+    runner.py          # QEMU execution orchestration
+    cli.py             # CLI: list, info, extract, run, verify, test
+    _blobs/            # staged .so files (by os/arch/name.so)
+    _runners/          # staged runner binaries (by runner_type/arch/runner)
+  tests/
+    conftest.py        # pytest config, fixtures, markers, env filters
+    payload_defs.py    # shared payload expectations and platform mappings
+    test_payload_*.py  # payload execution tests (per category)
+    test_extractor.py  # ELF extraction tests
+    test_runner.py     # QEMU runner tests
+    test_cli.py        # CLI tests
+    test_sync.py       # registry sync/consistency tests
+
+spec/                  # requirements, architecture decisions, verification specs
+
+testall                # run the full test suite
+buildall               # build and stage all platforms
+sourceme               # set up dev environment (source this)
 ```
+
+## Specification
+
+The `spec/` directory contains the full project specification:
+
+- `spec/vision/` — product vision and scope
+- `spec/requirements/` — functional requirements (REQ-001 through REQ-019)
+- `spec/decisions/` — architecture decision records (ADR-001 through ADR-024)
+- `spec/models/` — system models and sequence diagrams
+- `spec/verification/` — test procedures (TEST-001 through TEST-011)
+
+Key documents:
+- `spec/verification/TEST-011-payload-pytest-suite.md` — payload test suite specification
+- `spec/decisions/ADR-010-testing-infrastructure-strategy.md` — QEMU + shim + mock testing strategy
+- `spec/models/MOD-006-test-architecture.md` — test runner architecture

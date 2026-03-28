@@ -19,13 +19,13 @@
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_fstat            5
+#define __NR_fstat 5
 #elif defined(__i386__)
-#define __NR_fstat            108
+#define __NR_fstat 108
 #elif defined(__arm__)
-#define __NR_fstat            108
+#define __NR_fstat 108
 #elif defined(__s390x__)
-#define __NR_fstat            108
+#define __NR_fstat 108
 #else
 #error "Unsupported architecture for pic_fstat()"
 #endif
@@ -39,7 +39,8 @@
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_fstat(int fd, void *statbuf) {
-    return pic_syscall2(__NR_fstat, fd, (long)statbuf);
+static inline long pic_fstat(int fd, void *statbuf)
+{
+	return pic_syscall2(__NR_fstat, fd, (long)statbuf);
 }
 #endif /* PICBLOBS_SYS_FSTAT_H */

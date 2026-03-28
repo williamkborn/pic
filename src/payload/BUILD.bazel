@@ -13,6 +13,13 @@ pic_blob(
 )
 
 pic_blob(
+    name = "hello_windows",
+    srcs = ["hello_windows.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "nacl_client",
     srcs = ["nacl_client.c"],
     deps = ["//src/include/picblobs:headers"],
@@ -38,6 +45,13 @@ extract_bin(
 )
 
 pic_blob(
+    name = "nacl_hello",
+    srcs = ["nacl_hello.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "nacl_server",
     srcs = ["nacl_server.c"],
     deps = ["//src/include/picblobs:headers"],
@@ -60,5 +74,12 @@ pic_blob(
 extract_bin(
     name = "nacl_server_hosted_bin",
     src = ":nacl_server_hosted",
+)
+
+pic_blob(
+    name = "ul_exec",
+    srcs = ["ul_exec.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
 )
 

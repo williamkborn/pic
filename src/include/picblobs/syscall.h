@@ -40,12 +40,19 @@
 #endif
 
 /* Convenience wrappers. */
-#define pic_syscall0(n)                     pic_raw_syscall((n), 0, 0, 0, 0, 0, 0)
-#define pic_syscall1(n, a)                  pic_raw_syscall((n), (long)(a), 0, 0, 0, 0, 0)
-#define pic_syscall2(n, a, b)               pic_raw_syscall((n), (long)(a), (long)(b), 0, 0, 0, 0)
-#define pic_syscall3(n, a, b, c)            pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), 0, 0, 0)
-#define pic_syscall4(n, a, b, c, d)         pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), (long)(d), 0, 0)
-#define pic_syscall5(n, a, b, c, d, e)      pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), (long)(d), (long)(e), 0)
-#define pic_syscall6(n, a, b, c, d, e, f)   pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), (long)(d), (long)(e), (long)(f))
+#define pic_syscall0(n) pic_raw_syscall((n), 0, 0, 0, 0, 0, 0)
+#define pic_syscall1(n, a) pic_raw_syscall((n), (long)(a), 0, 0, 0, 0, 0)
+#define pic_syscall2(n, a, b)                                                  \
+	pic_raw_syscall((n), (long)(a), (long)(b), 0, 0, 0, 0)
+#define pic_syscall3(n, a, b, c)                                               \
+	pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), 0, 0, 0)
+#define pic_syscall4(n, a, b, c, d)                                            \
+	pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), (long)(d), 0, 0)
+#define pic_syscall5(n, a, b, c, d, e)                                         \
+	pic_raw_syscall(                                                       \
+		(n), (long)(a), (long)(b), (long)(c), (long)(d), (long)(e), 0)
+#define pic_syscall6(n, a, b, c, d, e, f)                                      \
+	pic_raw_syscall((n), (long)(a), (long)(b), (long)(c), (long)(d),       \
+		(long)(e), (long)(f))
 
 #endif /* PICBLOBS_SYSCALL_H */

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Source this file to set up the dev environment:
+#   source sourceme
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  echo "error: this script must be sourced, not executed" >&2
+  echo "  source sourceme" >&2
+  exit 1
+fi
+
+_picblobs_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd "${_picblobs_root}/python" || return 1
+
+if [[ ! -d .venv ]]; then
+  echo "==> Creating virtualenv with uv"
+  uv venv
+fi
+
+echo "==> Installing picblobs in dev mode"
+uv pip install -e '.[dev]'
+
+source .venv/bin/activate
+
+cd "${_picblobs_root}"
+
+echo "==> Ready. Try: python -m picblobs --help"
+
+unset _picblobs_root

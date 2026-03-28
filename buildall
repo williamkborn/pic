@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build all platforms and stage outputs into the Python package tree.
+#
+# Usage:
+#   ./buildall                  # build + stage all platforms
+#   ./buildall --no-stage       # build only, skip staging
+#   ./buildall --debug          # build debug variants
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec python "$SCRIPT_DIR/tools/stage_blobs.py" "$@"

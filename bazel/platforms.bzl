@@ -22,5 +22,6 @@ BLOB_TARGETS = {
     "freebsd:mipsel32": "//platforms:freebsd_mipsel32",
     "freebsd:mipsbe32": "//platforms:freebsd_mipsbe32",
     "windows:x86_64": "//platforms:windows_x86_64",
+    "windows:i686": "//platforms:windows_i686",
     "windows:aarch64": "//platforms:windows_aarch64",
 }

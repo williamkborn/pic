@@ -9,7 +9,8 @@
 
 #ifdef PIC_PLATFORM_HOSTED
 #include "picblobs/platform.h"
-static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen) {
+static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen)
+{
 	return __pic_plat->bind(sockfd, addr, addrlen);
 }
 #else /* !PIC_PLATFORM_HOSTED */
@@ -21,22 +22,22 @@ static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen) {
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_bind             104
+#define __NR_bind 104
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_bind             49
+#define __NR_bind 49
 #elif defined(__i386__)
-#define __NR_bind             361
+#define __NR_bind 361
 #elif defined(__aarch64__)
-#define __NR_bind             200
+#define __NR_bind 200
 #elif defined(__arm__)
-#define __NR_bind             282
+#define __NR_bind 282
 #elif defined(__mips__)
-#define __NR_bind             4169
+#define __NR_bind 4169
 #elif defined(__s390x__)
-#define __NR_bind             361
+#define __NR_bind 361
 #else
 #error "Unsupported architecture for pic_bind()"
 #endif
@@ -50,8 +51,9 @@ static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen) {
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen) {
-    return pic_syscall3(__NR_bind, sockfd, (long)addr, addrlen);
+static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen)
+{
+	return pic_syscall3(__NR_bind, sockfd, (long)addr, addrlen);
 }
 
 #endif /* !PIC_PLATFORM_HOSTED */

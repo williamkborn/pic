@@ -14,22 +14,22 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_munmap           73
+#define __NR_munmap 73
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_munmap           11
+#define __NR_munmap 11
 #elif defined(__i386__)
-#define __NR_munmap           91
+#define __NR_munmap 91
 #elif defined(__aarch64__)
-#define __NR_munmap           215
+#define __NR_munmap 215
 #elif defined(__arm__)
-#define __NR_munmap           91
+#define __NR_munmap 91
 #elif defined(__mips__)
-#define __NR_munmap           4091
+#define __NR_munmap 4091
 #elif defined(__s390x__)
-#define __NR_munmap           91
+#define __NR_munmap 91
 #else
 #error "Unsupported architecture for pic_munmap()"
 #endif
@@ -43,7 +43,8 @@
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_munmap(void *addr, pic_size_t len) {
-    return pic_syscall2(__NR_munmap, (long)addr, len);
+static inline long pic_munmap(void *addr, pic_size_t len)
+{
+	return pic_syscall2(__NR_munmap, (long)addr, len);
 }
 #endif /* PICBLOBS_SYS_MUNMAP_H */

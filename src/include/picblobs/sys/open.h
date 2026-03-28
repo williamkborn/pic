@@ -14,22 +14,22 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_open             5
+#define __NR_open 5
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_open             2
+#define __NR_open 2
 #elif defined(__i386__)
-#define __NR_open             5
+#define __NR_open 5
 #elif defined(__aarch64__)
-#define __NR_openat           56
+#define __NR_openat 56
 #elif defined(__arm__)
-#define __NR_open             5
+#define __NR_open 5
 #elif defined(__mips__)
-#define __NR_open             4005
+#define __NR_open 4005
 #elif defined(__s390x__)
-#define __NR_open             5
+#define __NR_open 5
 #else
 #error "Unsupported architecture for pic_open()"
 #endif
@@ -45,18 +45,19 @@
 /* --- Constants --- */
 #define PIC_O_RDONLY 0
 #define PIC_O_WRONLY 1
-#define PIC_O_RDWR   2
+#define PIC_O_RDWR 2
 
 /* --- Wrapper --- */
 #ifndef AT_FDCWD
 #define AT_FDCWD (-100)
 #endif
 
-static inline long pic_open(const char *path, int flags, int mode) {
+static inline long pic_open(const char *path, int flags, int mode)
+{
 #if PIC_ARCH_OPENAT_ONLY
-    return pic_syscall4(__NR_openat, AT_FDCWD, (long)path, flags, mode);
+	return pic_syscall4(__NR_openat, AT_FDCWD, (long)path, flags, mode);
 #else
-    return pic_syscall3(__NR_open, (long)path, flags, mode);
+	return pic_syscall3(__NR_open, (long)path, flags, mode);
 #endif
 }
 #endif /* PICBLOBS_SYS_OPEN_H */

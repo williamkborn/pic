@@ -14,22 +14,22 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_exit             1
+#define __NR_exit 1
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_exit             60
+#define __NR_exit 60
 #elif defined(__i386__)
-#define __NR_exit             1
+#define __NR_exit 1
 #elif defined(__aarch64__)
-#define __NR_exit             93
+#define __NR_exit 93
 #elif defined(__arm__)
-#define __NR_exit             1
+#define __NR_exit 1
 #elif defined(__mips__)
-#define __NR_exit             4001
+#define __NR_exit 4001
 #elif defined(__s390x__)
-#define __NR_exit             1
+#define __NR_exit 1
 #else
 #error "Unsupported architecture for pic_exit()"
 #endif
@@ -43,9 +43,9 @@
 #endif
 
 /* --- Wrapper --- */
-__attribute__((noreturn))
-static inline void pic_exit(int code) {
-    pic_syscall1(__NR_exit, code);
-    __builtin_unreachable();
+__attribute__((noreturn)) static inline void pic_exit(int code)
+{
+	pic_syscall1(__NR_exit, code);
+	__builtin_unreachable();
 }
 #endif /* PICBLOBS_SYS_EXIT_H */

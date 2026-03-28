@@ -1,0 +1,31 @@
+"""Top-level aggregate targets for the full product.
+
+Usage:
+    bazel build //release:full --config=linux_x86_64
+    bazel build //release:full --config=linux_x86_64 --config=debug
+    bazel build //release:full --config=linux_x86_64 --config=release
+
+Target = what the product is.
+Config = how it is built.
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "full",
+    srcs = select({
+        "//platforms:linux": [
+            "//src/payload:hello",
+            "//tests/runners/linux:runner",
+            "//tests/runners/windows:runner",
+            # TODO: enable when FreeBSD runner compile errors are fixed
+            # "//tests/runners/freebsd:runner",
+        ],
+        "//platforms:freebsd": [
+            "//src/payload:hello",
+        ],
+        "//platforms:windows": [
+            "//src/payload:hello_windows",
+        ],
+    }),
+)

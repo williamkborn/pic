@@ -9,7 +9,8 @@
 
 #ifdef PIC_PLATFORM_HOSTED
 #include "picblobs/platform.h"
-static inline long pic_accept(int sockfd, void *addr, void *addrlen) {
+static inline long pic_accept(int sockfd, void *addr, void *addrlen)
+{
 	return __pic_plat->accept(sockfd, addr, addrlen);
 }
 #else /* !PIC_PLATFORM_HOSTED */
@@ -21,22 +22,22 @@ static inline long pic_accept(int sockfd, void *addr, void *addrlen) {
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_accept           30
+#define __NR_accept 30
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_accept           43
+#define __NR_accept 43
 #elif defined(__i386__)
-#define __NR_accept           364
+#define __NR_accept 364
 #elif defined(__aarch64__)
-#define __NR_accept           202
+#define __NR_accept 202
 #elif defined(__arm__)
-#define __NR_accept           285
+#define __NR_accept 285
 #elif defined(__mips__)
-#define __NR_accept           4168
+#define __NR_accept 4168
 #elif defined(__s390x__)
-#define __NR_accept           364
+#define __NR_accept 364
 #else
 #error "Unsupported architecture for pic_accept()"
 #endif
@@ -50,8 +51,9 @@ static inline long pic_accept(int sockfd, void *addr, void *addrlen) {
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_accept(int sockfd, void *addr, void *addrlen) {
-    return pic_syscall3(__NR_accept, sockfd, (long)addr, (long)addrlen);
+static inline long pic_accept(int sockfd, void *addr, void *addrlen)
+{
+	return pic_syscall3(__NR_accept, sockfd, (long)addr, (long)addrlen);
 }
 
 #endif /* !PIC_PLATFORM_HOSTED */

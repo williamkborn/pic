@@ -9,7 +9,8 @@
 
 #ifdef PIC_PLATFORM_HOSTED
 #include "picblobs/platform.h"
-static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen) {
+static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
+{
 	return __pic_plat->connect(sockfd, addr, addrlen);
 }
 #else /* !PIC_PLATFORM_HOSTED */
@@ -21,22 +22,22 @@ static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_connect          98
+#define __NR_connect 98
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_connect          42
+#define __NR_connect 42
 #elif defined(__i386__)
-#define __NR_connect          362
+#define __NR_connect 362
 #elif defined(__aarch64__)
-#define __NR_connect          203
+#define __NR_connect 203
 #elif defined(__arm__)
-#define __NR_connect          283
+#define __NR_connect 283
 #elif defined(__mips__)
-#define __NR_connect          4170
+#define __NR_connect 4170
 #elif defined(__s390x__)
-#define __NR_connect          362
+#define __NR_connect 362
 #else
 #error "Unsupported architecture for pic_connect()"
 #endif
@@ -50,8 +51,9 @@ static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen) {
-    return pic_syscall3(__NR_connect, sockfd, (long)addr, addrlen);
+static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
+{
+	return pic_syscall3(__NR_connect, sockfd, (long)addr, addrlen);
 }
 
 #endif /* !PIC_PLATFORM_HOSTED */

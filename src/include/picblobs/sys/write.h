@@ -9,7 +9,8 @@
 
 #ifdef PIC_PLATFORM_HOSTED
 #include "picblobs/platform.h"
-static inline long pic_write(int fd, const void *buf, pic_size_t count) {
+static inline long pic_write(int fd, const void *buf, pic_size_t count)
+{
 	return __pic_plat->write(fd, buf, count);
 }
 #else /* !PIC_PLATFORM_HOSTED */
@@ -21,22 +22,22 @@ static inline long pic_write(int fd, const void *buf, pic_size_t count) {
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_write            4
+#define __NR_write 4
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_write            1
+#define __NR_write 1
 #elif defined(__i386__)
-#define __NR_write            4
+#define __NR_write 4
 #elif defined(__aarch64__)
-#define __NR_write            64
+#define __NR_write 64
 #elif defined(__arm__)
-#define __NR_write            4
+#define __NR_write 4
 #elif defined(__mips__)
-#define __NR_write            4004
+#define __NR_write 4004
 #elif defined(__s390x__)
-#define __NR_write            4
+#define __NR_write 4
 #else
 #error "Unsupported architecture for pic_write()"
 #endif
@@ -50,8 +51,9 @@ static inline long pic_write(int fd, const void *buf, pic_size_t count) {
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_write(int fd, const void *buf, pic_size_t count) {
-    return pic_syscall3(__NR_write, fd, (long)buf, count);
+static inline long pic_write(int fd, const void *buf, pic_size_t count)
+{
+	return pic_syscall3(__NR_write, fd, (long)buf, count);
 }
 
 #endif /* !PIC_PLATFORM_HOSTED */

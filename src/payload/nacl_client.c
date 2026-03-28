@@ -83,7 +83,14 @@ static pic_u32 parse_ipv4(const char *s)
 		octets[idx] = octets[idx] * 10 + (pic_u32)(*s - '0');
 		s++;
 	}
-	return octets[0] | (octets[1] << 8) | (octets[2] << 16) | (octets[3] << 24);
+	/* Pack bytes in network order (big-endian), regardless of host endianness. */
+	pic_u32 addr;
+	pic_u8 *p = (pic_u8 *)&addr;
+	p[0] = (pic_u8)octets[0];
+	p[1] = (pic_u8)octets[1];
+	p[2] = (pic_u8)octets[2];
+	p[3] = (pic_u8)octets[3];
+	return addr;
 }
 
 PIC_TEXT

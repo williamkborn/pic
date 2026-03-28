@@ -13,12 +13,23 @@
 /* Address families. */
 #define PIC_AF_INET  2
 
-/* Socket types. */
-#define PIC_SOCK_STREAM 1
+/* Socket types — MIPS Linux swaps STREAM/DGRAM values. */
+#if defined(__mips__)
+#define PIC_SOCK_STREAM  2
+#define PIC_SOCK_DGRAM   1
+#else
+#define PIC_SOCK_STREAM  1
+#define PIC_SOCK_DGRAM   2
+#endif
 
-/* Socket options. */
-#define PIC_SOL_SOCKET  1
+/* Socket options — MIPS Linux uses different SOL_SOCKET and option values. */
+#if defined(__mips__)
+#define PIC_SOL_SOCKET   0xffff
+#define PIC_SO_REUSEADDR 0x0004
+#else
+#define PIC_SOL_SOCKET   1
 #define PIC_SO_REUSEADDR 2
+#endif
 
 /* IPv4 address: network byte order. */
 struct pic_sockaddr_in {

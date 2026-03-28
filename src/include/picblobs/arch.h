@@ -13,38 +13,38 @@
 #ifndef PICBLOBS_ARCH_H
 #define PICBLOBS_ARCH_H
 #if defined(__x86_64__)
-#define PIC_ARCH_NAME            "x86"
-#define PIC_ARCH_BITS            64
+#define PIC_ARCH_NAME "x86"
+#define PIC_ARCH_BITS 64
 
 #elif defined(__i386__)
-#define PIC_ARCH_NAME            "i686"
-#define PIC_ARCH_BITS            32
-#define PIC_ARCH_USES_MMAP2          1
-#define PIC_ARCH_IS_32BIT            1
+#define PIC_ARCH_NAME "i686"
+#define PIC_ARCH_BITS 32
+#define PIC_ARCH_USES_MMAP2 1
+#define PIC_ARCH_IS_32BIT 1
 
 #elif defined(__aarch64__)
-#define PIC_ARCH_NAME            "aarch64"
-#define PIC_ARCH_BITS            64
-#define PIC_ARCH_OPENAT_ONLY         1
+#define PIC_ARCH_NAME "aarch64"
+#define PIC_ARCH_BITS 64
+#define PIC_ARCH_OPENAT_ONLY 1
 
 #elif defined(__arm__)
-#define PIC_ARCH_NAME            "armv5"
-#define PIC_ARCH_BITS            32
-#define PIC_ARCH_USES_MMAP2          1
-#define PIC_ARCH_IS_32BIT            1
+#define PIC_ARCH_NAME "armv5"
+#define PIC_ARCH_BITS 32
+#define PIC_ARCH_USES_MMAP2 1
+#define PIC_ARCH_IS_32BIT 1
 
 #elif defined(__mips__)
-#define PIC_ARCH_NAME            "mipsel32"
-#define PIC_ARCH_BITS            32
-#define PIC_ARCH_USES_MMAP2          1
-#define PIC_ARCH_NEEDS_GOT_RELOC     1
-#define PIC_ARCH_NEEDS_TRAMPOLINE    1
-#define PIC_ARCH_IS_32BIT            1
+#define PIC_ARCH_NAME "mipsel32"
+#define PIC_ARCH_BITS 32
+#define PIC_ARCH_USES_MMAP2 1
+#define PIC_ARCH_NEEDS_GOT_RELOC 1
+#define PIC_ARCH_NEEDS_TRAMPOLINE 1
+#define PIC_ARCH_IS_32BIT 1
 
 #elif defined(__s390x__)
-#define PIC_ARCH_NAME            "s390x"
-#define PIC_ARCH_BITS            64
-#define PIC_ARCH_USES_OLD_MMAP       1
+#define PIC_ARCH_NAME "s390x"
+#define PIC_ARCH_BITS 64
+#define PIC_ARCH_USES_OLD_MMAP 1
 
 #else
 #error "Unsupported architecture — add to tools/registry.py and run generate.py"
@@ -52,22 +52,22 @@
 
 /* Default trait values for architectures that don't set them. */
 #ifndef PIC_ARCH_USES_MMAP2
-#define PIC_ARCH_USES_MMAP2          0
+#define PIC_ARCH_USES_MMAP2 0
 #endif
 #ifndef PIC_ARCH_USES_OLD_MMAP
-#define PIC_ARCH_USES_OLD_MMAP       0
+#define PIC_ARCH_USES_OLD_MMAP 0
 #endif
 #ifndef PIC_ARCH_OPENAT_ONLY
-#define PIC_ARCH_OPENAT_ONLY         0
+#define PIC_ARCH_OPENAT_ONLY 0
 #endif
 #ifndef PIC_ARCH_NEEDS_GOT_RELOC
-#define PIC_ARCH_NEEDS_GOT_RELOC     0
+#define PIC_ARCH_NEEDS_GOT_RELOC 0
 #endif
 #ifndef PIC_ARCH_NEEDS_TRAMPOLINE
-#define PIC_ARCH_NEEDS_TRAMPOLINE    0
+#define PIC_ARCH_NEEDS_TRAMPOLINE 0
 #endif
 #ifndef PIC_ARCH_IS_32BIT
-#define PIC_ARCH_IS_32BIT            0
+#define PIC_ARCH_IS_32BIT 0
 #endif
 
 #endif /* PICBLOBS_ARCH_H */

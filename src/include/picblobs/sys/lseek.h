@@ -14,25 +14,25 @@
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_lseek            478
+#define __NR_lseek 478
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_lseek            8
+#define __NR_lseek 8
 #elif defined(__i386__)
-#define __NR_llseek           140
-#define __NR_lseek            19
+#define __NR_llseek 140
+#define __NR_lseek 19
 #elif defined(__aarch64__)
-#define __NR_lseek            62
+#define __NR_lseek 62
 #elif defined(__arm__)
-#define __NR_llseek           140
-#define __NR_lseek            19
+#define __NR_llseek 140
+#define __NR_lseek 19
 #elif defined(__mips__)
-#define __NR_llseek           4140
-#define __NR_lseek            4019
+#define __NR_llseek 4140
+#define __NR_lseek 4019
 #elif defined(__s390x__)
-#define __NR_lseek            19
+#define __NR_lseek 19
 #else
 #error "Unsupported architecture for pic_lseek()"
 #endif
@@ -51,7 +51,8 @@
 #define PIC_SEEK_END 2
 
 /* --- Wrapper --- */
-static inline long pic_lseek(int fd, long offset, int whence) {
-    return pic_syscall3(__NR_lseek, fd, offset, whence);
+static inline long pic_lseek(int fd, long offset, int whence)
+{
+	return pic_syscall3(__NR_lseek, fd, offset, whence);
 }
 #endif /* PICBLOBS_SYS_LSEEK_H */

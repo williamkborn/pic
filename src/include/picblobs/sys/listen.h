@@ -9,7 +9,8 @@
 
 #ifdef PIC_PLATFORM_HOSTED
 #include "picblobs/platform.h"
-static inline long pic_listen(int sockfd, int backlog) {
+static inline long pic_listen(int sockfd, int backlog)
+{
 	return __pic_plat->listen(sockfd, backlog);
 }
 #else /* !PIC_PLATFORM_HOSTED */
@@ -21,22 +22,22 @@ static inline long pic_listen(int sockfd, int backlog) {
 
 #if defined(PICBLOBS_OS_FREEBSD)
 
-#define __NR_listen           106
+#define __NR_listen 106
 
 #elif defined(PICBLOBS_OS_LINUX)
 
 #if defined(__x86_64__)
-#define __NR_listen           50
+#define __NR_listen 50
 #elif defined(__i386__)
-#define __NR_listen           363
+#define __NR_listen 363
 #elif defined(__aarch64__)
-#define __NR_listen           201
+#define __NR_listen 201
 #elif defined(__arm__)
-#define __NR_listen           284
+#define __NR_listen 284
 #elif defined(__mips__)
-#define __NR_listen           4174
+#define __NR_listen 4174
 #elif defined(__s390x__)
-#define __NR_listen           363
+#define __NR_listen 363
 #else
 #error "Unsupported architecture for pic_listen()"
 #endif
@@ -50,8 +51,9 @@ static inline long pic_listen(int sockfd, int backlog) {
 #endif
 
 /* --- Wrapper --- */
-static inline long pic_listen(int sockfd, int backlog) {
-    return pic_syscall2(__NR_listen, sockfd, backlog);
+static inline long pic_listen(int sockfd, int backlog)
+{
+	return pic_syscall2(__NR_listen, sockfd, backlog);
 }
 
 #endif /* !PIC_PLATFORM_HOSTED */
