@@ -42,6 +42,7 @@ ARCH_TO_TRIPLE = {
 # Extra cflags for specific arches.
 ARCH_EXTRA_CFLAGS = {
     "armv5_thumb": ["-mthumb"],
+    "armv7_thumb": ["-march=armv7-a", "-mthumb"],
 }
 
 # Bazel external toolchain base path.

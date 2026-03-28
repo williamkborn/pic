@@ -65,6 +65,15 @@ bootlin.toolchain(
 )
 
 bootlin.toolchain(
+    name = "armv7",
+    arch = "armv7-eabihf",
+    extra_cflags = ["-march=armv7-a", "-mthumb"],
+    sha256 = "608263bc9dc3eadf0962ddb1165f1c2291001190f9927dee47d464e26374462c",
+    triple = "arm-buildroot-linux-gnueabihf",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
     name = "s390x",
     arch = "s390x-z13",
     extra_cflags = ["-march=z13"],
@@ -96,6 +105,7 @@ use_repo(
     bootlin,
     "bootlin_aarch64",
     "bootlin_armv5",
+    "bootlin_armv7",
     "bootlin_i686",
     "bootlin_mipsbe32",
     "bootlin_mipsel32",

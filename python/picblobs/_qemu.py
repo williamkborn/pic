@@ -27,6 +27,7 @@ else:
         "aarch64": "qemu-aarch64-static",
         "armv5_arm": "qemu-arm-static",
         "armv5_thumb": "qemu-arm-static",
+        "armv7_thumb": "qemu-arm-static",
         "mipsel32": "qemu-mipsel-static",
         "mipsbe32": "qemu-mips-static",
     }

@@ -28,6 +28,7 @@ build:linux_i686            --platforms=//platforms:linux_i686
 build:linux_aarch64         --platforms=//platforms:linux_aarch64
 build:linux_armv5_arm       --platforms=//platforms:linux_armv5_arm
 build:linux_armv5_thumb     --platforms=//platforms:linux_armv5_thumb
+build:linux_armv7_thumb     --platforms=//platforms:linux_armv7_thumb
 build:linux_s390x           --platforms=//platforms:linux_s390x
 build:linux_mipsel32        --platforms=//platforms:linux_mipsel32
 build:linux_mipsbe32        --platforms=//platforms:linux_mipsbe32
@@ -37,6 +38,7 @@ build:freebsd_i686          --platforms=//platforms:freebsd_i686
 build:freebsd_aarch64       --platforms=//platforms:freebsd_aarch64
 build:freebsd_armv5_arm     --platforms=//platforms:freebsd_armv5_arm
 build:freebsd_armv5_thumb   --platforms=//platforms:freebsd_armv5_thumb
+build:freebsd_armv7_thumb   --platforms=//platforms:freebsd_armv7_thumb
 build:freebsd_mipsel32      --platforms=//platforms:freebsd_mipsel32
 build:freebsd_mipsbe32      --platforms=//platforms:freebsd_mipsbe32
 

@@ -41,6 +41,13 @@ toolchain(
 )
 
 toolchain(
+    name = "bootlin_armv7",
+    toolchain = "@bootlin_armv7//:cc_toolchain",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+    target_compatible_with = ["//platforms:armv7"],
+)
+
+toolchain(
     name = "bootlin_mipsel32",
     toolchain = "@bootlin_mipsel32//:cc_toolchain",
     toolchain_type = "@rules_cc//cc:toolchain_type",

@@ -19,6 +19,7 @@ ARCH_TO_TRIPLE: dict[str, str] = {
     "aarch64": "aarch64-buildroot-linux-gnu",
     "armv5_arm": "arm-buildroot-linux-gnueabi",
     "armv5_thumb": "arm-buildroot-linux-gnueabi",
+    "armv7_thumb": "arm-buildroot-linux-gnueabihf",
     "mipsel32": "mipsel-buildroot-linux-gnu",
     "mipsbe32": "mips-buildroot-linux-gnu",
     "s390x": "s390x-buildroot-linux-gnu",
@@ -31,6 +32,7 @@ ARCH_TO_BOOTLIN: dict[str, str] = {
     "aarch64": "aarch64",
     "armv5_arm": "armv5",
     "armv5_thumb": "armv5",
+    "armv7_thumb": "armv7",
     "mipsel32": "mipsel32",
     "mipsbe32": "mipsbe32",
     "s390x": "s390x",
@@ -39,6 +41,7 @@ ARCH_TO_BOOTLIN: dict[str, str] = {
 # Extra compiler flags for specific arches.
 ARCH_EXTRA_CFLAGS: dict[str, list[str]] = {
     "armv5_thumb": ["-mthumb"],
+    "armv7_thumb": ["-march=armv7-a", "-mthumb"],
 }
 
 # Big-endian architectures.
@@ -81,6 +84,13 @@ HELLO_ET_EXEC_ASM: dict[str, str] = {
         f'msg: .ascii "{_MSG}"\n'
     ),
     "armv5_thumb": (
+        f'.syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n'
+        f'  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n'
+        f'  movs r2, #16\n  svc #0\n'
+        f'  movs r7, #248\n  movs r0, #0\n  svc #0\n'
+        f'.align 2\nmsg: .ascii "{_MSG}"\n'
+    ),
+    "armv7_thumb": (
         f'.syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n'
         f'  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n'
         f'  movs r2, #16\n  svc #0\n'

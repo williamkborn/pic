@@ -648,7 +648,7 @@ def _gen_platforms_build() -> str:
                 ":mode_arm"
                 if arch_name == "armv5_arm"
                 else ":mode_thumb"
-                if arch_name == "armv5_thumb"
+                if arch_name in ("armv5_thumb", "armv7_thumb")
                 else ":mode_default"
             )
             name = f"{os_name}_{arch_name}"
@@ -715,6 +715,8 @@ def _gen_toolchains_build() -> str:
         tc_name = arch.name
         if tc_name.startswith("armv5_"):
             tc_name = "armv5"
+        elif tc_name.startswith("armv7_"):
+            tc_name = "armv7"
         lines.append(
             f"toolchain(\n"
             f'    name = "bootlin_{tc_name}",\n'

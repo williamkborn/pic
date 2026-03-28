@@ -170,6 +170,20 @@ _register_arch(
 
 _register_arch(
     Architecture(
+        name="armv7_thumb",
+        gcc_define="__arm__",
+        qemu_binary="qemu-arm-static",
+        bootlin_arch="armv7-eabihf",
+        gcc_triple="arm-buildroot-linux-gnueabihf",
+        extra_cflags=["-march=armv7-a", "-mthumb"],
+        cpu_constraint="//platforms:armv7",
+        uses_mmap2=True,
+        is_32bit=True,
+    )
+)
+
+_register_arch(
+    Architecture(
         name="mipsel32",
         gcc_define="__mips__",
         qemu_binary="qemu-mipsel-static",
@@ -234,6 +248,7 @@ _register_os(
             "aarch64",
             "armv5_arm",
             "armv5_thumb",
+            "armv7_thumb",
             "s390x",
             "mipsel32",
             "mipsbe32",
@@ -250,6 +265,7 @@ _register_os(
             "aarch64",
             "armv5_arm",
             "armv5_thumb",
+            "armv7_thumb",
             "mipsel32",
             "mipsbe32",
         ],
