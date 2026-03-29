@@ -1,0 +1,86 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# ===========================================================================
+# Kernel module VM tests — hermetic QEMU-based testing
+#
+# These tests download a cloud image (cached), boot a QEMU VM, build kernel
+# modules inside the VM, and verify they work. Each test is fully isolated.
+#
+# Prerequisites on the host: qemu-system-x86_64, qemu-img, genisoimage
+# These are NOT managed by Bazel (system-level deps).
+#
+# Usage:
+#   bazel test //kernel:kmod_build_ubuntu      # single test
+#   bazel test //kernel:all                     # all kernel tests
+#   bazel test //kernel:ubuntu_suite            # ubuntu tests only
+# ===========================================================================
+
+# --- Helper script that wraps vm_harness.py ---
+sh_test(
+    name = "kmod_build_ubuntu",
+    srcs = ["run_vm_test.sh"],
+    args = ["kmod-build", "ubuntu", "600"],
+    data = glob(["**/*.py", "**/*.c", "**/*.h", "**/*.S", "**/Makefile"]),
+    tags = ["manual", "exclusive", "no-sandbox"],
+    size = "enormous",
+    timeout = "eternal",
+)
+
+sh_test(
+    name = "kshell_ubuntu",
+    srcs = ["run_vm_test.sh"],
+    args = ["kshell", "ubuntu", "600"],
+    data = glob(["**/*.py", "**/*.c", "**/*.h", "**/*.S", "**/Makefile"]),
+    tags = ["manual", "exclusive", "no-sandbox"],
+    size = "enormous",
+    timeout = "eternal",
+)
+
+sh_test(
+    name = "kshell_nacl_ubuntu",
+    srcs = ["run_vm_test.sh"],
+    args = ["kshell-nacl", "ubuntu", "900"],
+    data = glob(["**/*.py", "**/*.c", "**/*.h", "**/*.S", "**/Makefile"]),
+    tags = ["manual", "exclusive", "no-sandbox"],
+    size = "enormous",
+    timeout = "eternal",
+)
+
+sh_test(
+    name = "kshell_ff_ubuntu",
+    srcs = ["run_vm_test.sh"],
+    args = ["kshell-ff", "ubuntu", "900"],
+    data = glob(["**/*.py", "**/*.c", "**/*.h", "**/*.S", "**/Makefile"]),
+    tags = ["manual", "exclusive", "no-sandbox"],
+    size = "enormous",
+    timeout = "eternal",
+)
+
+sh_test(
+    name = "kmod_build_alpine",
+    srcs = ["run_vm_test.sh"],
+    args = ["kmod-build", "alpine", "300"],
+    data = glob(["**/*.py", "**/*.c", "**/*.h", "**/*.S", "**/Makefile"]),
+    tags = ["manual", "exclusive", "no-sandbox"],
+    size = "enormous",
+    timeout = "eternal",
+)
+
+# --- Test suites ---
+test_suite(
+    name = "ubuntu_suite",
+    tags = ["manual"],
+    tests = [
+        ":kmod_build_ubuntu",
+        ":kshell_ubuntu",
+        ":kshell_nacl_ubuntu",
+    ],
+)
+
+test_suite(
+    name = "alpine_suite",
+    tags = ["manual"],
+    tests = [
+        ":kmod_build_alpine",
+    ],
+)
