@@ -905,7 +905,7 @@ sleep 1
 
 # Load kshell (plaintext for simplicity — upload works the same)
 echo "[test] Loading kshell.ko..."
-insmod kshell.ko host=127.0.0.1 port=4444 persist=1 2>&1
+insmod kshell.ko host=127.0.0.1 port=4444 2>&1
 
 echo "[test] Waiting for upload + run..."
 wait $LISTENER_PID 2>/dev/null || true

