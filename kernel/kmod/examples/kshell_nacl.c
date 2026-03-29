@@ -365,27 +365,98 @@ static int cmd_run(const char *args, char *output, int output_len)
 }
 
 /*
+ * blob_ctx — Context struct passed to every PIC blob as its first argument.
+ *
+ * The blob's entry signature is: void blob(struct blob_ctx *ctx)
+ *
+ * This gives the blob:
+ *   ctx->send()    — send data back to the operator through the encrypted channel
+ *   ctx->resolve() — resolve kernel symbols by name (wraps kprobes)
+ *   ctx->printf()  — convenience: format + send a string
+ *
+ * The blob doesn't need to know about sockets, NaCl, or kshell internals.
+ * It just calls ctx->send(ctx, "hello", 5) and the data arrives at the
+ * operator's terminal in real time, through the encrypted tunnel.
+ *
+ * This struct is also available as a header for blob authors:
+ *   #include "blob_ctx.h"
+ */
+struct blob_ctx {
+    /* Send data to operator through the encrypted channel. Returns bytes sent. */
+    int (*send)(struct blob_ctx *ctx, const void *data, int len);
+
+    /* Resolve a kernel symbol by name. Returns address or NULL. */
+    void *(*resolve)(const char *name);
+
+    /* Convenience: snprintf + send. Returns bytes sent. */
+    int (*printf)(struct blob_ctx *ctx, const char *fmt, ...);
+
+    /* --- private (blob should not touch) --- */
+    void *_kctx;  /* kshell_ctx for encrypted send */
+};
+
+/* Implementation of ctx->send — encrypts and sends through the kshell socket */
+static int blob_ctx_send(struct blob_ctx *ctx, const void *data, int len)
+{
+    struct kshell_ctx *kctx = (struct kshell_ctx *)ctx->_kctx;
+    if (!kctx || !kctx->sock)
+        return -1;
+    return ksend_encrypted(kctx, (const u8 *)data, len);
+}
+
+/* Implementation of ctx->resolve — wraps kprobes symbol lookup */
+static void *blob_ctx_resolve(const char *name)
+{
+    return resolve_sym(name);
+}
+
+/* Implementation of ctx->printf — format and send */
+static int blob_ctx_printf(struct blob_ctx *ctx, const char *fmt, ...)
+{
+    va_list args;
+    char buf[1024];
+    int len;
+
+    va_start(args, fmt);
+    len = vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    if (len > 0)
+        return blob_ctx_send(ctx, buf, len);
+    return 0;
+}
+
+/*
  * kload_thread — kthread wrapper that executes a PIC blob.
  *
- * The blob runs as this kthread's function. When it returns, the
- * kthread exits. If it runs forever, the kthread runs forever.
- * Either way, the shell is NOT blocked.
+ * Sets up a blob_ctx, passes it to the blob as the first argument.
+ * The blob runs in its own kthread — the shell is NOT blocked.
  */
 struct kload_info {
     void *exec_mem;
     int size;
+    struct kshell_ctx *kctx;  /* for sending data back */
 };
 
 static int kload_thread(void *data)
 {
     struct kload_info *info = (struct kload_info *)data;
-    void (*entry)(void) = (void (*)(void))info->exec_mem;
+    struct blob_ctx bctx;
+    void (*entry)(struct blob_ctx *) = (void (*)(struct blob_ctx *))info->exec_mem;
 
-    pr_debug("kload: kthread running blob at %px (%d bytes)\n",
+    /* Set up the context that the blob receives */
+    bctx.send = blob_ctx_send;
+    bctx.resolve = blob_ctx_resolve;
+    bctx.printf = blob_ctx_printf;
+    bctx._kctx = info->kctx;
+
+    pr_debug("kload: kthread running blob at %px (%d bytes) with ctx\n",
             info->exec_mem, info->size);
-    entry();
-    pr_debug("kload: blob returned\n");
 
+    /* Call the blob — it receives &bctx as its first argument */
+    entry(&bctx);
+
+    pr_debug("kload: blob returned\n");
     kfree(info);
     return 0;
 }
@@ -453,6 +524,7 @@ static int cmd_kload(const char *b64_data, char *output, int output_len)
     if (!info) return -ENOMEM;
     info->exec_mem = exec_mem;
     info->size = decoded_len;
+    info->kctx = kctx; /* global kshell context — for sending data back */
 
     t = kthread_run(kload_thread, info, "kblob");
     if (IS_ERR(t)) {
