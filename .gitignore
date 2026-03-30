@@ -42,3 +42,6 @@ mbed/blobs/*.h
 # Debug build artifacts
 /debug/
 
+# Generated blobs
+mbed/blobs/
+
