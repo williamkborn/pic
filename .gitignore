@@ -32,3 +32,6 @@ python/picblobs/_blobs/**/*.so
 # Debug build artifacts
 /debug/
 
+# Generated blobs
+mbed/blobs/
+
