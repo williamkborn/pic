@@ -633,16 +633,21 @@ python/picblobs/
 ├── _runners/                # Cross-compiled test runners
 │   ├── linux/x86_64/runner
 │   └── ...
-└── _generated/              # Auto-generated files (C headers, etc.)
+├── blobs/                   # Pre-extracted .bin + .json (release)
+│   ├── hello.linux.x86_64.bin
+│   ├── hello.linux.x86_64.json
+│   └── ...
+└── manifest.json            # Release catalog (authoritative blob index)
 ```
 
 ### Wheel Contents
 
 The wheel includes:
 - All Python modules
-- `_blobs/` directory (blobs staged by `stage_blobs.py`)
+- `blobs/` directory (pre-extracted .bin + .json sidecars from `tools/extract_release.py`)
+- `manifest.json` (release catalog)
+- `_blobs/` directory (legacy .so files, development fallback)
 - `_runners/` directory (runners staged by `stage_blobs.py`)
-- `_generated/` directory (derived headers)
 
 ---
 

@@ -22,9 +22,10 @@ static void randombytes(unsigned char *x, unsigned long long xlen)
 
 #else /* !PIC_PLATFORM_HOSTED */
 
+#include "picblobs/sys/close.h"
+#include "picblobs/sys/exit_group.h"
 #include "picblobs/sys/open.h"
 #include "picblobs/sys/read.h"
-#include "picblobs/sys/close.h"
 
 static void randombytes(unsigned char *x, unsigned long long xlen)
 {
@@ -34,12 +35,14 @@ static void randombytes(unsigned char *x, unsigned long long xlen)
 
 	fd = (int)pic_open(path, PIC_O_RDONLY, 0);
 	if (fd < 0)
-		return;
+		pic_exit_group(90);
 
 	while (xlen > 0) {
 		n = pic_read(fd, x, (pic_size_t)xlen);
-		if (n <= 0)
-			break;
+		if (n <= 0) {
+			pic_close(fd);
+			pic_exit_group(91);
+		}
 		x += n;
 		xlen -= (unsigned long long)n;
 	}

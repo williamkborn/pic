@@ -7,8 +7,9 @@
 
 #include "mbed.h"
 
-class EthernetInterface : public NetworkInterface {
-public:
+class EthernetInterface : public NetworkInterface
+{
+      public:
 	nsapi_error_t connect() { return NSAPI_ERROR_OK; }
 	const char *get_ip_address() { return "127.0.0.1"; }
 };

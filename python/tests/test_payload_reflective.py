@@ -96,7 +96,9 @@ class TestReflectiveElfPayload:
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
         if not _blob_exists(TEST_PAYLOAD_TYPE, "linux", target_arch):
-            pytest.skip(f"Test payload not staged: {TEST_PAYLOAD_TYPE}/linux/{target_arch}")
+            pytest.skip(
+                f"Test payload not staged: {TEST_PAYLOAD_TYPE}/linux/{target_arch}"
+            )
 
         runner_type = RUNNER_TYPE[target_os]
         try:

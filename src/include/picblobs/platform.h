@@ -32,8 +32,8 @@ struct pic_platform {
 	long (*listen)(int fd, int backlog);
 	long (*accept)(int fd, void *addr, void *addrlen);
 	long (*connect)(int fd, const void *addr, pic_size_t addrlen);
-	long (*setsockopt)(int fd, int level, int optname,
-			   const void *optval, pic_size_t optlen);
+	long (*setsockopt)(int fd, int level, int optname, const void *optval,
+		pic_size_t optlen);
 
 	/* Crypto */
 	void (*randombytes)(unsigned char *buf, unsigned long long len);
@@ -51,8 +51,7 @@ struct pic_platform {
  * pic_* wrappers in hosted mode. Safe because blobs are single-TU
  * and this header is guarded.
  */
-static const struct pic_platform *__pic_plat
-	__attribute__((unused));
+static const struct pic_platform *__pic_plat __attribute__((unused));
 
 #define PIC_PLATFORM_INIT(p) (__pic_plat = (p))
 

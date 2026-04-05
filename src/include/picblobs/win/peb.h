@@ -22,22 +22,22 @@
 #if PIC_ARCH_IS_32BIT
 
 /* 32-bit Windows offsets. */
-#define PEB_LDR_OFFSET                   0x0C
-#define LDR_IN_MEMORY_ORDER_LIST_OFFSET  0x14
-#define LDR_ENTRY_DLLBASE_OFFSET         0x10
-#define LDR_ENTRY_BASEDLLNAME_OFFSET     0x28
-#define UNICODE_STRING_LENGTH_OFFSET     0x00
-#define UNICODE_STRING_BUFFER_OFFSET     0x04
+#define PEB_LDR_OFFSET 0x0C
+#define LDR_IN_MEMORY_ORDER_LIST_OFFSET 0x14
+#define LDR_ENTRY_DLLBASE_OFFSET 0x10
+#define LDR_ENTRY_BASEDLLNAME_OFFSET 0x28
+#define UNICODE_STRING_LENGTH_OFFSET 0x00
+#define UNICODE_STRING_BUFFER_OFFSET 0x04
 
 #else
 
 /* 64-bit Windows offsets. */
-#define PEB_LDR_OFFSET                   0x18
-#define LDR_IN_MEMORY_ORDER_LIST_OFFSET  0x20
-#define LDR_ENTRY_DLLBASE_OFFSET         0x20
-#define LDR_ENTRY_BASEDLLNAME_OFFSET     0x48
-#define UNICODE_STRING_LENGTH_OFFSET     0x00
-#define UNICODE_STRING_BUFFER_OFFSET     0x08
+#define PEB_LDR_OFFSET 0x18
+#define LDR_IN_MEMORY_ORDER_LIST_OFFSET 0x20
+#define LDR_ENTRY_DLLBASE_OFFSET 0x20
+#define LDR_ENTRY_BASEDLLNAME_OFFSET 0x48
+#define UNICODE_STRING_LENGTH_OFFSET 0x00
+#define UNICODE_STRING_BUFFER_OFFSET 0x08
 
 #endif
 
@@ -60,8 +60,7 @@ static inline void *pic_find_module(void *peb, pic_u32 dll_hash)
 	 * Ldr → InMemoryOrderModuleList (LIST_ENTRY).
 	 * This is the list head; first real entry is at Flink.
 	 */
-	pic_u8 *list_head =
-		(pic_u8 *)ldr + LDR_IN_MEMORY_ORDER_LIST_OFFSET;
+	pic_u8 *list_head = (pic_u8 *)ldr + LDR_IN_MEMORY_ORDER_LIST_OFFSET;
 	pic_u8 *entry = *(pic_u8 **)list_head; /* Flink */
 
 	while (entry != list_head) {
@@ -77,7 +76,7 @@ static inline void *pic_find_module(void *peb, pic_u32 dll_hash)
 			if (h == dll_hash) {
 				/* DllBase at entry + 0x20. */
 				return *(void **)(entry +
-						  LDR_ENTRY_DLLBASE_OFFSET);
+					LDR_ENTRY_DLLBASE_OFFSET);
 			}
 		}
 

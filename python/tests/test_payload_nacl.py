@@ -154,6 +154,7 @@ class TestNaClE2E:
 
         # Port 9999 is hardcoded in the NaCl C sources. Skip if already bound.
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             if s.connect_ex(("127.0.0.1", NACL_PORT)) == 0:
                 pytest.skip(f"Port {NACL_PORT} in use (another NaCl test running?)")
@@ -198,15 +199,11 @@ class TestNaClE2E:
             )
 
             # Wait for client to finish (it drives the protocol).
-            client_stdout, client_stderr = client_proc.communicate(
-                timeout=E2E_TIMEOUT
-            )
+            client_stdout, client_stderr = client_proc.communicate(timeout=E2E_TIMEOUT)
             client_exit = client_proc.returncode
 
             # Server should exit shortly after client disconnects.
-            server_stdout, server_stderr = server_proc.communicate(
-                timeout=E2E_TIMEOUT
-            )
+            server_stdout, server_stderr = server_proc.communicate(timeout=E2E_TIMEOUT)
             server_exit = server_proc.returncode
 
         except subprocess.TimeoutExpired:

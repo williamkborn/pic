@@ -139,7 +139,9 @@ def build_and_stage(
             blob_labels.append(BLOB_LABEL_TEMPLATE.format(name=blob_name))
 
         want_runner = not no_runners and not debug
-        runner_label = RUNNER_LABEL.format(runner_type=runner_type) if want_runner else ""
+        runner_label = (
+            RUNNER_LABEL.format(runner_type=runner_type) if want_runner else ""
+        )
 
         if not blob_labels and not runner_label:
             continue
@@ -213,7 +215,8 @@ def main() -> int:
     )
     # Default to Linux + Windows configs. FreeBSD runners are not yet buildable.
     _default_configs = [
-        k for k in PLATFORM_CONFIGS
+        k
+        for k in PLATFORM_CONFIGS
         if k.startswith("linux:") or k.startswith("windows:")
     ]
     parser.add_argument(

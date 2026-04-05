@@ -9,15 +9,15 @@
 #ifndef MBED_H
 #define MBED_H
 
+#include <arpa/inet.h>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cstdint>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 /* ---- NSAPI types ---- */
 
@@ -34,8 +34,9 @@ typedef int PinName;
 
 /* ---- Serial ---- */
 
-class Serial {
-public:
+class Serial
+{
+      public:
 	Serial(PinName, PinName, int) {}
 	void putc(int c)
 	{
@@ -52,23 +53,22 @@ public:
 
 /* ---- NetworkInterface ---- */
 
-class NetworkInterface {
+class NetworkInterface
+{
 };
 
 /* ---- TCPSocket ---- */
 
 class TCPServer; /* forward */
 
-class TCPSocket {
+class TCPSocket
+{
 	int _fd;
 	friend class TCPServer;
 
-public:
+      public:
 	TCPSocket() : _fd(-1) {}
-	~TCPSocket()
-	{
-		close();
-	}
+	~TCPSocket() { close(); }
 
 	nsapi_error_t open(NetworkInterface *)
 	{
@@ -83,9 +83,10 @@ public:
 		addr.sin_family = AF_INET;
 		addr.sin_port = htons(port);
 		inet_aton(host, &addr.sin_addr);
-		return ::connect(_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0
-			       ? NSAPI_ERROR_OK
-			       : -1;
+		return ::connect(_fd, (struct sockaddr *)&addr, sizeof(addr)) ==
+				0
+			? NSAPI_ERROR_OK
+			: -1;
 	}
 
 	nsapi_size_or_error_t send(const void *data, nsapi_size_t size)
@@ -110,15 +111,13 @@ public:
 
 /* ---- TCPServer ---- */
 
-class TCPServer {
+class TCPServer
+{
 	int _fd;
 
-public:
+      public:
 	TCPServer() : _fd(-1) {}
-	~TCPServer()
-	{
-		close();
-	}
+	~TCPServer() { close(); }
 
 	nsapi_error_t open(NetworkInterface *)
 	{
@@ -136,8 +135,8 @@ public:
 		int one = 1;
 		::setsockopt(_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 		return ::bind(_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0
-			       ? NSAPI_ERROR_OK
-			       : -1;
+			? NSAPI_ERROR_OK
+			: -1;
 	}
 
 	nsapi_error_t listen(int backlog = 1)
@@ -167,8 +166,8 @@ public:
 /* ---- mbedtls hardware poll mock (uses /dev/urandom) ---- */
 
 extern "C" {
-static inline int mbedtls_hardware_poll(void *, unsigned char *output,
-					size_t len, size_t *olen)
+static inline int mbedtls_hardware_poll(
+	void *, unsigned char *output, size_t len, size_t *olen)
 {
 	int fd = ::open("/dev/urandom", O_RDONLY);
 	if (fd < 0)

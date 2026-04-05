@@ -1,3 +1,4 @@
+/* clang-format off */
 /*
  * picblobs/win/djb2.h — DJB2 hash for Windows API resolution (REQ-006).
  *
@@ -5,6 +6,7 @@
  *   pic_djb2()           — hash a null-terminated ASCII string (case-sensitive).
  *   pic_djb2_wide_lower() — hash a UTF-16LE UNICODE_STRING as lowercase ASCII.
  */
+/* clang-format on */
 
 #ifndef PICBLOBS_WIN_DJB2_H
 #define PICBLOBS_WIN_DJB2_H

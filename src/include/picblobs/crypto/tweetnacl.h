@@ -30,24 +30,24 @@
 
 /* ---- API constants ---- */
 
-#define crypto_box_PUBLICKEYBYTES  32
-#define crypto_box_SECRETKEYBYTES  32
-#define crypto_box_BEFORENMBYTES   32
-#define crypto_box_NONCEBYTES      24
-#define crypto_box_ZEROBYTES       32
-#define crypto_box_BOXZEROBYTES    16
+#define crypto_box_PUBLICKEYBYTES 32
+#define crypto_box_SECRETKEYBYTES 32
+#define crypto_box_BEFORENMBYTES 32
+#define crypto_box_NONCEBYTES 24
+#define crypto_box_ZEROBYTES 32
+#define crypto_box_BOXZEROBYTES 16
 
-#define crypto_secretbox_KEYBYTES      32
-#define crypto_secretbox_NONCEBYTES    24
-#define crypto_secretbox_ZEROBYTES     32
-#define crypto_secretbox_BOXZEROBYTES  16
+#define crypto_secretbox_KEYBYTES 32
+#define crypto_secretbox_NONCEBYTES 24
+#define crypto_secretbox_ZEROBYTES 32
+#define crypto_secretbox_BOXZEROBYTES 16
 
-#define crypto_scalarmult_BYTES        32
-#define crypto_scalarmult_SCALARBYTES  32
+#define crypto_scalarmult_BYTES 32
+#define crypto_scalarmult_SCALARBYTES 32
 
-#define crypto_hash_BYTES          64
+#define crypto_hash_BYTES 64
 
-#define crypto_sign_BYTES          64
+#define crypto_sign_BYTES 64
 #define crypto_sign_PUBLICKEYBYTES 32
 #define crypto_sign_SECRETKEYBYTES 64
 
@@ -62,7 +62,7 @@ typedef unsigned long long _tn_u64;
 typedef long long _tn_i64;
 typedef _tn_i64 _tn_gf[16];
 
-#define _TN_FOR(i,n) for (i = 0;i < n;++i)
+#define _TN_FOR(i, n) for ((i) = 0; (i) < (n); ++(i))
 
 /* ---- Internal constants ---- */
 
@@ -70,12 +70,22 @@ static const _tn_u8 _tn_0[16];
 static const _tn_u8 _tn_9[32] = {9};
 static const _tn_gf _tn_gf0;
 static const _tn_gf _tn_gf1 = {1};
-static const _tn_gf _tn_121665 = {0xDB41,1};
-static const _tn_gf _tn_D = {0x78a3, 0x1359, 0x4dca, 0x75eb, 0xd8ab, 0x4141, 0x0a4d, 0x0070, 0xe898, 0x7779, 0x4079, 0x8cc7, 0xfe73, 0x2b6f, 0x6cee, 0x5203};
-static const _tn_gf _tn_D2 = {0xf159, 0x26b2, 0x9b94, 0xebd6, 0xb156, 0x8283, 0x149a, 0x00e0, 0xd130, 0xeef3, 0x80f2, 0x198e, 0xfce7, 0x56df, 0xd9dc, 0x2406};
-static const _tn_gf _tn_X = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525, 0xc760, 0x692c, 0xdc5c, 0xfdd6, 0xe231, 0xc0a4, 0x53fe, 0xcd6e, 0x36d3, 0x2169};
-static const _tn_gf _tn_Y = {0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666};
-static const _tn_gf _tn_I = {0xa0b0, 0x4a0e, 0x1b27, 0xc4ee, 0xe478, 0xad2f, 0x1806, 0x2f43, 0xd7a7, 0x3dfb, 0x0099, 0x2b4d, 0xdf0b, 0x4fc1, 0x2480, 0x2b83};
+static const _tn_gf _tn_121665 = {0xDB41, 1};
+static const _tn_gf _tn_D = {0x78a3, 0x1359, 0x4dca, 0x75eb, 0xd8ab, 0x4141,
+	0x0a4d, 0x0070, 0xe898, 0x7779, 0x4079, 0x8cc7, 0xfe73, 0x2b6f, 0x6cee,
+	0x5203};
+static const _tn_gf _tn_D2 = {0xf159, 0x26b2, 0x9b94, 0xebd6, 0xb156, 0x8283,
+	0x149a, 0x00e0, 0xd130, 0xeef3, 0x80f2, 0x198e, 0xfce7, 0x56df, 0xd9dc,
+	0x2406};
+static const _tn_gf _tn_X = {0xd51a, 0x8f25, 0x2d60, 0xc956, 0xa7b2, 0x9525,
+	0xc760, 0x692c, 0xdc5c, 0xfdd6, 0xe231, 0xc0a4, 0x53fe, 0xcd6e, 0x36d3,
+	0x2169};
+static const _tn_gf _tn_Y = {0x6658, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666,
+	0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666, 0x6666,
+	0x6666};
+static const _tn_gf _tn_I = {0xa0b0, 0x4a0e, 0x1b27, 0xc4ee, 0xe478, 0xad2f,
+	0x1806, 0x2f43, 0xd7a7, 0x3dfb, 0x0099, 0x2b4d, 0xdf0b, 0x4fc1, 0x2480,
+	0x2b83};
 
 static const _tn_u8 _tn_sigma[16] = "expand 32-byte k";
 
@@ -104,13 +114,20 @@ static _tn_u64 _tn_dl64(const _tn_u8 *x)
 static void _tn_st32(_tn_u8 *x, _tn_u32 u)
 {
 	int i;
-	_TN_FOR(i, 4) { x[i] = (_tn_u8)u; u >>= 8; }
+	_TN_FOR(i, 4)
+	{
+		x[i] = (_tn_u8)u;
+		u >>= 8;
+	}
 }
 
 static void _tn_ts64(_tn_u8 *x, _tn_u64 u)
 {
 	int i;
-	for (i = 7; i >= 0; --i) { x[i] = (_tn_u8)u; u >>= 8; }
+	for (i = 7; i >= 0; --i) {
+		x[i] = (_tn_u8)u;
+		u >>= 8;
+	}
 }
 
 static int _tn_vn(const _tn_u8 *x, const _tn_u8 *y, int n)
@@ -130,12 +147,14 @@ static int crypto_verify_32(const _tn_u8 *x, const _tn_u8 *y)
 	return _tn_vn(x, y, 32);
 }
 
-static void _tn_core(_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u8 *c, int h)
+static void _tn_core(
+	_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u8 *c, int h)
 {
 	_tn_u32 w[16], x[16], y[16], t[4];
 	int i, j, m;
 
-	_TN_FOR(i, 4) {
+	_TN_FOR(i, 4)
+	{
 		x[5 * i] = _tn_ld32(c + 4 * i);
 		x[1 + i] = _tn_ld32(k + 4 * i);
 		x[6 + i] = _tn_ld32(in + 4 * i);
@@ -144,8 +163,10 @@ static void _tn_core(_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u
 
 	_TN_FOR(i, 16) y[i] = x[i];
 
-	_TN_FOR(i, 20) {
-		_TN_FOR(j, 4) {
+	_TN_FOR(i, 20)
+	{
+		_TN_FOR(j, 4)
+		{
 			_TN_FOR(m, 4) t[m] = x[(5 * j + 4 * m) % 16];
 			t[1] ^= _tn_L32(t[0] + t[3], 7);
 			t[2] ^= _tn_L32(t[1] + t[0], 9);
@@ -158,11 +179,13 @@ static void _tn_core(_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u
 
 	if (h) {
 		_TN_FOR(i, 16) x[i] += y[i];
-		_TN_FOR(i, 4) {
+		_TN_FOR(i, 4)
+		{
 			x[5 * i] -= _tn_ld32(c + 4 * i);
 			x[6 + i] -= _tn_ld32(in + 4 * i);
 		}
-		_TN_FOR(i, 4) {
+		_TN_FOR(i, 4)
+		{
 			_tn_st32(out + 4 * i, x[5 * i]);
 			_tn_st32(out + 16 + 4 * i, x[6 + i]);
 		}
@@ -171,23 +194,27 @@ static void _tn_core(_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u
 	}
 }
 
-static int crypto_core_salsa20(_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u8 *c)
+static int crypto_core_salsa20(
+	_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u8 *c)
 {
 	_tn_core(out, in, k, c, 0);
 	return 0;
 }
 
-static int crypto_core_hsalsa20(_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u8 *c)
+static int crypto_core_hsalsa20(
+	_tn_u8 *out, const _tn_u8 *in, const _tn_u8 *k, const _tn_u8 *c)
 {
 	_tn_core(out, in, k, c, 1);
 	return 0;
 }
 
-static int crypto_stream_salsa20_xor(_tn_u8 *c, const _tn_u8 *m, _tn_u64 b, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_stream_salsa20_xor(
+	_tn_u8 *c, const _tn_u8 *m, _tn_u64 b, const _tn_u8 *n, const _tn_u8 *k)
 {
 	_tn_u8 z[16], x[64];
 	_tn_u32 u, i;
-	if (!b) return 0;
+	if (!b)
+		return 0;
 	_TN_FOR(i, 16) z[i] = 0;
 	_TN_FOR(i, 8) z[i] = n[i];
 	while (b >= 64) {
@@ -201,7 +228,8 @@ static int crypto_stream_salsa20_xor(_tn_u8 *c, const _tn_u8 *m, _tn_u64 b, cons
 		}
 		b -= 64;
 		c += 64;
-		if (m) m += 64;
+		if (m)
+			m += 64;
 	}
 	if (b) {
 		crypto_core_salsa20(x, z, k, _tn_sigma);
@@ -210,7 +238,8 @@ static int crypto_stream_salsa20_xor(_tn_u8 *c, const _tn_u8 *m, _tn_u64 b, cons
 	return 0;
 }
 
-static int crypto_stream_salsa20(_tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_stream_salsa20(
+	_tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	return crypto_stream_salsa20_xor(c, 0, d, n, k);
 }
@@ -222,7 +251,8 @@ static int crypto_stream(_tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 	return crypto_stream_salsa20(c, d, n + 16, s);
 }
 
-static int crypto_stream_xor(_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_stream_xor(
+	_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	_tn_u8 s[32];
 	crypto_core_hsalsa20(s, n, k, _tn_sigma);
@@ -234,7 +264,8 @@ static int crypto_stream_xor(_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8
 static void _tn_add1305(_tn_u32 *h, const _tn_u32 *c)
 {
 	_tn_u32 j, u = 0;
-	_TN_FOR(j, 17) {
+	_TN_FOR(j, 17)
+	{
 		u += h[j] + c[j];
 		h[j] = u & 255;
 		u >>= 8;
@@ -242,10 +273,10 @@ static void _tn_add1305(_tn_u32 *h, const _tn_u32 *c)
 }
 
 static const _tn_u32 _tn_minusp[17] = {
-	5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 252
-};
+	5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 252};
 
-static int crypto_onetimeauth(_tn_u8 *out, const _tn_u8 *m, _tn_u64 n, const _tn_u8 *k)
+static int crypto_onetimeauth(
+	_tn_u8 *out, const _tn_u8 *m, _tn_u64 n, const _tn_u8 *k)
 {
 	_tn_u32 s, i, j, u, x[17], r[17], h[17], c[17], g[17];
 
@@ -261,29 +292,38 @@ static int crypto_onetimeauth(_tn_u8 *out, const _tn_u8 *m, _tn_u64 n, const _tn
 
 	while (n > 0) {
 		_TN_FOR(j, 17) c[j] = 0;
-		for (j = 0; (j < 16) && (j < n); ++j) c[j] = m[j];
+		for (j = 0; (j < 16) && (j < n); ++j)
+			c[j] = m[j];
 		c[j] = 1;
-		m += j; n -= j;
+		m += j;
+		n -= j;
 		_tn_add1305(h, c);
-		_TN_FOR(i, 17) {
+		_TN_FOR(i, 17)
+		{
 			x[i] = 0;
-			_TN_FOR(j, 17) x[i] += h[j] * ((j <= i) ? r[i - j] : 320 * r[i + 17 - j]);
+			_TN_FOR(j, 17)
+			x[i] += h[j] *
+				((j <= i) ? r[i - j] : 320 * r[i + 17 - j]);
 		}
 		_TN_FOR(i, 17) h[i] = x[i];
 		u = 0;
-		_TN_FOR(j, 16) {
+		_TN_FOR(j, 16)
+		{
 			u += h[j];
 			h[j] = u & 255;
 			u >>= 8;
 		}
-		u += h[16]; h[16] = u & 3;
+		u += h[16];
+		h[16] = u & 3;
 		u = 5 * (u >> 2);
-		_TN_FOR(j, 16) {
+		_TN_FOR(j, 16)
+		{
 			u += h[j];
 			h[j] = u & 255;
 			u >>= 8;
 		}
-		u += h[16]; h[16] = u;
+		u += h[16];
+		h[16] = u;
 	}
 
 	_TN_FOR(j, 17) g[j] = h[j];
@@ -298,7 +338,8 @@ static int crypto_onetimeauth(_tn_u8 *out, const _tn_u8 *m, _tn_u64 n, const _tn
 	return 0;
 }
 
-static int crypto_onetimeauth_verify(const _tn_u8 *h, const _tn_u8 *m, _tn_u64 n, const _tn_u8 *k)
+static int crypto_onetimeauth_verify(
+	const _tn_u8 *h, const _tn_u8 *m, _tn_u64 n, const _tn_u8 *k)
 {
 	_tn_u8 x[16];
 	crypto_onetimeauth(x, m, n, k);
@@ -307,23 +348,28 @@ static int crypto_onetimeauth_verify(const _tn_u8 *h, const _tn_u8 *m, _tn_u64 n
 
 /* ---- Secretbox (XSalsa20-Poly1305) ---- */
 
-static int crypto_secretbox(_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_secretbox(
+	_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	int i;
-	if (d < 32) return -1;
+	if (d < 32)
+		return -1;
 	crypto_stream_xor(c, m, d, n, k);
 	crypto_onetimeauth(c + 16, c + 32, d - 32, c);
 	_TN_FOR(i, 16) c[i] = 0;
 	return 0;
 }
 
-static int crypto_secretbox_open(_tn_u8 *m, const _tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_secretbox_open(
+	_tn_u8 *m, const _tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	int i;
 	_tn_u8 x[32];
-	if (d < 32) return -1;
+	if (d < 32)
+		return -1;
 	crypto_stream(x, 32, n, k);
-	if (crypto_onetimeauth_verify(c + 16, c + 32, d - 32, x) != 0) return -1;
+	if (crypto_onetimeauth_verify(c + 16, c + 32, d - 32, x) != 0)
+		return -1;
 	crypto_stream_xor(m, c, d, n, k);
 	_TN_FOR(i, 32) m[i] = 0;
 	return 0;
@@ -341,7 +387,8 @@ static void _tn_car25519(_tn_gf o)
 {
 	int i;
 	_tn_i64 c;
-	_TN_FOR(i, 16) {
+	_TN_FOR(i, 16)
+	{
 		o[i] += (1LL << 16);
 		c = o[i] >> 16;
 		o[(i + 1) * (i < 15)] += c - 1 + 37 * (c - 1) * (i == 15);
@@ -352,7 +399,8 @@ static void _tn_car25519(_tn_gf o)
 static void _tn_sel25519(_tn_gf p, _tn_gf q, int b)
 {
 	_tn_i64 t, i, c = ~(b - 1);
-	_TN_FOR(i, 16) {
+	_TN_FOR(i, 16)
+	{
 		t = c & (p[i] ^ q[i]);
 		p[i] ^= t;
 		q[i] ^= t;
@@ -367,7 +415,8 @@ static void _tn_pack25519(_tn_u8 *o, const _tn_gf n)
 	_tn_car25519(t);
 	_tn_car25519(t);
 	_tn_car25519(t);
-	_TN_FOR(j, 2) {
+	_TN_FOR(j, 2)
+	{
 		m[0] = t[0] - 0xffed;
 		for (i = 1; i < 15; i++) {
 			m[i] = t[i] - 0xffff - ((m[i - 1] >> 16) & 1);
@@ -378,7 +427,8 @@ static void _tn_pack25519(_tn_u8 *o, const _tn_gf n)
 		m[14] &= 0xffff;
 		_tn_sel25519(t, m, 1 - b);
 	}
-	_TN_FOR(i, 16) {
+	_TN_FOR(i, 16)
+	{
 		o[2 * i] = (_tn_u8)(t[i] & 0xff);
 		o[2 * i + 1] = (_tn_u8)(t[i] >> 8);
 	}
@@ -429,10 +479,7 @@ static void _tn_M(_tn_gf o, const _tn_gf a, const _tn_gf b)
 	_tn_car25519(o);
 }
 
-static void _tn_S(_tn_gf o, const _tn_gf a)
-{
-	_tn_M(o, a, a);
-}
+static void _tn_S(_tn_gf o, const _tn_gf a) { _tn_M(o, a, a); }
 
 static void _tn_inv25519(_tn_gf o, const _tn_gf i)
 {
@@ -441,7 +488,8 @@ static void _tn_inv25519(_tn_gf o, const _tn_gf i)
 	_TN_FOR(a, 16) c[a] = i[a];
 	for (a = 253; a >= 0; a--) {
 		_tn_S(c, c);
-		if (a != 2 && a != 4) _tn_M(c, c, i);
+		if (a != 2 && a != 4)
+			_tn_M(c, c, i);
 	}
 	_TN_FOR(a, 16) o[a] = c[a];
 }
@@ -453,7 +501,8 @@ static void _tn_pow2523(_tn_gf o, const _tn_gf i)
 	_TN_FOR(a, 16) c[a] = i[a];
 	for (a = 250; a >= 0; a--) {
 		_tn_S(c, c);
-		if (a != 1) _tn_M(c, c, i);
+		if (a != 1)
+			_tn_M(c, c, i);
 	}
 	_TN_FOR(a, 16) o[a] = c[a];
 }
@@ -467,7 +516,8 @@ static int crypto_scalarmult(_tn_u8 *q, const _tn_u8 *n, const _tn_u8 *p)
 	z[31] = (n[31] & 127) | 64;
 	z[0] &= 248;
 	_tn_unpack25519(x, p);
-	_TN_FOR(i, 16) {
+	_TN_FOR(i, 16)
+	{
 		b[i] = x[i];
 		d[i] = a[i] = c[i] = 0;
 	}
@@ -497,7 +547,8 @@ static int crypto_scalarmult(_tn_u8 *q, const _tn_u8 *n, const _tn_u8 *p)
 		_tn_sel25519(a, b, (int)r);
 		_tn_sel25519(c, d, (int)r);
 	}
-	_TN_FOR(i, 16) {
+	_TN_FOR(i, 16)
+	{
 		x[i + 16] = a[i];
 		x[i + 32] = c[i];
 		x[i + 48] = b[i];
@@ -529,24 +580,28 @@ static int crypto_box_beforenm(_tn_u8 *k, const _tn_u8 *y, const _tn_u8 *x)
 	return crypto_core_hsalsa20(k, _tn_0, s, _tn_sigma);
 }
 
-static int crypto_box_afternm(_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_box_afternm(
+	_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	return crypto_secretbox(c, m, d, n, k);
 }
 
-static int crypto_box_open_afternm(_tn_u8 *m, const _tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
+static int crypto_box_open_afternm(
+	_tn_u8 *m, const _tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	return crypto_secretbox_open(m, c, d, n, k);
 }
 
-static int crypto_box(_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *y, const _tn_u8 *x)
+static int crypto_box(_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n,
+	const _tn_u8 *y, const _tn_u8 *x)
 {
 	_tn_u8 k[32];
 	crypto_box_beforenm(k, y, x);
 	return crypto_box_afternm(c, m, d, n, k);
 }
 
-static int crypto_box_open(_tn_u8 *m, const _tn_u8 *c, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *y, const _tn_u8 *x)
+static int crypto_box_open(_tn_u8 *m, const _tn_u8 *c, _tn_u64 d,
+	const _tn_u8 *n, const _tn_u8 *y, const _tn_u8 *x)
 {
 	_tn_u8 k[32];
 	crypto_box_beforenm(k, y, x);
@@ -556,35 +611,58 @@ static int crypto_box_open(_tn_u8 *m, const _tn_u8 *c, _tn_u64 d, const _tn_u8 *
 /* ---- SHA-512 ---- */
 
 static _tn_u64 _tn_R(_tn_u64 x, int c) { return (x >> c) | (x << (64 - c)); }
-static _tn_u64 _tn_Ch(_tn_u64 x, _tn_u64 y, _tn_u64 z) { return (x & y) ^ (~x & z); }
-static _tn_u64 _tn_Maj(_tn_u64 x, _tn_u64 y, _tn_u64 z) { return (x & y) ^ (x & z) ^ (y & z); }
-static _tn_u64 _tn_Sigma0(_tn_u64 x) { return _tn_R(x, 28) ^ _tn_R(x, 34) ^ _tn_R(x, 39); }
-static _tn_u64 _tn_Sigma1(_tn_u64 x) { return _tn_R(x, 14) ^ _tn_R(x, 18) ^ _tn_R(x, 41); }
-static _tn_u64 _tn_sigma0(_tn_u64 x) { return _tn_R(x, 1) ^ _tn_R(x, 8) ^ (x >> 7); }
-static _tn_u64 _tn_sigma1(_tn_u64 x) { return _tn_R(x, 19) ^ _tn_R(x, 61) ^ (x >> 6); }
+static _tn_u64 _tn_Ch(_tn_u64 x, _tn_u64 y, _tn_u64 z)
+{
+	return (x & y) ^ (~x & z);
+}
+static _tn_u64 _tn_Maj(_tn_u64 x, _tn_u64 y, _tn_u64 z)
+{
+	return (x & y) ^ (x & z) ^ (y & z);
+}
+static _tn_u64 _tn_Sigma0(_tn_u64 x)
+{
+	return _tn_R(x, 28) ^ _tn_R(x, 34) ^ _tn_R(x, 39);
+}
+static _tn_u64 _tn_Sigma1(_tn_u64 x)
+{
+	return _tn_R(x, 14) ^ _tn_R(x, 18) ^ _tn_R(x, 41);
+}
+static _tn_u64 _tn_sigma0(_tn_u64 x)
+{
+	return _tn_R(x, 1) ^ _tn_R(x, 8) ^ (x >> 7);
+}
+static _tn_u64 _tn_sigma1(_tn_u64 x)
+{
+	return _tn_R(x, 19) ^ _tn_R(x, 61) ^ (x >> 6);
+}
 
-static const _tn_u64 _tn_K[80] = {
-	0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL, 0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL,
-	0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL, 0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL,
-	0xd807aa98a3030242ULL, 0x12835b0145706fbeULL, 0x243185be4ee4b28cULL, 0x550c7dc3d5ffb4e2ULL,
-	0x72be5d74f27b896fULL, 0x80deb1fe3b1696b1ULL, 0x9bdc06a725c71235ULL, 0xc19bf174cf692694ULL,
-	0xe49b69c19ef14ad2ULL, 0xefbe4786384f25e3ULL, 0x0fc19dc68b8cd5b5ULL, 0x240ca1cc77ac9c65ULL,
-	0x2de92c6f592b0275ULL, 0x4a7484aa6ea6e483ULL, 0x5cb0a9dcbd41fbd4ULL, 0x76f988da831153b5ULL,
-	0x983e5152ee66dfabULL, 0xa831c66d2db43210ULL, 0xb00327c898fb213fULL, 0xbf597fc7beef0ee4ULL,
-	0xc6e00bf33da88fc2ULL, 0xd5a79147930aa725ULL, 0x06ca6351e003826fULL, 0x142929670a0e6e70ULL,
-	0x27b70a8546d22ffcULL, 0x2e1b21385c26c926ULL, 0x4d2c6dfc5ac42aedULL, 0x53380d139d95b3dfULL,
-	0x650a73548baf63deULL, 0x766a0abb3c77b2a8ULL, 0x81c2c92e47edaee6ULL, 0x92722c851482353bULL,
-	0xa2bfe8a14cf10364ULL, 0xa81a664bbc423001ULL, 0xc24b8b70d0f89791ULL, 0xc76c51a30654be30ULL,
-	0xd192e819d6ef5218ULL, 0xd69906245565a910ULL, 0xf40e35855771202aULL, 0x106aa07032bbd1b8ULL,
-	0x19a4c116b8d2d0c8ULL, 0x1e376c085141ab53ULL, 0x2748774cdf8eeb99ULL, 0x34b0bcb5e19b48a8ULL,
-	0x391c0cb3c5c95a63ULL, 0x4ed8aa4ae3418acbULL, 0x5b9cca4f7763e373ULL, 0x682e6ff3d6b2b8a3ULL,
-	0x748f82ee5defb2fcULL, 0x78a5636f43172f60ULL, 0x84c87814a1f0ab72ULL, 0x8cc702081a6439ecULL,
-	0x90befffa23631e28ULL, 0xa4506cebde82bde9ULL, 0xbef9a3f7b2c67915ULL, 0xc67178f2e372532bULL,
-	0xca273eceea26619cULL, 0xd186b8c721c0c207ULL, 0xeada7dd6cde0eb1eULL, 0xf57d4f7fee6ed178ULL,
-	0x06f067aa72176fbaULL, 0x0a637dc5a2c898a6ULL, 0x113f9804bef90daeULL, 0x1b710b35131c471bULL,
-	0x28db77f523047d84ULL, 0x32caab7b40c72493ULL, 0x3c9ebe0a15c9bebcULL, 0x431d67c49c100d4cULL,
-	0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL, 0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL
-};
+static const _tn_u64 _tn_K[80] = {0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL,
+	0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL, 0x3956c25bf348b538ULL,
+	0x59f111f1b605d019ULL, 0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL,
+	0xd807aa98a3030242ULL, 0x12835b0145706fbeULL, 0x243185be4ee4b28cULL,
+	0x550c7dc3d5ffb4e2ULL, 0x72be5d74f27b896fULL, 0x80deb1fe3b1696b1ULL,
+	0x9bdc06a725c71235ULL, 0xc19bf174cf692694ULL, 0xe49b69c19ef14ad2ULL,
+	0xefbe4786384f25e3ULL, 0x0fc19dc68b8cd5b5ULL, 0x240ca1cc77ac9c65ULL,
+	0x2de92c6f592b0275ULL, 0x4a7484aa6ea6e483ULL, 0x5cb0a9dcbd41fbd4ULL,
+	0x76f988da831153b5ULL, 0x983e5152ee66dfabULL, 0xa831c66d2db43210ULL,
+	0xb00327c898fb213fULL, 0xbf597fc7beef0ee4ULL, 0xc6e00bf33da88fc2ULL,
+	0xd5a79147930aa725ULL, 0x06ca6351e003826fULL, 0x142929670a0e6e70ULL,
+	0x27b70a8546d22ffcULL, 0x2e1b21385c26c926ULL, 0x4d2c6dfc5ac42aedULL,
+	0x53380d139d95b3dfULL, 0x650a73548baf63deULL, 0x766a0abb3c77b2a8ULL,
+	0x81c2c92e47edaee6ULL, 0x92722c851482353bULL, 0xa2bfe8a14cf10364ULL,
+	0xa81a664bbc423001ULL, 0xc24b8b70d0f89791ULL, 0xc76c51a30654be30ULL,
+	0xd192e819d6ef5218ULL, 0xd69906245565a910ULL, 0xf40e35855771202aULL,
+	0x106aa07032bbd1b8ULL, 0x19a4c116b8d2d0c8ULL, 0x1e376c085141ab53ULL,
+	0x2748774cdf8eeb99ULL, 0x34b0bcb5e19b48a8ULL, 0x391c0cb3c5c95a63ULL,
+	0x4ed8aa4ae3418acbULL, 0x5b9cca4f7763e373ULL, 0x682e6ff3d6b2b8a3ULL,
+	0x748f82ee5defb2fcULL, 0x78a5636f43172f60ULL, 0x84c87814a1f0ab72ULL,
+	0x8cc702081a6439ecULL, 0x90befffa23631e28ULL, 0xa4506cebde82bde9ULL,
+	0xbef9a3f7b2c67915ULL, 0xc67178f2e372532bULL, 0xca273eceea26619cULL,
+	0xd186b8c721c0c207ULL, 0xeada7dd6cde0eb1eULL, 0xf57d4f7fee6ed178ULL,
+	0x06f067aa72176fbaULL, 0x0a637dc5a2c898a6ULL, 0x113f9804bef90daeULL,
+	0x1b710b35131c471bULL, 0x28db77f523047d84ULL, 0x32caab7b40c72493ULL,
+	0x3c9ebe0a15c9bebcULL, 0x431d67c49c100d4cULL, 0x4cc5d4becb3e42b6ULL,
+	0x597f299cfc657e2aULL, 0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL};
 
 static int crypto_hashblocks(_tn_u8 *x, const _tn_u8 *m, _tn_u64 n)
 {
@@ -596,18 +674,27 @@ static int crypto_hashblocks(_tn_u8 *x, const _tn_u8 *m, _tn_u64 n)
 	while (n >= 128) {
 		_TN_FOR(i, 16) w[i] = _tn_dl64(m + 8 * i);
 
-		_TN_FOR(i, 80) {
+		_TN_FOR(i, 80)
+		{
 			_TN_FOR(j, 8) b[j] = a[j];
-			t = a[7] + _tn_Sigma1(a[4]) + _tn_Ch(a[4], a[5], a[6]) + _tn_K[i] + w[i % 16];
+			t = a[7] + _tn_Sigma1(a[4]) + _tn_Ch(a[4], a[5], a[6]) +
+				_tn_K[i] + w[i % 16];
 			b[7] = t + _tn_Sigma0(a[0]) + _tn_Maj(a[0], a[1], a[2]);
 			b[3] += t;
 			_TN_FOR(j, 8) a[(j + 1) % 8] = b[j];
+			/* clang-format off */
 			if (i % 16 == 15)
 				_TN_FOR(j, 16)
-					w[j] += w[(j + 9) % 16] + _tn_sigma0(w[(j + 1) % 16]) + _tn_sigma1(w[(j + 14) % 16]);
+					w[j] += w[(j + 9) % 16] + _tn_sigma0(w[(j + 1) % 16]) +
+						_tn_sigma1(w[(j + 14) % 16]);
+			/* clang-format on */
 		}
 
-		_TN_FOR(i, 8) { a[i] += z[i]; z[i] = a[i]; }
+		_TN_FOR(i, 8)
+		{
+			a[i] += z[i];
+			z[i] = a[i];
+		}
 
 		m += 128;
 		n -= 128;
@@ -618,16 +705,12 @@ static int crypto_hashblocks(_tn_u8 *x, const _tn_u8 *m, _tn_u64 n)
 	return (int)n;
 }
 
-static const _tn_u8 _tn_iv[64] = {
-	0x6a,0x09,0xe6,0x67,0xf3,0xbc,0xc9,0x08,
-	0xbb,0x67,0xae,0x85,0x84,0xca,0xa7,0x3b,
-	0x3c,0x6e,0xf3,0x72,0xfe,0x94,0xf8,0x2b,
-	0xa5,0x4f,0xf5,0x3a,0x5f,0x1d,0x36,0xf1,
-	0x51,0x0e,0x52,0x7f,0xad,0xe6,0x82,0xd1,
-	0x9b,0x05,0x68,0x8c,0x2b,0x3e,0x6c,0x1f,
-	0x1f,0x83,0xd9,0xab,0xfb,0x41,0xbd,0x6b,
-	0x5b,0xe0,0xcd,0x19,0x13,0x7e,0x21,0x79
-};
+static const _tn_u8 _tn_iv[64] = {0x6a, 0x09, 0xe6, 0x67, 0xf3, 0xbc, 0xc9,
+	0x08, 0xbb, 0x67, 0xae, 0x85, 0x84, 0xca, 0xa7, 0x3b, 0x3c, 0x6e, 0xf3,
+	0x72, 0xfe, 0x94, 0xf8, 0x2b, 0xa5, 0x4f, 0xf5, 0x3a, 0x5f, 0x1d, 0x36,
+	0xf1, 0x51, 0x0e, 0x52, 0x7f, 0xad, 0xe6, 0x82, 0xd1, 0x9b, 0x05, 0x68,
+	0x8c, 0x2b, 0x3e, 0x6c, 0x1f, 0x1f, 0x83, 0xd9, 0xab, 0xfb, 0x41, 0xbd,
+	0x6b, 0x5b, 0xe0, 0xcd, 0x19, 0x13, 0x7e, 0x21, 0x79};
 
 static int crypto_hash(_tn_u8 *out, const _tn_u8 *m, _tn_u64 n)
 {
@@ -685,8 +768,10 @@ static void _tn_add(_tn_gf p[4], _tn_gf q[4])
 static void _tn_cswap(_tn_gf p[4], _tn_gf q[4], _tn_u8 b)
 {
 	int i;
+	/* clang-format off */
 	_TN_FOR(i, 4)
 		_tn_sel25519(p[i], q[i], b);
+	/* clang-format on */
 }
 
 static void _tn_pack(_tn_u8 *r, _tn_gf p[4])
@@ -744,7 +829,9 @@ static int crypto_sign_keypair(_tn_u8 *pk, _tn_u8 *sk)
 	return 0;
 }
 
-static const _tn_u64 _tn_L[32] = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10};
+static const _tn_u64 _tn_L[32] = {0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12,
+	0x58, 0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10};
 
 static void _tn_modL(_tn_u8 *r, _tn_i64 x[64])
 {
@@ -752,7 +839,8 @@ static void _tn_modL(_tn_u8 *r, _tn_i64 x[64])
 	for (i = 63; i >= 32; --i) {
 		carry = 0;
 		for (j = i - 32; j < i - 12; ++j) {
-			x[j] += carry - 16 * x[i] * (_tn_i64)_tn_L[j - (i - 32)];
+			x[j] += carry -
+				16 * x[i] * (_tn_i64)_tn_L[j - (i - 32)];
 			carry = (x[j] + 128) >> 8;
 			x[j] -= carry << 8;
 		}
@@ -760,13 +848,15 @@ static void _tn_modL(_tn_u8 *r, _tn_i64 x[64])
 		x[i] = 0;
 	}
 	carry = 0;
-	_TN_FOR(j, 32) {
+	_TN_FOR(j, 32)
+	{
 		x[j] += carry - (x[31] >> 4) * (_tn_i64)_tn_L[j];
 		carry = x[j] >> 8;
 		x[j] &= 255;
 	}
 	_TN_FOR(j, 32) x[j] -= carry * (_tn_i64)_tn_L[j];
-	_TN_FOR(i, 32) {
+	_TN_FOR(i, 32)
+	{
 		x[i + 1] += x[i] >> 8;
 		r[i] = (_tn_u8)(x[i] & 255);
 	}
@@ -780,7 +870,8 @@ static void _tn_reduce(_tn_u8 *r)
 	_tn_modL(r, x);
 }
 
-static int crypto_sign(_tn_u8 *sm, _tn_u64 *smlen, const _tn_u8 *m, _tn_u64 n, const _tn_u8 *sk)
+static int crypto_sign(_tn_u8 *sm, _tn_u64 *smlen, const _tn_u8 *m, _tn_u64 n,
+	const _tn_u8 *sk)
 {
 	_tn_u8 d[64], h[64], r[64];
 	_tn_i64 i, j, x[64];
@@ -836,28 +927,34 @@ static int _tn_unpackneg(_tn_gf r[4], const _tn_u8 p[32])
 
 	_tn_S(chk, r[0]);
 	_tn_M(chk, chk, den);
-	if (_tn_neq25519(chk, num)) _tn_M(r[0], r[0], _tn_I);
+	if (_tn_neq25519(chk, num))
+		_tn_M(r[0], r[0], _tn_I);
 
 	_tn_S(chk, r[0]);
 	_tn_M(chk, chk, den);
-	if (_tn_neq25519(chk, num)) return -1;
+	if (_tn_neq25519(chk, num))
+		return -1;
 
-	if (_tn_par25519(r[0]) == (p[31] >> 7)) _tn_Z(r[0], _tn_gf0, r[0]);
+	if (_tn_par25519(r[0]) == (p[31] >> 7))
+		_tn_Z(r[0], _tn_gf0, r[0]);
 
 	_tn_M(r[3], r[0], r[1]);
 	return 0;
 }
 
-static int crypto_sign_open(_tn_u8 *m, _tn_u64 *mlen, const _tn_u8 *sm, _tn_u64 n, const _tn_u8 *pk)
+static int crypto_sign_open(
+	_tn_u8 *m, _tn_u64 *mlen, const _tn_u8 *sm, _tn_u64 n, const _tn_u8 *pk)
 {
 	int i;
 	_tn_u8 t[32], h[64];
 	_tn_gf p[4], q[4];
 
 	*mlen = (_tn_u64)-1;
-	if (n < 64) return -1;
+	if (n < 64)
+		return -1;
 
-	if (_tn_unpackneg(q, pk)) return -1;
+	if (_tn_unpackneg(q, pk))
+		return -1;
 
 	_TN_FOR(i, (_tn_i64)n) m[i] = sm[i];
 	_TN_FOR(i, 32) m[i + 32] = pk[i];

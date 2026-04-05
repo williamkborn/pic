@@ -18,7 +18,7 @@
 #define PE_DOS_E_LFANEW_OFFSET 0x3C
 
 /* Offsets from PE signature. */
-#define PE_COFF_HEADER_SIZE    0x18 /* signature (4) + COFF header (20) */
+#define PE_COFF_HEADER_SIZE 0x18 /* signature (4) + COFF header (20) */
 
 /*
  * DataDirectory[0] offset from optional header start:
@@ -32,10 +32,10 @@
 #endif
 
 /* Export directory offsets. */
-#define EXPORT_DIR_NUM_NAMES          0x18
-#define EXPORT_DIR_ADDR_OF_FUNCTIONS  0x1C
-#define EXPORT_DIR_ADDR_OF_NAMES      0x20
-#define EXPORT_DIR_ADDR_OF_ORDINALS   0x24
+#define EXPORT_DIR_NUM_NAMES 0x18
+#define EXPORT_DIR_ADDR_OF_FUNCTIONS 0x1C
+#define EXPORT_DIR_ADDR_OF_NAMES 0x20
+#define EXPORT_DIR_ADDR_OF_ORDINALS 0x24
 
 /*
  * Resolve an exported function from a PE image by DJB2 hash.
@@ -65,18 +65,12 @@ static inline void *pic_find_export(void *dll_base, pic_u32 func_hash)
 
 	/* Export directory fields. */
 	pic_u32 num_names = *(pic_u32 *)(export_dir + EXPORT_DIR_NUM_NAMES);
-	pic_u32 *addr_table =
-		(pic_u32 *)(base +
-			    *(pic_u32 *)(export_dir +
-					 EXPORT_DIR_ADDR_OF_FUNCTIONS));
-	pic_u32 *name_table =
-		(pic_u32 *)(base +
-			    *(pic_u32 *)(export_dir +
-					 EXPORT_DIR_ADDR_OF_NAMES));
-	pic_u16 *ordinal_table =
-		(pic_u16 *)(base +
-			    *(pic_u32 *)(export_dir +
-					 EXPORT_DIR_ADDR_OF_ORDINALS));
+	pic_u32 *addr_table = (pic_u32 *)(base +
+		*(pic_u32 *)(export_dir + EXPORT_DIR_ADDR_OF_FUNCTIONS));
+	pic_u32 *name_table = (pic_u32 *)(base +
+		*(pic_u32 *)(export_dir + EXPORT_DIR_ADDR_OF_NAMES));
+	pic_u16 *ordinal_table = (pic_u16 *)(base +
+		*(pic_u32 *)(export_dir + EXPORT_DIR_ADDR_OF_ORDINALS));
 
 	/* Linear search through export names. */
 	for (pic_u32 i = 0; i < num_names; i++) {

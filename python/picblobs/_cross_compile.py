@@ -53,84 +53,84 @@ _MSG = "Hello, ul_exec!\\n"
 
 HELLO_ET_EXEC_ASM: dict[str, str] = {
     "x86_64": (
-        f'.text\n.globl _start\n_start:\n'
-        f'  mov $1, %eax\n  mov $1, %edi\n  lea msg(%rip), %rsi\n'
-        f'  mov $16, %edx\n  syscall\n'
-        f'  mov $231, %eax\n  xor %edi, %edi\n  syscall\n'
+        f".text\n.globl _start\n_start:\n"
+        f"  mov $1, %eax\n  mov $1, %edi\n  lea msg(%rip), %rsi\n"
+        f"  mov $16, %edx\n  syscall\n"
+        f"  mov $231, %eax\n  xor %edi, %edi\n  syscall\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
     "i686": (
-        f'.text\n.globl _start\n_start:\n'
-        f'  call 1f\n'
-        f'1: pop %ecx\n'
-        f'  add $(msg - 1b), %ecx\n'
-        f'  mov $4, %eax\n  mov $1, %ebx\n'
-        f'  mov $16, %edx\n  int $0x80\n'
-        f'  mov $252, %eax\n  xor %ebx, %ebx\n  int $0x80\n'
+        f".text\n.globl _start\n_start:\n"
+        f"  call 1f\n"
+        f"1: pop %ecx\n"
+        f"  add $(msg - 1b), %ecx\n"
+        f"  mov $4, %eax\n  mov $1, %ebx\n"
+        f"  mov $16, %edx\n  int $0x80\n"
+        f"  mov $252, %eax\n  xor %ebx, %ebx\n  int $0x80\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
     "aarch64": (
-        f'.text\n.globl _start\n_start:\n'
-        f'  mov x8, #64\n  mov x0, #1\n  adr x1, msg\n'
-        f'  mov x2, #16\n  svc #0\n'
-        f'  mov x8, #94\n  mov x0, #0\n  svc #0\n'
+        f".text\n.globl _start\n_start:\n"
+        f"  mov x8, #64\n  mov x0, #1\n  adr x1, msg\n"
+        f"  mov x2, #16\n  svc #0\n"
+        f"  mov x8, #94\n  mov x0, #0\n  svc #0\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
     "armv5_arm": (
-        f'.text\n.globl _start\n_start:\n'
-        f'  mov r7, #4\n  mov r0, #1\n  adr r1, msg\n'
-        f'  mov r2, #16\n  svc #0\n'
-        f'  mov r7, #248\n  mov r0, #0\n  svc #0\n'
+        f".text\n.globl _start\n_start:\n"
+        f"  mov r7, #4\n  mov r0, #1\n  adr r1, msg\n"
+        f"  mov r2, #16\n  svc #0\n"
+        f"  mov r7, #248\n  mov r0, #0\n  svc #0\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
     "armv5_thumb": (
-        f'.syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n'
-        f'  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n'
-        f'  movs r2, #16\n  svc #0\n'
-        f'  movs r7, #248\n  movs r0, #0\n  svc #0\n'
+        f".syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n"
+        f"  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n"
+        f"  movs r2, #16\n  svc #0\n"
+        f"  movs r7, #248\n  movs r0, #0\n  svc #0\n"
         f'.align 2\nmsg: .ascii "{_MSG}"\n'
     ),
     "armv7_thumb": (
-        f'.syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n'
-        f'  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n'
-        f'  movs r2, #16\n  svc #0\n'
-        f'  movs r7, #248\n  movs r0, #0\n  svc #0\n'
+        f".syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n"
+        f"  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n"
+        f"  movs r2, #16\n  svc #0\n"
+        f"  movs r7, #248\n  movs r0, #0\n  svc #0\n"
         f'.align 2\nmsg: .ascii "{_MSG}"\n'
     ),
     "mipsel32": (
-        f'.set noreorder\n.text\n.globl _start\n_start:\n'
-        f'  li $v0, 4004\n'
-        f'  li $a0, 1\n'
-        f'  bal 1f\n'
-        f'  li $a2, 16\n'
-        f'1: addiu $a1, $ra, (msg - 1b)\n'
-        f'  syscall\n'
-        f'  li $v0, 4246\n  li $a0, 0\n  syscall\n'
+        f".set noreorder\n.text\n.globl _start\n_start:\n"
+        f"  li $v0, 4004\n"
+        f"  li $a0, 1\n"
+        f"  bal 1f\n"
+        f"  li $a2, 16\n"
+        f"1: addiu $a1, $ra, (msg - 1b)\n"
+        f"  syscall\n"
+        f"  li $v0, 4246\n  li $a0, 0\n  syscall\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
     "mipsbe32": (
-        f'.set noreorder\n.text\n.globl _start\n_start:\n'
-        f'  li $v0, 4004\n'
-        f'  li $a0, 1\n'
-        f'  bal 1f\n'
-        f'  li $a2, 16\n'
-        f'1: addiu $a1, $ra, (msg - 1b)\n'
-        f'  syscall\n'
-        f'  li $v0, 4246\n  li $a0, 0\n  syscall\n'
+        f".set noreorder\n.text\n.globl _start\n_start:\n"
+        f"  li $v0, 4004\n"
+        f"  li $a0, 1\n"
+        f"  bal 1f\n"
+        f"  li $a2, 16\n"
+        f"1: addiu $a1, $ra, (msg - 1b)\n"
+        f"  syscall\n"
+        f"  li $v0, 4246\n  li $a0, 0\n  syscall\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
     "s390x": (
         # s390x: write(1, msg, 16) = svc 0 with r1=4, r2=fd, r3=buf, r4=len
         # exit_group(0) = svc 0 with r1=248, r2=0
-        f'.text\n.globl _start\n_start:\n'
-        f'  lghi %r1, 4\n'      # __NR_write
-        f'  lghi %r2, 1\n'      # fd=stdout
-        f'  larl %r3, msg\n'    # PC-relative address of msg
-        f'  lghi %r4, 16\n'     # len
-        f'  svc 0\n'
-        f'  lghi %r1, 248\n'    # __NR_exit_group
-        f'  lghi %r2, 0\n'      # code=0
-        f'  svc 0\n'
+        f".text\n.globl _start\n_start:\n"
+        f"  lghi %r1, 4\n"  # __NR_write
+        f"  lghi %r2, 1\n"  # fd=stdout
+        f"  larl %r3, msg\n"  # PC-relative address of msg
+        f"  lghi %r4, 16\n"  # len
+        f"  svc 0\n"
+        f"  lghi %r1, 248\n"  # __NR_exit_group
+        f"  lghi %r2, 0\n"  # code=0
+        f"  svc 0\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
 }
@@ -151,7 +151,9 @@ def _find_bazel_output_base() -> Path | None:
 
         res = subprocess.run(
             ["bazel", "info", "output_base"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             cwd=str(project_root),
         )
         if res.returncode == 0:
@@ -171,8 +173,11 @@ def find_gcc(arch: str) -> str | None:
     output_base = _find_bazel_output_base()
     if output_base:
         gcc_path = (
-            output_base / "external" / f"+bootlin+bootlin_{bootlin_name}"
-            / "bin" / f"{triple}-gcc"
+            output_base
+            / "external"
+            / f"+bootlin+bootlin_{bootlin_name}"
+            / "bin"
+            / f"{triple}-gcc"
         )
         if gcc_path.exists():
             return str(gcc_path)
@@ -194,8 +199,15 @@ def compile_raw_elf(arch: str, asm_source: str) -> bytes | None:
         out_path = Path(tmpdir) / "test.elf"
         src_path.write_text(asm_source)
 
-        cmd = [gcc, str(src_path), "-o", str(out_path),
-               "-nostdlib", "-nostartfiles", "-static"]
+        cmd = [
+            gcc,
+            str(src_path),
+            "-o",
+            str(out_path),
+            "-nostdlib",
+            "-nostartfiles",
+            "-static",
+        ]
         cmd.extend(ARCH_EXTRA_CFLAGS.get(arch, []))
 
         result = subprocess.run(cmd, capture_output=True, timeout=30)

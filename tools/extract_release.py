@@ -1,0 +1,412 @@
+"""Build-time tool: extract .so blobs into the canonical release structure.
+
+Reads staged .so files from python/picblobs/_blobs/{os}/{arch}/{type}.so,
+extracts flat binaries and generates sidecar JSON + manifest.json.
+
+This is Stage 2 of the release build pipeline (MOD-007).
+
+Usage:
+    python tools/extract_release.py                    # extract all
+    python tools/extract_release.py --check            # verify freshness
+    python tools/extract_release.py --so-dir path/     # custom .so source
+    python tools/extract_release.py --out-dir path/    # custom output
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+# Ensure tools/ and python/ are importable.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT / "python"))
+sys.path.insert(0, str(_PROJECT_ROOT))
+
+from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import SymbolTableSection
+
+from tools.registry import (
+    BLOB_TYPES,
+    OPERATING_SYSTEMS,
+    arch_endian,
+    manifest_architectures,
+)
+
+
+# ============================================================
+# ELF extraction (build-time only)
+# ============================================================
+
+# Section permission mapping from ELF flags.
+_SHF_WRITE = 0x1
+_SHF_ALLOC = 0x2
+_SHF_EXECINSTR = 0x4
+
+
+def _section_perm(sh_flags: int) -> str:
+    """Derive permission string from ELF section flags."""
+    if sh_flags & _SHF_EXECINSTR:
+        return "rx"
+    if sh_flags & _SHF_WRITE:
+        return "rw"
+    return "r"
+
+
+def _extract_so(so_path: Path) -> dict:
+    """Extract a .so into flat bytes + metadata dict.
+
+    Returns a dict with keys: code, size, config_offset, entry_offset,
+    sha256, sections (with perm).
+    """
+    with open(so_path, "rb") as f:
+        elf = ELFFile(f)
+
+        symtab = elf.get_section_by_name(".symtab")
+        if symtab is None:
+            raise ValueError(f"No .symtab in {so_path}")
+
+        # Find required symbols.
+        needed = {"__blob_start", "__blob_end", "__config_start"}
+        syms: dict[str, int] = {}
+        for sym in symtab.iter_symbols():
+            if sym.name in needed:
+                syms[sym.name] = sym.entry.st_value
+                if len(syms) == len(needed):
+                    break
+        missing = needed - syms.keys()
+        if missing:
+            raise ValueError(
+                f"Missing symbols in {so_path}: {', '.join(sorted(missing))}"
+            )
+
+        blob_start = syms["__blob_start"]
+        blob_end = syms["__blob_end"]
+        config_start = syms["__config_start"]
+
+        size = blob_end - blob_start
+        buf = bytearray(size)
+        sections: dict[str, dict] = {}
+
+        for section in elf.iter_sections():
+            sh_flags = section.header.sh_flags
+            sh_addr = section.header.sh_addr
+            sh_size = section.header.sh_size
+            sh_type = section.header.sh_type
+            name = section.name
+
+            if not (sh_flags & _SHF_ALLOC):
+                continue
+            if sh_size == 0:
+                continue
+
+            sec_start = sh_addr
+            sec_end = sh_addr + sh_size
+            overlap_start = max(sec_start, blob_start)
+            overlap_end = min(sec_end, blob_end)
+
+            if overlap_start >= overlap_end:
+                continue
+
+            if name and sec_start >= blob_start and sec_start < blob_end:
+                sections[name] = {
+                    "offset": sec_start - blob_start,
+                    "size": sh_size,
+                    "perm": _section_perm(sh_flags),
+                }
+
+            buf_offset = overlap_start - blob_start
+            if sh_type != "SHT_NOBITS":
+                data = section.data()
+                data_offset = overlap_start - sec_start
+                length = overlap_end - overlap_start
+                buf[buf_offset : buf_offset + length] = data[
+                    data_offset : data_offset + length
+                ]
+
+    code = bytes(buf)
+    return {
+        "code": code,
+        "size": len(code),
+        "config_offset": config_start - blob_start,
+        "entry_offset": 0,
+        "sha256": hashlib.sha256(code).hexdigest(),
+        "sections": sections,
+    }
+
+
+# ============================================================
+# Sidecar + manifest generation
+# ============================================================
+
+
+def _build_sidecar(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    extracted: dict,
+) -> dict:
+    """Build the sidecar JSON dict for one blob."""
+    sidecar: dict = {
+        "type": blob_type,
+        "os": os_name,
+        "arch": arch,
+        "size": extracted["size"],
+        "entry_offset": extracted["entry_offset"],
+        "config_offset": extracted["config_offset"],
+        "sha256": extracted["sha256"],
+        "sections": extracted["sections"],
+        "config": None,
+    }
+
+    # Add config schema from registry if available.
+    bt = BLOB_TYPES.get(blob_type)
+    if bt and bt.config_schema:
+        schema = bt.config_schema
+        sidecar["config"] = {
+            "endian": arch_endian(arch),
+            "fixed_size": schema.fixed_size,
+            "fields": [
+                {"name": f.name, "type": f.type, "offset": f.offset}
+                for f in schema.fields
+            ],
+        }
+        if schema.trailing_data:
+            sidecar["config"]["trailing_data"] = [
+                {"name": td.name, "length_field": td.length_field}
+                for td in schema.trailing_data
+            ]
+
+    # Add .config section entry if not already present.
+    if ".config" not in sidecar["sections"]:
+        sidecar["sections"][".config"] = {
+            "offset": extracted["config_offset"],
+            "size": 0,
+            "perm": "rw",
+        }
+
+    return sidecar
+
+
+def _build_manifest(
+    version: str,
+    extracted_blobs: list[tuple[str, str, str]],
+) -> dict:
+    """Build the manifest.json dict.
+
+    Args:
+        version: picblobs version string.
+        extracted_blobs: list of (blob_type, os, arch) that were extracted.
+    """
+    # Build catalog from registry, filtered to what was actually extracted.
+    extracted_set = set(extracted_blobs)
+    catalog: dict[str, dict] = {}
+
+    for bt_name, bt in BLOB_TYPES.items():
+        # Check which platforms actually had .so files extracted.
+        platforms: dict[str, list[str]] = {}
+        for os_name, arches in bt.platforms.items():
+            present = [a for a in arches if (bt_name, os_name, a) in extracted_set]
+            if present:
+                platforms[os_name] = present
+        if platforms:
+            catalog[bt_name] = {
+                "description": bt.description,
+                "has_config": bt.has_config,
+                "platforms": platforms,
+            }
+
+    # Also include any extracted blobs not in the registry (future-proofing).
+    for bt_name, os_name, arch in sorted(extracted_set):
+        if bt_name not in catalog:
+            catalog[bt_name] = {
+                "description": "",
+                "has_config": False,
+                "platforms": {},
+            }
+        platforms = catalog[bt_name]["platforms"]
+        if os_name not in platforms:
+            platforms[os_name] = []
+        if arch not in platforms[os_name]:
+            platforms[os_name].append(arch)
+
+    return {
+        "schema_version": 1,
+        "picblobs_version": version,
+        "architectures": manifest_architectures(),
+        "catalog": catalog,
+    }
+
+
+def _get_version() -> str:
+    """Read picblobs version from pyproject.toml."""
+    pyproject = _PROJECT_ROOT / "python" / "pyproject.toml"
+    for line in pyproject.read_text().splitlines():
+        if line.strip().startswith("version"):
+            # version = "0.1.0"
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return "0.0.0"
+
+
+# ============================================================
+# Main
+# ============================================================
+
+
+def extract_release(
+    so_dir: Path,
+    out_dir: Path,
+    *,
+    verbose: bool = False,
+) -> tuple[int, int]:
+    """Extract all .so blobs into the release structure.
+
+    Returns (extracted_count, error_count).
+    """
+    blobs_dir = out_dir / "blobs"
+    blobs_dir.mkdir(parents=True, exist_ok=True)
+
+    so_files = sorted(so_dir.rglob("*.so"))
+    if not so_files:
+        print(f"No .so files found in {so_dir}", file=sys.stderr)
+        return 0, 0
+
+    extracted_triples: list[tuple[str, str, str]] = []
+    errors = 0
+
+    for so_path in so_files:
+        # Derive type/os/arch from path: _blobs/{os}/{arch}/{type}.so
+        parts = so_path.parts
+        try:
+            blob_type = so_path.stem
+            arch = parts[-2]
+            os_name = parts[-3]
+        except IndexError:
+            print(f"  SKIP {so_path} (unexpected path structure)", file=sys.stderr)
+            errors += 1
+            continue
+
+        basename = f"{blob_type}.{os_name}.{arch}"
+        bin_path = blobs_dir / f"{basename}.bin"
+        json_path = blobs_dir / f"{basename}.json"
+
+        try:
+            extracted = _extract_so(so_path)
+        except Exception as e:
+            print(f"  ERROR {so_path}: {e}", file=sys.stderr)
+            errors += 1
+            continue
+
+        # Write flat binary.
+        bin_path.write_bytes(extracted["code"])
+
+        # Write sidecar JSON.
+        sidecar = _build_sidecar(blob_type, os_name, arch, extracted)
+        json_path.write_text(json.dumps(sidecar, indent=2, sort_keys=False) + "\n")
+
+        extracted_triples.append((blob_type, os_name, arch))
+        if verbose:
+            print(
+                f"  {basename}  {extracted['size']} bytes  sha256={extracted['sha256'][:16]}..."
+            )
+
+    # Write manifest.json.
+    version = _get_version()
+    manifest = _build_manifest(version, extracted_triples)
+    manifest_path = out_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=False) + "\n")
+
+    if verbose:
+        print(
+            f"\nmanifest.json: {len(manifest['catalog'])} blob types, "
+            f"{len(extracted_triples)} blobs"
+        )
+
+    return len(extracted_triples), errors
+
+
+def check_release(so_dir: Path, out_dir: Path) -> bool:
+    """Verify the release structure is up-to-date with the .so files."""
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.exists():
+        print(
+            "manifest.json not found — run: python tools/extract_release.py",
+            file=sys.stderr,
+        )
+        return False
+
+    manifest = json.loads(manifest_path.read_text())
+    blobs_dir = out_dir / "blobs"
+
+    # Check every .so has a corresponding .bin with matching hash.
+    stale = False
+    for so_path in sorted(so_dir.rglob("*.so")):
+        blob_type = so_path.stem
+        parts = so_path.parts
+        try:
+            arch = parts[-2]
+            os_name = parts[-3]
+        except IndexError:
+            continue
+
+        basename = f"{blob_type}.{os_name}.{arch}"
+        bin_path = blobs_dir / f"{basename}.bin"
+        json_path = blobs_dir / f"{basename}.json"
+
+        if not bin_path.exists() or not json_path.exists():
+            print(f"  STALE: {basename} — missing .bin or .json", file=sys.stderr)
+            stale = True
+            continue
+
+        # Re-extract and compare hash.
+        try:
+            extracted = _extract_so(so_path)
+        except Exception:
+            continue
+
+        sidecar = json.loads(json_path.read_text())
+        if sidecar.get("sha256") != extracted["sha256"]:
+            print(f"  STALE: {basename} — sha256 mismatch", file=sys.stderr)
+            stale = True
+
+    return not stale
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Extract .so blobs into the canonical release structure",
+    )
+    parser.add_argument(
+        "--so-dir",
+        type=Path,
+        default=_PROJECT_ROOT / "python" / "picblobs" / "_blobs",
+        help="Directory containing staged .so files (default: python/picblobs/_blobs)",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=_PROJECT_ROOT / "python" / "picblobs",
+        help="Output directory for manifest.json + blobs/ (default: python/picblobs)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify release structure is up-to-date (exit 1 if stale)",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true")
+
+    args = parser.parse_args(argv)
+
+    if args.check:
+        ok = check_release(args.so_dir, args.out_dir)
+        return 0 if ok else 1
+
+    extracted, errors = extract_release(args.so_dir, args.out_dir, verbose=args.verbose)
+    print(f"Extracted {extracted} blobs ({errors} errors)")
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

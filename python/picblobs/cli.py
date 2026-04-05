@@ -205,7 +205,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     the config, and verifies it executes correctly.
     """
     from picblobs import get_blob, list_blobs
-    from picblobs.runner import is_arch_skip_rosetta, run_blob, run_so
+    from picblobs.runner import is_arch_skip_rosetta, run_blob
 
     filter_types = set(args.type) if args.type else None
     filter_oses = set(args.os) if args.os else None
@@ -250,7 +250,6 @@ def cmd_verify(args: argparse.Namespace) -> int:
             if common:
                 nacl_e2e_arches[os_name] = common
 
-    blob_dir = Path(__file__).parent / "_blobs"
     for (os_name, blob_type), arches in sorted(groups.items()):
         if blob_type in _PAIRED_BLOBS or blob_type in _SKIP_BLOBS:
             continue
@@ -265,12 +264,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
             try:
                 if blob_type == "ul_exec":
                     result = _verify_ul_exec(
-                        os_name, arch, args.timeout,
+                        os_name,
+                        arch,
+                        args.timeout,
                     )
                 else:
-                    so = blob_dir / os_name / arch / f"{blob_type}.so"
-                    result = run_so(
-                        str(so), runner_type=os_name, timeout=args.timeout,
+                    blob = get_blob(blob_type, os_name, arch)
+                    result = run_blob(
+                        blob,
+                        runner_type=os_name,
+                        timeout=args.timeout,
                     )
 
                 stdout = result.stdout.decode(errors="replace").strip()
@@ -280,7 +283,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 else:
                     log.error(
                         "  %-20s  FAIL exit=%-4d %r",
-                        label, result.exit_code, stdout,
+                        label,
+                        result.exit_code,
+                        stdout,
                     )
                     failed += 1
                     errors.append(f"{blob_type}/{label}")
@@ -304,7 +309,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
             nacl_timeout = max(args.timeout, 600.0) if args.slow else args.timeout
             try:
                 detail = _verify_nacl_e2e(
-                    os_name, arch, nacl_timeout, force_slow=args.slow,
+                    os_name,
+                    arch,
+                    nacl_timeout,
+                    force_slow=args.slow,
                 )
                 log.info("  %-20s  OK   %s", label, detail)
                 passed += 1
@@ -332,7 +340,9 @@ class _VerifySkip(Exception):
 
 
 def _verify_ul_exec(
-    os_name: str, arch: str, timeout: float,
+    os_name: str,
+    arch: str,
+    timeout: float,
 ) -> "RunResult":
     """Verify ul_exec by compiling and executing a test ELF.
 
@@ -358,7 +368,10 @@ _NACL_E2E_SLOW_ARCHES: frozenset[str] = frozenset()
 
 
 def _verify_nacl_e2e(
-    os_name: str, arch: str, timeout: float, force_slow: bool = False,
+    os_name: str,
+    arch: str,
+    timeout: float,
+    force_slow: bool = False,
 ) -> str:
     """Verify nacl_client + nacl_server via paired subprocess execution.
 
@@ -404,12 +417,16 @@ def _verify_nacl_e2e(
         client_cmd = _build_command(runner_path, client_bin, arch)
 
         server_proc = subprocess.Popen(
-            server_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            server_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         time.sleep(0.5)
 
         client_proc = subprocess.Popen(
-            client_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            client_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
 
         client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
@@ -429,13 +446,9 @@ def _verify_nacl_e2e(
 
     # Validate both exited cleanly.
     if server_exit != 0:
-        raise RuntimeError(
-            f"server exit={server_exit} stderr={server_stderr!r}"
-        )
+        raise RuntimeError(f"server exit={server_exit} stderr={server_stderr!r}")
     if client_exit != 0:
-        raise RuntimeError(
-            f"client exit={client_exit} stderr={client_stderr!r}"
-        )
+        raise RuntimeError(f"client exit={client_exit} stderr={client_stderr!r}")
 
     # Validate protocol completed.
     expected_msg = b"Hello from NaCl PIC blob!"
@@ -443,9 +456,7 @@ def _verify_nacl_e2e(
     client_out = client_stdout.decode(errors="replace")
 
     if expected_msg not in server_stdout:
-        raise RuntimeError(
-            f"server did not decrypt expected plaintext: {server_out!r}"
-        )
+        raise RuntimeError(f"server did not decrypt expected plaintext: {server_out!r}")
     if b"secure channel OK" not in server_stdout:
         raise RuntimeError(f"server did not confirm channel: {server_out!r}")
     if b"secure channel OK" not in client_stdout:
@@ -481,8 +492,16 @@ def cmd_listing(args: argparse.Namespace) -> int:
     if args.so:
         so_path = args.so
     else:
+        # Listing requires .so files (ELF with debug info).
+        # Check _blobs/ (dev) then debug/ directory.
         blob_dir = Path(__file__).parent / "_blobs"
         so_path = str(blob_dir / target_os / target_arch / f"{args.type}.so")
+        if not Path(so_path).exists():
+            # Try project-root debug/ directory.
+            debug_dir = Path(__file__).resolve().parent.parent.parent / "debug"
+            alt = str(debug_dir / target_os / target_arch / f"{args.type}.so")
+            if Path(alt).exists():
+                so_path = alt
 
     if not Path(so_path).exists():
         log.error("File not found: %s", so_path)

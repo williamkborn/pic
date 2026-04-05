@@ -11,10 +11,11 @@
 
 #include "picblobs/section.h"
 #include "picblobs/types.h"
-#include "picblobs/win/peb.h"
 #include "picblobs/win/pe.h"
+#include "picblobs/win/peb.h"
 #include "picblobs/win/teb.h"
 
+/* clang-format off */
 /*
  * Resolve a Windows API function by DJB2 hashes.
  *
@@ -23,6 +24,7 @@
  *
  * Returns the function pointer, or PIC_NULL if not found.
  */
+/* clang-format on */
 PIC_TEXT
 static inline void *pic_resolve(pic_u32 dll_hash, pic_u32 func_hash)
 {

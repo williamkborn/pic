@@ -79,14 +79,19 @@ def _find_gcc(arch: str) -> str | None:
         try:
             res = subprocess.run(
                 ["bazel", "info", "output_base"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
                 cwd=str(PROJECT_ROOT),
             )
             if res.returncode == 0:
                 output_base = Path(res.stdout.strip())
                 gcc_path = (
-                    output_base / "external" / f"+bootlin+bootlin_{bootlin_name}"
-                    / "bin" / f"{triple}-gcc"
+                    output_base
+                    / "external"
+                    / f"+bootlin+bootlin_{bootlin_name}"
+                    / "bin"
+                    / f"{triple}-gcc"
                 )
                 if gcc_path.exists():
                     return str(gcc_path)
@@ -116,14 +121,19 @@ def _find_sysroot(arch: str) -> str | None:
     try:
         res = subprocess.run(
             ["bazel", "info", "output_base"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             cwd=str(PROJECT_ROOT),
         )
         if res.returncode == 0:
             output_base = Path(res.stdout.strip())
             sysroot = (
-                output_base / "external" / f"+bootlin+bootlin_{bootlin_name}"
-                / f"{triple}" / "sysroot"
+                output_base
+                / "external"
+                / f"+bootlin+bootlin_{bootlin_name}"
+                / f"{triple}"
+                / "sysroot"
             )
             if sysroot.exists():
                 return str(sysroot)
@@ -201,8 +211,7 @@ def _compile_raw_elf(arch: str, pie: bool = False) -> bytes | None:
         out_path = Path(tmpdir) / "test.elf"
         src_path.write_text(asm_src)
 
-        cmd = [gcc, str(src_path), "-o", str(out_path),
-               "-nostdlib", "-nostartfiles"]
+        cmd = [gcc, str(src_path), "-o", str(out_path), "-nostdlib", "-nostartfiles"]
         if pie:
             # -shared produces ET_DYN without PT_INTERP (no ld-linux needed).
             cmd.extend(["-shared", "-Wl,-e,_start"])
@@ -274,72 +283,72 @@ DYNAMIC_TEST_SRC = STATIC_LIBC_SRC
 # without it, embed the string in .text right after the code.
 RAW_SYSCALL_SRCS = {
     "x86_64": (
-        '.text\n.globl _start\n_start:\n'
-        '  mov $1, %eax\n  mov $1, %edi\n  lea msg(%rip), %rsi\n'
-        '  mov $11, %edx\n  syscall\n'
-        '  mov $231, %eax\n  xor %edi, %edi\n  syscall\n'
+        ".text\n.globl _start\n_start:\n"
+        "  mov $1, %eax\n  mov $1, %edi\n  lea msg(%rip), %rsi\n"
+        "  mov $11, %edx\n  syscall\n"
+        "  mov $231, %eax\n  xor %edi, %edi\n  syscall\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "i686": (
         # i686: no RIP-relative. Use call/pop to get PC, then add offset.
-        '.text\n.globl _start\n_start:\n'
-        '  call 1f\n'
-        '1: pop %ecx\n'
-        '  add $(msg - 1b), %ecx\n'
-        '  mov $4, %eax\n  mov $1, %ebx\n'
-        '  mov $11, %edx\n  int $0x80\n'
-        '  mov $252, %eax\n  xor %ebx, %ebx\n  int $0x80\n'
+        ".text\n.globl _start\n_start:\n"
+        "  call 1f\n"
+        "1: pop %ecx\n"
+        "  add $(msg - 1b), %ecx\n"
+        "  mov $4, %eax\n  mov $1, %ebx\n"
+        "  mov $11, %edx\n  int $0x80\n"
+        "  mov $252, %eax\n  xor %ebx, %ebx\n  int $0x80\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "aarch64": (
-        '.text\n.globl _start\n_start:\n'
-        '  mov x8, #64\n  mov x0, #1\n  adr x1, msg\n'
-        '  mov x2, #11\n  svc #0\n'
-        '  mov x8, #94\n  mov x0, #0\n  svc #0\n'
+        ".text\n.globl _start\n_start:\n"
+        "  mov x8, #64\n  mov x0, #1\n  adr x1, msg\n"
+        "  mov x2, #11\n  svc #0\n"
+        "  mov x8, #94\n  mov x0, #0\n  svc #0\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "armv5_arm": (
-        '.text\n.globl _start\n_start:\n'
-        '  mov r7, #4\n  mov r0, #1\n  adr r1, msg\n'
-        '  mov r2, #11\n  svc #0\n'
-        '  mov r7, #248\n  mov r0, #0\n  svc #0\n'
+        ".text\n.globl _start\n_start:\n"
+        "  mov r7, #4\n  mov r0, #1\n  adr r1, msg\n"
+        "  mov r2, #11\n  svc #0\n"
+        "  mov r7, #248\n  mov r0, #0\n  svc #0\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "armv5_thumb": (
-        '.syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n'
-        '  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n'
-        '  movs r2, #11\n  svc #0\n'
-        '  movs r7, #248\n  movs r0, #0\n  svc #0\n'
+        ".syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n"
+        "  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n"
+        "  movs r2, #11\n  svc #0\n"
+        "  movs r7, #248\n  movs r0, #0\n  svc #0\n"
         '.align 2\nmsg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "mipsel32": (
         # MIPS: embed string in .text, use bal to get PC.
-        '.set noreorder\n.text\n.globl _start\n_start:\n'
-        '  li $v0, 4004\n'
-        '  li $a0, 1\n'
-        '  bal 1f\n'
-        '  li $a2, 11\n'  # delay slot
-        '1: addiu $a1, $ra, (msg - 1b)\n'
-        '  syscall\n'
-        '  li $v0, 4246\n  li $a0, 0\n  syscall\n'
+        ".set noreorder\n.text\n.globl _start\n_start:\n"
+        "  li $v0, 4004\n"
+        "  li $a0, 1\n"
+        "  bal 1f\n"
+        "  li $a2, 11\n"  # delay slot
+        "1: addiu $a1, $ra, (msg - 1b)\n"
+        "  syscall\n"
+        "  li $v0, 4246\n  li $a0, 0\n  syscall\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "mipsbe32": (
-        '.set noreorder\n.text\n.globl _start\n_start:\n'
-        '  li $v0, 4004\n'
-        '  li $a0, 1\n'
-        '  bal 1f\n'
-        '  li $a2, 11\n'
-        '1: addiu $a1, $ra, (msg - 1b)\n'
-        '  syscall\n'
-        '  li $v0, 4246\n  li $a0, 0\n  syscall\n'
+        ".set noreorder\n.text\n.globl _start\n_start:\n"
+        "  li $v0, 4004\n"
+        "  li $a0, 1\n"
+        "  bal 1f\n"
+        "  li $a2, 11\n"
+        "1: addiu $a1, $ra, (msg - 1b)\n"
+        "  syscall\n"
+        "  li $v0, 4246\n  li $a0, 0\n  syscall\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "s390x": (
-        '.text\n.globl _start\n_start:\n'
-        '  lghi %r1, 4\n  lghi %r2, 1\n  larl %r3, msg\n'
-        '  lghi %r4, 11\n  svc 0\n'
-        '  lghi %r1, 248\n  lghi %r2, 0\n  svc 0\n'
+        ".text\n.globl _start\n_start:\n"
+        "  lghi %r1, 4\n  lghi %r2, 1\n  larl %r3, msg\n"
+        "  lghi %r4, 11\n  svc 0\n"
+        "  lghi %r1, 248\n  lghi %r2, 0\n  svc 0\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
 }
@@ -348,6 +357,7 @@ RAW_SYSCALL_SRCS = {
 # ---------------------------------------------------------------------------
 # Available architectures for ul_exec (linux only, excluding s390x).
 # ---------------------------------------------------------------------------
+
 
 def _ul_exec_arches() -> list[str]:
     """Arches where ul_exec is built and staged."""
@@ -391,7 +401,8 @@ class TestUlExecStatic:
 
         blob = get_blob("ul_exec", "linux", target_arch)
         config = _build_ul_exec_config(
-            elf_data, argv=["test_static"], target_arch=target_arch)
+            elf_data, argv=["test_static"], target_arch=target_arch
+        )
 
         result = run_blob(blob, config=config, timeout=30.0)
 

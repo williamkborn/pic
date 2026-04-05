@@ -1,12 +1,15 @@
 """picblobs — position-independent code blob library.
 
 Provides pre-compiled PIC blobs for multiple OS/architecture targets.
-Blobs are shipped as .so files and extracted at runtime via pyelftools.
+
+In release mode, blobs are shipped as pre-extracted .bin files with
+JSON sidecar metadata and a manifest.json catalog. In development mode,
+falls back to extracting from .so files via pyelftools.
 
 Usage:
     from picblobs import get_blob, list_blobs
 
-    blob = get_blob("alloc_jump", "linux", "x86_64")
+    blob = get_blob("hello", "linux", "x86_64")
     print(len(blob.code), "bytes")
     print(blob.sections)
 """
@@ -14,14 +17,30 @@ Usage:
 from __future__ import annotations
 
 import functools
+import json
 from pathlib import Path
 
-from picblobs._extractor import BlobData, extract
+from picblobs._extractor import BlobData, extract, load_from_sidecar
 
 __version__ = "0.1.0"
 __all__ = ["get_blob", "list_blobs", "BlobData", "extract", "clear_cache"]
 
-_BLOB_DIR = Path(__file__).parent / "_blobs"
+_PKG_DIR = Path(__file__).parent
+_MANIFEST_PATH = _PKG_DIR / "manifest.json"
+_BLOBS_DIR = _PKG_DIR / "blobs"
+
+# Legacy .so directory (development fallback).
+_LEGACY_BLOB_DIR = _PKG_DIR / "_blobs"
+
+
+def _load_manifest() -> dict | None:
+    """Load and cache the release manifest, or None if not present."""
+    if not hasattr(_load_manifest, "_cache"):
+        if _MANIFEST_PATH.exists():
+            _load_manifest._cache = json.loads(_MANIFEST_PATH.read_text())
+        else:
+            _load_manifest._cache = None
+    return _load_manifest._cache
 
 
 @functools.lru_cache(maxsize=64)
@@ -30,8 +49,11 @@ def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
 
     Results are cached — repeated calls return the same BlobData instance.
 
+    Primary path: loads from blobs/{type}.{os}.{arch}.bin + .json.
+    Fallback: extracts from _blobs/{os}/{arch}/{type}.so (dev mode).
+
     Args:
-        blob_type: Blob type (e.g., "alloc_jump", "stager_tcp").
+        blob_type: Blob type (e.g., "hello", "ul_exec").
         target_os: Target OS (e.g., "linux", "freebsd", "windows").
         target_arch: Target architecture (e.g., "x86_64", "aarch64").
 
@@ -41,32 +63,83 @@ def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
     Raises:
         FileNotFoundError: If no blob exists for the given combination.
     """
-    so_path = _BLOB_DIR / target_os / target_arch / f"{blob_type}.so"
-    if not so_path.exists():
-        raise FileNotFoundError(
-            f"No blob for {blob_type}/{target_os}/{target_arch}: {so_path}"
-        )
-    return extract(so_path, blob_type, target_os, target_arch)
+    # Primary path: pre-extracted .bin + .json.
+    # Filename format: {type}.{os}.{arch}.bin — the '.' separator is
+    # reserved by specification and will never appear in blob type names.
+    basename = f"{blob_type}.{target_os}.{target_arch}"
+    bin_path = _BLOBS_DIR / f"{basename}.bin"
+    json_path = _BLOBS_DIR / f"{basename}.json"
+
+    if bin_path.exists() and json_path.exists():
+        return load_from_sidecar(bin_path, json_path)
+
+    # Fallback: legacy .so extraction (development).
+    so_path = _LEGACY_BLOB_DIR / target_os / target_arch / f"{blob_type}.so"
+    if so_path.exists():
+        return extract(so_path, blob_type, target_os, target_arch)
+
+    raise FileNotFoundError(
+        f"No blob for {blob_type}/{target_os}/{target_arch}: "
+        f"checked {bin_path} and {so_path}"
+    )
 
 
 def clear_cache() -> None:
-    """Clear the blob extraction cache. Call after rebuilding .so files."""
+    """Clear the blob loading cache. Call after rebuilding blobs."""
     get_blob.cache_clear()
+    if hasattr(_load_manifest, "_cache"):
+        del _load_manifest._cache
 
 
 def list_blobs() -> list[tuple[str, str, str]]:
-    """Return all available (blob_type, target_os, target_arch) tuples."""
-    results = []
-    if not _BLOB_DIR.exists():
-        return results
+    """Return all available (blob_type, target_os, target_arch) tuples.
 
-    for os_dir in sorted(_BLOB_DIR.iterdir()):
-        if not os_dir.is_dir():
-            continue
-        for arch_dir in sorted(os_dir.iterdir()):
-            if not arch_dir.is_dir():
+    Primary path: reads manifest.json catalog (authoritative — the manifest
+    is the single source of truth for release packages and is not validated
+    against the filesystem; get_blob() is the point of failure for missing
+    files).
+
+    Fallback: walks the legacy _blobs/ directory.
+    """
+    manifest = _load_manifest()
+    if manifest is not None:
+        # Manifest is authoritative: trust the catalog without checking
+        # individual .bin/.json files on disk.
+        results = []
+        for blob_type, entry in manifest.get("catalog", {}).items():
+            for os_name, arches in entry.get("platforms", {}).items():
+                for arch in arches:
+                    results.append((blob_type, os_name, arch))
+        return sorted(results)
+
+    # Fallback: discover from filesystem (both .bin and .so directories).
+    seen: set[tuple[str, str, str]] = set()
+    results: list[tuple[str, str, str]] = []
+
+    # New-style .bin files in blobs/.
+    # Filename format: {type}.{os}.{arch}.bin — '.' is a reserved separator
+    # (blob type names never contain dots, by specification).
+    if _BLOBS_DIR.exists():
+        for bin_file in sorted(_BLOBS_DIR.glob("*.bin")):
+            parts = bin_file.stem.rsplit(".", 2)
+            if len(parts) == 3:
+                entry = (parts[0], parts[1], parts[2])
+                if entry not in seen:
+                    seen.add(entry)
+                    results.append(entry)
+
+    # Legacy .so files in _blobs/.
+    if _LEGACY_BLOB_DIR.exists():
+        for os_dir in sorted(_LEGACY_BLOB_DIR.iterdir()):
+            if not os_dir.is_dir():
                 continue
-            for so_file in sorted(arch_dir.glob("*.so")):
-                results.append((so_file.stem, os_dir.name, arch_dir.name))
+            for arch_dir in sorted(os_dir.iterdir()):
+                if not arch_dir.is_dir():
+                    continue
+                for so_file in sorted(arch_dir.glob("*.so")):
+                    entry = (so_file.stem, os_dir.name, arch_dir.name)
+                    if entry not in seen:
+                        seen.add(entry)
+                        results.append(entry)
 
-    return results
+    return sorted(results)

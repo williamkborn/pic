@@ -10,25 +10,53 @@
  * 4. Prints "NaCl OK\n" and exits 0 on success, 1 on failure.
  */
 
-#include "picblobs/os/linux.h"
+#include "picblobs/crypto/randombytes.h"
+#include "picblobs/crypto/tweetnacl.h"
 #include "picblobs/mem.h"
+#include "picblobs/os/linux.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/exit_group.h"
 #include "picblobs/sys/write.h"
-#include "picblobs/crypto/randombytes.h"
-#include "picblobs/crypto/tweetnacl.h"
 
 /* Test key — 32 bytes. */
 PIC_RODATA
 static const unsigned char key[32] = {
-	0x4e, 0x61, 0x43, 0x6c, 0x2d, 0x50, 0x49, 0x43,
-	0x2d, 0x73, 0x65, 0x6c, 0x66, 0x2d, 0x74, 0x65,
-	0x73, 0x74, 0x2d, 0x6b, 0x65, 0x79, 0x2d, 0x30,
-	0x30, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x4e,
+	0x61,
+	0x43,
+	0x6c,
+	0x2d,
+	0x50,
+	0x49,
+	0x43,
+	0x2d,
+	0x73,
+	0x65,
+	0x6c,
+	0x66,
+	0x2d,
+	0x74,
+	0x65,
+	0x73,
+	0x74,
+	0x2d,
+	0x6b,
+	0x65,
+	0x79,
+	0x2d,
+	0x30,
+	0x30,
+	0x31,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
 };
 
-PIC_RODATA static const char msg_ok[]   = "NaCl OK\n";
+PIC_RODATA static const char msg_ok[] = "NaCl OK\n";
 PIC_RODATA static const char msg_fail[] = "NaCl FAIL\n";
 PIC_RODATA static const char plaintext[] = "Hello from NaCl PIC blob!";
 
@@ -60,7 +88,8 @@ void _start(void)
 		goto fail;
 
 	/* Verify round-trip. */
-	if (pic_memcmp(pt_out + crypto_secretbox_ZEROBYTES, plaintext, PT_LEN) != 0)
+	if (pic_memcmp(pt_out + crypto_secretbox_ZEROBYTES, plaintext,
+		    PT_LEN) != 0)
 		goto fail;
 
 	pic_write(1, msg_ok, sizeof(msg_ok) - 1);

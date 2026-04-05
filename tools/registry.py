@@ -65,6 +65,7 @@ class Architecture:
     needs_got_reloc: bool = False  # Needs GOT self-relocation (PIC_SELF_RELOCATE).
     needs_trampoline: bool = False  # Needs entry trampoline for PIC setup.
     is_32bit: bool = False  # 32-bit architecture (affects lseek, etc.).
+    is_big_endian: bool = False  # Big-endian byte order.
 
     # Bootlin toolchain version.
     bootlin_version: str = "2024.05-1"
@@ -208,6 +209,7 @@ _register_arch(
         extra_cflags=["-march=z13"],
         cpu_constraint="//platforms:s390x",
         uses_old_mmap=True,
+        is_big_endian=True,
     )
 )
 
@@ -224,6 +226,7 @@ _register_arch(
         needs_got_reloc=True,
         needs_trampoline=True,
         is_32bit=True,
+        is_big_endian=True,
     )
 )
 
@@ -782,6 +785,167 @@ _def_syscall(
 # because they're arch+OS-specific. See MMAP_FLAGS above.
 
 
+# ============================================================
+# Blob type catalog — drives manifest.json generation
+# ============================================================
+#
+# Each entry describes a blob type: what it does, which platforms it
+# supports, and the layout of its config struct (if any).
+
+
+@dataclass(frozen=True)
+class ConfigField:
+    """One field in a config struct's fixed-size header."""
+
+    name: str
+    type: str  # "u8", "u16", "u32", "u64", "uintptr", "bytes:N"
+    offset: int
+
+
+@dataclass(frozen=True)
+class TrailingData:
+    """A variable-length data buffer that follows the fixed config header."""
+
+    name: str
+    length_field: str  # name of the ConfigField whose value is this buffer's size
+
+
+@dataclass(frozen=True)
+class ConfigSchema:
+    """Binary layout of a blob's config struct."""
+
+    fixed_size: int
+    fields: list[ConfigField]
+    trailing_data: list[TrailingData] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BlobType:
+    """Defines a blob type and its metadata for the release manifest."""
+
+    name: str
+    description: str
+    has_config: bool
+    platforms: dict[str, list[str]]  # os -> [arch, ...]
+    config_schema: ConfigSchema | None = None
+
+
+BLOB_TYPES: dict[str, BlobType] = {}
+
+
+def _register_blob(bt: BlobType) -> None:
+    BLOB_TYPES[bt.name] = bt
+
+
+# Helper: all arches for an OS.
+def _os_arches(os_name: str) -> list[str]:
+    return OPERATING_SYSTEMS[os_name].architectures
+
+
+_register_blob(
+    BlobType(
+        name="hello",
+        description="Minimal hello-world syscall test",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="hello_windows",
+        description="Minimal hello-world for Windows (TEB-based)",
+        has_config=False,
+        platforms={
+            "windows": _os_arches("windows"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="nacl_hello",
+        description="NaCl crypto self-test (TweetNaCl)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="nacl_client",
+        description="NaCl encrypted TCP client (raw syscalls)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="nacl_server",
+        description="NaCl encrypted TCP server (raw syscalls)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="nacl_client_hosted",
+        description="NaCl encrypted TCP client (hosted platform vtable)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="nacl_server_hosted",
+        description="NaCl encrypted TCP server (hosted platform vtable)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="ul_exec",
+        description="Userland ELF reflective loader",
+        has_config=True,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+        config_schema=ConfigSchema(
+            fixed_size=20,
+            fields=[
+                ConfigField(name="elf_size", type="u32", offset=0),
+                ConfigField(name="argc", type="u32", offset=4),
+                ConfigField(name="argv_size", type="u32", offset=8),
+                ConfigField(name="envp_count", type="u32", offset=12),
+                ConfigField(name="envp_size", type="u32", offset=16),
+            ],
+            trailing_data=[
+                TrailingData(name="elf_data", length_field="elf_size"),
+                TrailingData(name="argv_data", length_field="argv_size"),
+                TrailingData(name="envp_data", length_field="envp_size"),
+            ],
+        ),
+    )
+)
+
+
 # Symbols that the linker script must define and the extractor reads.
 # Single source of truth for the linker ↔ extractor contract.
 LINKER_SYMBOLS = {
@@ -875,3 +1039,23 @@ def all_syscall_names() -> set[str]:
 def arches_with_trait(trait: str) -> list[str]:
     """Return architecture names where the given trait is True."""
     return [name for name, arch in ARCHITECTURES.items() if getattr(arch, trait, False)]
+
+
+def manifest_architectures() -> dict[str, dict[str, object]]:
+    """Return the architectures section for manifest.json."""
+    result = {}
+    for name, arch in ARCHITECTURES.items():
+        result[name] = {
+            "bits": 32 if arch.is_32bit else 64,
+            "endian": "big" if arch.is_big_endian else "little",
+            "gcc_triple": arch.gcc_triple,
+        }
+    return result
+
+
+def arch_endian(arch_name: str) -> str:
+    """Return 'little' or 'big' for the given architecture."""
+    arch = ARCHITECTURES.get(arch_name)
+    if arch is not None and arch.is_big_endian:
+        return "big"
+    return "little"

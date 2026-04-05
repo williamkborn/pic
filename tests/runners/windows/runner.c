@@ -53,12 +53,12 @@ struct user_desc {
 	unsigned int entry_number;
 	unsigned int base_addr;
 	unsigned int limit;
-	unsigned int seg_32bit     : 1;
-	unsigned int contents      : 2;
-	unsigned int read_exec_only: 1;
-	unsigned int limit_in_pages: 1;
-	unsigned int seg_not_present: 1;
-	unsigned int useable       : 1;
+	unsigned int seg_32bit : 1;
+	unsigned int contents : 2;
+	unsigned int read_exec_only : 1;
+	unsigned int limit_in_pages : 1;
+	unsigned int seg_not_present : 1;
+	unsigned int useable : 1;
 };
 
 #define __NR_set_thread_area 243
@@ -116,17 +116,16 @@ static void *mock_GetStdHandle(unsigned long nStdHandle)
 		return (void *)2; /* stderr */
 	if (nStdHandle == (unsigned long)-10)
 		return (void *)0; /* stdin */
-	return (void *)-1; /* INVALID_HANDLE_VALUE */
+	return (void *)-1;	  /* INVALID_HANDLE_VALUE */
 }
 
 static int mock_WriteFile(void *hFile, const void *lpBuffer,
-			  unsigned long nNumberOfBytesToWrite,
-			  unsigned long *lpNumberOfBytesWritten,
-			  void *lpOverlapped)
+	unsigned long nNumberOfBytesToWrite,
+	unsigned long *lpNumberOfBytesWritten, void *lpOverlapped)
 {
 	(void)lpOverlapped;
-	long ret = pic_write((int)(long)hFile, lpBuffer,
-			     (pic_size_t)nNumberOfBytesToWrite);
+	long ret = pic_write(
+		(int)(long)hFile, lpBuffer, (pic_size_t)nNumberOfBytesToWrite);
 	if (ret < 0) {
 		if (lpNumberOfBytesWritten)
 			*lpNumberOfBytesWritten = 0;
@@ -158,15 +157,15 @@ static void mock_ExitProcess(unsigned int uExitCode)
  * Export names (alphabetical): ExitProcess, GetStdHandle, WriteFile
  */
 
-#define MOCK_PE_SIZE   4096
-#define PE_SIG_OFFSET  0x80
+#define MOCK_PE_SIZE 4096
+#define PE_SIG_OFFSET 0x80
 #define OPT_HDR_OFFSET 0x98
 #define EXPORT_DIR_OFF 0x200
-#define NAME_STR_OFF   0x228
-#define FUNC_TBL_OFF   0x280
-#define NAME_TBL_OFF   0x28C
-#define ORD_TBL_OFF    0x298
-#define TRAMP_OFF      0x300
+#define NAME_STR_OFF 0x228
+#define FUNC_TBL_OFF 0x280
+#define NAME_TBL_OFF 0x28C
+#define ORD_TBL_OFF 0x298
+#define TRAMP_OFF 0x300
 
 static void pe_write32(pic_u8 *base, int offset, pic_u32 val)
 {
@@ -235,12 +234,18 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	 */
 	pic_u64 addr = (pic_u64)(pic_uintptr)target;
 	/* ldr x9, #8  (PC-relative load, offset = +8 bytes = 2 instructions) */
-	dest[0] = 0x49; dest[1] = 0x00; dest[2] = 0x00; dest[3] = 0x58;
+	dest[0] = 0x49;
+	dest[1] = 0x00;
+	dest[2] = 0x00;
+	dest[3] = 0x58;
 	/* br x9 */
-	dest[4] = 0x20; dest[5] = 0x01; dest[6] = 0x1f; dest[7] = 0xd6;
+	dest[4] = 0x20;
+	dest[5] = 0x01;
+	dest[6] = 0x1f;
+	dest[7] = 0xd6;
 	/* 8-byte address literal */
-	dest[8]  = (pic_u8)(addr);
-	dest[9]  = (pic_u8)(addr >> 8);
+	dest[8] = (pic_u8)(addr);
+	dest[9] = (pic_u8)(addr >> 8);
 	dest[10] = (pic_u8)(addr >> 16);
 	dest[11] = (pic_u8)(addr >> 24);
 	dest[12] = (pic_u8)(addr >> 32);
@@ -257,8 +262,7 @@ static int write_trampoline(pic_u8 *dest, void *target)
 
 static pic_u8 *build_mock_pe(void)
 {
-	pic_u8 *pe = (pic_u8 *)pic_mmap(
-		PIC_NULL, MOCK_PE_SIZE,
+	pic_u8 *pe = (pic_u8 *)pic_mmap(PIC_NULL, MOCK_PE_SIZE,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
 	if ((long)pe == -1)
@@ -336,11 +340,11 @@ static pic_u8 *build_mock_pe(void)
 
 #define MOCK_REGION_SIZE 4096
 
-#define TEB_OFF          0x000
-#define PEB_OFF          0x100
-#define LDR_OFF          0x200
+#define TEB_OFF 0x000
+#define PEB_OFF 0x100
+#define LDR_OFF 0x200
 #define MODULE_ENTRY_OFF 0x300
-#define DLL_NAME_OFF     0x400
+#define DLL_NAME_OFF 0x400
 
 static pic_u16 write_utf16le(pic_u8 *dest, const char *str)
 {
@@ -376,8 +380,7 @@ static void write_ptr(pic_u8 *base, int offset, void *ptr)
 
 static pic_u8 *build_mock_env(pic_u8 *mock_pe)
 {
-	pic_u8 *region = (pic_u8 *)pic_mmap(
-		PIC_NULL, MOCK_REGION_SIZE,
+	pic_u8 *region = (pic_u8 *)pic_mmap(PIC_NULL, MOCK_REGION_SIZE,
 		PIC_PROT_READ | PIC_PROT_WRITE,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
 	if ((long)region == -1)
@@ -529,8 +532,8 @@ int runner_main(int argc, char **argv)
 	}
 
 	void *blob = pic_mmap(PIC_NULL, (pic_size_t)size,
-			      PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
-			      PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
+		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
+		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
 	if ((long)blob == -1) {
 		pic_close(fd);
 		pic_exit_group(RUNNER_ERROR);

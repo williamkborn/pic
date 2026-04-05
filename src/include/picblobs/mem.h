@@ -19,8 +19,8 @@
  * Marked used+noinline so GCC doesn't optimize them away or re-expand
  * them into themselves (infinite recursion).
  */
-__attribute__((used, noinline))
-static void *memcpy(void *dst, const void *src, pic_size_t n)
+__attribute__((used, noinline)) static void *memcpy(
+	void *dst, const void *src, pic_size_t n)
 {
 	pic_u8 *d = (pic_u8 *)dst;
 	const pic_u8 *s = (const pic_u8 *)src;
@@ -29,8 +29,8 @@ static void *memcpy(void *dst, const void *src, pic_size_t n)
 	return dst;
 }
 
-__attribute__((used, noinline))
-static void *memset(void *dst, int c, pic_size_t n)
+__attribute__((used, noinline)) static void *memset(
+	void *dst, int c, pic_size_t n)
 {
 	pic_u8 *d = (pic_u8 *)dst;
 	while (n--)
@@ -38,8 +38,8 @@ static void *memset(void *dst, int c, pic_size_t n)
 	return dst;
 }
 
-__attribute__((used, noinline))
-static int memcmp(const void *a, const void *b, pic_size_t n)
+__attribute__((used, noinline)) static int memcmp(
+	const void *a, const void *b, pic_size_t n)
 {
 	const pic_u8 *pa = (const pic_u8 *)a;
 	const pic_u8 *pb = (const pic_u8 *)b;

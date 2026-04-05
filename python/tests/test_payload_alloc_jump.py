@@ -83,7 +83,9 @@ class TestAllocJumpPayload:
 
         # The inner test payload uses Linux syscalls, so load from linux.
         if not _blob_exists(TEST_PAYLOAD_TYPE, "linux", target_arch):
-            pytest.skip(f"Test payload not staged: {TEST_PAYLOAD_TYPE}/linux/{target_arch}")
+            pytest.skip(
+                f"Test payload not staged: {TEST_PAYLOAD_TYPE}/linux/{target_arch}"
+            )
 
         runner_type = RUNNER_TYPE[target_os]
         try:
