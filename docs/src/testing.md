@@ -36,7 +36,7 @@ Tests are organized by category:
 | `test_payload_hello.py` | hello + hello_windows execution on all platforms, structural checks |
 | `test_payload_nacl.py` | nacl_hello self-test on all platforms, nacl_client + nacl_server e2e encrypted handshake |
 | `test_payload_alloc_jump.py` | alloc_jump execution + edge cases (skips until implemented) |
-| `test_payload_reflective.py` | reflective_elf + reflective_pe (skips until implemented) |
+| `test_payload_reflective.py` | reflective_pe loader (skips until implemented) |
 | `test_payload_stager.py` | TCP, FD, pipe, mmap stagers with infrastructure fixtures (skips until implemented) |
 | `test_payload_ul_exec.py` | Userland exec: load and run ELF binaries without execve() |
 | `test_extractor.py` | ELF extraction via pyelftools |

@@ -3,9 +3,8 @@
 Each blob type gets a pic_blob() target per OS/arch combination.
 The blob_collection() target aggregates all blobs for wheel packaging.
 
-Blob types (REQ-007 through REQ-010):
+Blob types:
   - alloc_jump       : allocate RWX, copy payload, execute
-  - reflective_elf   : parse and load ELF from memory (Linux/FreeBSD)
   - reflective_pe    : parse and load PE from memory (Windows)
   - stager_tcp       : TCP connect-back stager
   - stager_fd        : file descriptor stager

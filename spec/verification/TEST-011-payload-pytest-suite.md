@@ -32,7 +32,6 @@ A payload's OS eligibility is determined by naming convention and an explicit ma
 | `hello` | linux, freebsd |
 | `hello_windows` | windows |
 | `alloc_jump` | linux, freebsd, windows |
-| `reflective_elf` | linux, freebsd |
 | `reflective_pe` | windows |
 | `stager_tcp` | linux, freebsd, windows |
 | `stager_fd` | linux, freebsd, windows |
@@ -41,7 +40,7 @@ A payload's OS eligibility is determined by naming convention and an explicit ma
 
 This mapping lives in a Python dict (`PAYLOAD_PLATFORMS`) in the test module, not generated from the registry. The registry provides the arch list per OS; the test infrastructure intersects this with the payload's OS support.
 
-**Rationale**: Blob-to-OS mapping requires human knowledge (e.g., `reflective_elf` has no Windows variant). Arch lists within an OS are mechanical and should track the registry automatically.
+**Rationale**: Blob-to-OS mapping requires human knowledge (e.g., `reflective_pe` is Windows-only). Arch lists within an OS are mechanical and should track the registry automatically.
 
 ### D2: Unimplemented Payloads Skip Gracefully
 
@@ -94,15 +93,6 @@ EXPECTATIONS = {
     "alloc_jump": PayloadExpectation(
         blob_type="alloc_jump",
         stdout=b"PASS",
-        stdout_contains=None,
-        exit_code=0,
-        needs_config=True,
-        needs_infrastructure=False,
-        timeout=15.0,
-    ),
-    "reflective_elf": PayloadExpectation(
-        blob_type="reflective_elf",
-        stdout=b"LOADED",
         stdout_contains=None,
         exit_code=0,
         needs_config=True,
@@ -241,7 +231,7 @@ python/tests/
     conftest.py                    # existing + new payload fixtures
     test_payload_hello.py          # hello + hello_windows
     test_payload_alloc_jump.py     # alloc_jump
-    test_payload_reflective.py     # reflective_elf + reflective_pe
+    test_payload_reflective.py     # reflective_pe
     test_payload_stager.py         # stager_tcp, stager_fd, stager_pipe, stager_mmap
     test_extractor.py              # existing (unchanged)
     test_runner.py                 # existing (unchanged)
@@ -418,37 +408,7 @@ class TestStagerFdEdgeCases:
         assert result.exit_code != 0
 ```
 
-### Test 11.5: Reflective Loader Invalid Input
-
-```python
-class TestReflectiveEdgeCases:
-
-    @pytest.mark.requires_blobs
-    @pytest.mark.requires_runners
-    @pytest.mark.requires_qemu
-    def test_corrupt_elf_exits_cleanly(self, linux_arch):
-        blob = get_blob("reflective_elf", "linux", linux_arch)
-        # Config with garbage bytes instead of a valid ELF
-        config = build_reflective_elf_config(
-            elf_data=b"\x00" * 64, arch=linux_arch
-        )
-        result = run_blob(blob, config=config, timeout=10.0)
-        assert result.exit_code != 0
-
-    @pytest.mark.requires_blobs
-    @pytest.mark.requires_runners
-    @pytest.mark.requires_qemu
-    def test_wrong_magic_exits_cleanly(self, linux_arch):
-        blob = get_blob("reflective_elf", "linux", linux_arch)
-        # Feed a PE file to the ELF loader
-        config = build_reflective_elf_config(
-            elf_data=b"MZ" + b"\x00" * 62, arch=linux_arch
-        )
-        result = run_blob(blob, config=config, timeout=10.0)
-        assert result.exit_code != 0
-```
-
-### Test 11.6: Blob Size Sanity
+### Test 11.5: Blob Size Sanity
 
 ```python
 class TestBlobSize:

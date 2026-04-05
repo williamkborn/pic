@@ -84,8 +84,22 @@ extract_bin(
 )
 
 pic_blob(
+    name = "stager_tcp",
+    srcs = ["stager_tcp.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "test_pass",
     srcs = ["test_pass.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "test_tcp_ok",
+    srcs = ["test_tcp_ok.c"],
     deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
 )

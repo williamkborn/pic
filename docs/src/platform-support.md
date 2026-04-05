@@ -29,8 +29,8 @@ Boolean flags controlling per-architecture decisions:
 
 | OS | Architectures | Blob types | Runner |
 |---|---|---|---|
-| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server (+ future: alloc_jump, stagers, reflective_elf) | Direct execution via QEMU user-static |
-| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello (+ future: alloc_jump, stagers, reflective_elf) | Syscall shim (WIP) |
+| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, ul_exec (+ future: alloc_jump, stagers) | Direct execution via QEMU user-static |
+| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello (+ future: alloc_jump, stagers) | Syscall shim (WIP) |
 | Windows | x86_64, i686, aarch64 | hello_windows (+ future: alloc_jump, stagers, reflective_pe) | Mock TEB/PEB on Linux |
 
 ## Current blob inventory

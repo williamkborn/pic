@@ -20,7 +20,7 @@ The config struct is the interface contract between the Python API and the compi
 
 Config struct headers SHALL follow these conventions:
 
-1. **One header per blob type**: e.g., `config/alloc_jump.h`, `config/reflective_elf.h`, `config/stager_tcp.h`.
+1. **One header per blob type**: e.g., `config/alloc_jump.h`, `config/stager_tcp.h`.
 2. **Packed structs**: All config structs SHALL use `__attribute__((packed))` to eliminate compiler-inserted padding. The layout is defined by field order and field sizes alone.
 3. **Fixed-width types**: All fields SHALL use fixed-width integer types (`uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `int32_t`, etc.) from `<stdint.h>` (provided by the freestanding compiler). No `int`, `long`, `size_t`, or other platform-dependent types.
 4. **Explicit endianness documentation**: Each header SHALL document whether multi-byte fields are stored in little-endian or big-endian format. For simplicity, all config structs SHOULD use little-endian regardless of target architecture (the blob code handles byte-swapping on big-endian targets if needed). Alternatively, native-endian MAY be used if the Python API handles endian selection per target — this decision SHALL be documented in ADR-009.

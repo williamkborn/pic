@@ -21,11 +21,11 @@ A builder pattern provides a fluent, discoverable API that guides the consumer t
 The builder API SHALL follow this pattern:
 
 1. **Construction**: `picblobs.Blob(os, arch)` — creates a builder bound to a specific OS and architecture. The `os` and `arch` parameters SHALL accept string values or enum members (see below).
-2. **Blob type selection**: `.alloc_jump()`, `.reflective_elf()`, `.reflective_pe()`, `.stager_tcp()`, `.stager_fd()`, `.stager_pipe()`, `.stager_mmap()` — selects the blob type. Returns a type-specific builder that exposes only the config parameters relevant to that blob type.
+2. **Blob type selection**: `.alloc_jump()`, `.reflective_pe()`, `.stager_tcp()`, `.stager_fd()`, `.stager_pipe()`, `.stager_mmap()` — selects the blob type. Returns a type-specific builder that exposes only the config parameters relevant to that blob type. For reflective ELF loading, use `ul_exec()`.
 3. **Configuration**: Type-specific methods to set config parameters. Examples:
    - `.alloc_jump().payload(data: bytes)` — sets the payload to copy and execute.
    - `.stager_tcp().address("192.168.1.1").port(4444)` — sets the connect-back target.
-   - `.reflective_elf().elf(data: bytes)` — sets the ELF image to load.
+   - `.ul_exec().elf(data: bytes).argv(["./prog"]).envp(["PATH=/usr/bin"])` — sets the ELF image, arguments, and environment.
    - `.reflective_pe().pe(data: bytes).call_dll_main(True)` — sets the PE image and flags.
 4. **Build**: `.build() -> bytes` — validates all required parameters are set, serializes the config struct, concatenates the pre-compiled blob binary with the config struct, and returns the complete PIC blob as a `bytes` object.
 

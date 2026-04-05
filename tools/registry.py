@@ -867,6 +867,37 @@ _register_blob(
 
 _register_blob(
     BlobType(
+        name="test_tcp_ok",
+        description="Inner test payload for stager_tcp (writes TCP_OK)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="stager_tcp",
+        description="TCP connect-back stager (read payload, alloc RWX, jump)",
+        has_config=True,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+        config_schema=ConfigSchema(
+            fixed_size=7,
+            fields=[
+                ConfigField(name="af", type="u8", offset=0),
+                ConfigField(name="port", type="u16", offset=1),
+                ConfigField(name="addr", type="u8[4]", offset=3),
+            ],
+            trailing_data=[],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
         name="nacl_hello",
         description="NaCl crypto self-test (TweetNaCl)",
         has_config=False,

@@ -68,13 +68,6 @@ EXPECTATIONS: dict[str, PayloadExpectation] = {
         needs_config=True,
         timeout=15.0,
     ),
-    "reflective_elf": PayloadExpectation(
-        blob_type="reflective_elf",
-        stdout=b"LOADED",
-        exit_code=0,
-        needs_config=True,
-        timeout=15.0,
-    ),
     "reflective_pe": PayloadExpectation(
         blob_type="reflective_pe",
         stdout_contains=b"LOADED",
@@ -127,7 +120,6 @@ PAYLOAD_PLATFORMS: dict[str, list[str]] = {
     "hello": ["linux", "freebsd"],
     "hello_windows": ["windows"],
     "alloc_jump": ["linux", "freebsd", "windows"],
-    "reflective_elf": ["linux", "freebsd"],
     "reflective_pe": ["windows"],
     "stager_tcp": ["linux", "freebsd", "windows"],
     "stager_fd": ["linux", "freebsd", "windows"],
