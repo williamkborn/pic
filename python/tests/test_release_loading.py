@@ -213,7 +213,7 @@ class TestListBlobsManifest:
 
         monkeypatch.setattr(picblobs, "_MANIFEST_PATH", tmp_path / "nonexistent.json")
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", tmp_path / "blobs")
-        monkeypatch.setattr(picblobs, "_LEGACY_BLOB_DIR", tmp_path / "legacy")
+        monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "legacy")
 
         if hasattr(picblobs._load_manifest, "_cache"):
             del picblobs._load_manifest._cache
@@ -234,10 +234,10 @@ class TestListBlobsManifest:
 class TestGetBlobFallback:
     """Tests for get_blob() path selection."""
 
-    def test_prefers_release_path(
+    def test_loads_from_sidecar(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """get_blob() uses .bin+.json when both exist."""
+        """get_blob() loads from .bin+.json when no .so exists."""
         import picblobs
 
         code = b"\xcc" * 32
@@ -259,6 +259,7 @@ class TestGetBlobFallback:
         json_path.write_text(json.dumps(meta))
 
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", blobs_dir)
+        monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "no_so")
         picblobs.clear_cache()
 
         try:
@@ -275,7 +276,7 @@ class TestGetBlobFallback:
         import picblobs
 
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", tmp_path / "empty_blobs")
-        monkeypatch.setattr(picblobs, "_LEGACY_BLOB_DIR", tmp_path / "empty_legacy")
+        monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "empty_legacy")
         picblobs.clear_cache()
 
         try:

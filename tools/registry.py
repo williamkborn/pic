@@ -828,6 +828,7 @@ class BlobType:
     has_config: bool
     platforms: dict[str, list[str]]  # os -> [arch, ...]
     config_schema: ConfigSchema | None = None
+    staged_name: str = ""  # override filename when staging (e.g. "alloc_jump")
 
 
 BLOB_TYPES: dict[str, BlobType] = {}
@@ -916,6 +917,38 @@ _register_blob(
         platforms={
             "linux": _os_arches("linux"),
         },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="test_pass",
+        description="Minimal inner payload for alloc_jump testing (writes PASS)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="alloc_jump_windows",
+        description="Allocate RWX memory, copy inner payload, jump (Windows TEB)",
+        has_config=True,
+        platforms={
+            "windows": _os_arches("windows"),
+        },
+        staged_name="alloc_jump",
+        config_schema=ConfigSchema(
+            fixed_size=4,
+            fields=[
+                ConfigField(name="payload_size", type="u32", offset=0),
+            ],
+            trailing_data=[
+                TrailingData(name="payload_data", length_field="payload_size"),
+            ],
+        ),
     )
 )
 

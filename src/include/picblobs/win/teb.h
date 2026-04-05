@@ -40,14 +40,14 @@ static inline void *pic_get_teb(void)
 #elif defined(__aarch64__)
 
 /*
- * On Windows ARM64, the TEB is accessed via the x18 register.
- * x18 points directly to the TEB on Windows ARM64.
+ * On Windows ARM64, the TEB is accessed via the x18 register
+ * (the platform register, reserved by AAPCS and not used by GCC).
  */
 PIC_TEXT
 static inline void *pic_get_teb(void)
 {
 	void *teb;
-	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(teb));
+	__asm__ volatile("mov %0, x18" : "=r"(teb));
 	return teb;
 }
 

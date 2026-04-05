@@ -29,8 +29,13 @@ _PKG_DIR = Path(__file__).parent
 _MANIFEST_PATH = _PKG_DIR / "manifest.json"
 _BLOBS_DIR = _PKG_DIR / "blobs"
 
-# Legacy .so directory (development fallback).
-_LEGACY_BLOB_DIR = _PKG_DIR / "_blobs"
+# .so directory (primary in development, fallback in release).
+_SO_BLOB_DIR = _PKG_DIR / "_blobs"
+
+# In a git checkout, prefer .so files (always fresh after stage_blobs.py)
+# over pre-extracted .bin files (which may be stale). In an installed
+# package, _blobs/ may not exist so .bin files are the primary path.
+_DEV_MODE = (_PKG_DIR.parent.parent / ".git").is_dir()
 
 
 def _load_manifest() -> dict | None:
@@ -49,8 +54,9 @@ def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
 
     Results are cached — repeated calls return the same BlobData instance.
 
-    Primary path: loads from blobs/{type}.{os}.{arch}.bin + .json.
-    Fallback: extracts from _blobs/{os}/{arch}/{type}.so (dev mode).
+    In dev mode (git checkout): prefers _blobs/{os}/{arch}/{type}.so
+    (always fresh after stage_blobs.py).
+    In release (installed package): prefers blobs/{type}.{os}.{arch}.bin.
 
     Args:
         blob_type: Blob type (e.g., "hello", "ul_exec").
@@ -63,24 +69,28 @@ def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
     Raises:
         FileNotFoundError: If no blob exists for the given combination.
     """
-    # Primary path: pre-extracted .bin + .json.
-    # Filename format: {type}.{os}.{arch}.bin — the '.' separator is
-    # reserved by specification and will never appear in blob type names.
+    so_path = _SO_BLOB_DIR / target_os / target_arch / f"{blob_type}.so"
     basename = f"{blob_type}.{target_os}.{target_arch}"
     bin_path = _BLOBS_DIR / f"{basename}.bin"
     json_path = _BLOBS_DIR / f"{basename}.json"
 
-    if bin_path.exists() and json_path.exists():
-        return load_from_sidecar(bin_path, json_path)
-
-    # Fallback: legacy .so extraction (development).
-    so_path = _LEGACY_BLOB_DIR / target_os / target_arch / f"{blob_type}.so"
-    if so_path.exists():
-        return extract(so_path, blob_type, target_os, target_arch)
+    if _DEV_MODE:
+        # Development: prefer .so files (always fresh after stage_blobs.py)
+        # over pre-extracted .bin files which may be stale.
+        if so_path.exists():
+            return extract(so_path, blob_type, target_os, target_arch)
+        if bin_path.exists() and json_path.exists():
+            return load_from_sidecar(bin_path, json_path)
+    else:
+        # Installed package: prefer fast .bin + .json path.
+        if bin_path.exists() and json_path.exists():
+            return load_from_sidecar(bin_path, json_path)
+        if so_path.exists():
+            return extract(so_path, blob_type, target_os, target_arch)
 
     raise FileNotFoundError(
         f"No blob for {blob_type}/{target_os}/{target_arch}: "
-        f"checked {bin_path} and {so_path}"
+        f"checked {so_path} and {bin_path}"
     )
 
 
@@ -116,30 +126,36 @@ def list_blobs() -> list[tuple[str, str, str]]:
     seen: set[tuple[str, str, str]] = set()
     results: list[tuple[str, str, str]] = []
 
-    # New-style .bin files in blobs/.
-    # Filename format: {type}.{os}.{arch}.bin — '.' is a reserved separator
-    # (blob type names never contain dots, by specification).
-    if _BLOBS_DIR.exists():
-        for bin_file in sorted(_BLOBS_DIR.glob("*.bin")):
-            parts = bin_file.stem.rsplit(".", 2)
-            if len(parts) == 3:
-                entry = (parts[0], parts[1], parts[2])
-                if entry not in seen:
-                    seen.add(entry)
-                    results.append(entry)
-
-    # Legacy .so files in _blobs/.
-    if _LEGACY_BLOB_DIR.exists():
-        for os_dir in sorted(_LEGACY_BLOB_DIR.iterdir()):
-            if not os_dir.is_dir():
-                continue
-            for arch_dir in sorted(os_dir.iterdir()):
-                if not arch_dir.is_dir():
+    def _scan_so_dir() -> None:
+        if _SO_BLOB_DIR.exists():
+            for os_dir in sorted(_SO_BLOB_DIR.iterdir()):
+                if not os_dir.is_dir():
                     continue
-                for so_file in sorted(arch_dir.glob("*.so")):
-                    entry = (so_file.stem, os_dir.name, arch_dir.name)
+                for arch_dir in sorted(os_dir.iterdir()):
+                    if not arch_dir.is_dir():
+                        continue
+                    for so_file in sorted(arch_dir.glob("*.so")):
+                        entry = (so_file.stem, os_dir.name, arch_dir.name)
+                        if entry not in seen:
+                            seen.add(entry)
+                            results.append(entry)
+
+    def _scan_bin_dir() -> None:
+        if _BLOBS_DIR.exists():
+            for bin_file in sorted(_BLOBS_DIR.glob("*.bin")):
+                parts = bin_file.stem.rsplit(".", 2)
+                if len(parts) == 3:
+                    entry = (parts[0], parts[1], parts[2])
                     if entry not in seen:
                         seen.add(entry)
                         results.append(entry)
+
+    # In dev mode, .so files are authoritative; in release, .bin files are.
+    if _DEV_MODE:
+        _scan_so_dir()
+        _scan_bin_dir()
+    else:
+        _scan_bin_dir()
+        _scan_so_dir()
 
     return sorted(results)

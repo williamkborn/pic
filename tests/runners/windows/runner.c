@@ -26,6 +26,17 @@
 
 #define RUNNER_ERROR 127
 
+/*
+ * PIC_WINAPI — mock functions must use the same calling convention
+ * as the blobs that call them. On x86_64, blobs use ms_abi for
+ * Windows API calls; on i686/aarch64 it's a no-op.
+ */
+#if defined(__x86_64__)
+#define PIC_WINAPI __attribute__((ms_abi))
+#else
+#define PIC_WINAPI
+#endif
+
 /* ---------- Architecture-specific TEB base setup ---------- */
 
 #if defined(__x86_64__)
@@ -89,16 +100,14 @@ static long set_teb_base(void *teb)
 #elif defined(__aarch64__)
 
 /*
- * aarch64: set tpidr_el0 which is readable via mrs in the blob.
- * On Linux, this is the thread pointer — QEMU emulates it.
+ * aarch64: set x18 (the platform register) to point at the mock TEB.
+ * On real Windows ARM64, x18 holds the TEB pointer. GCC reserves x18
+ * and never uses it as a scratch register, so this is safe.
  */
-
-#define __NR_aarch64_prctl 167 /* unused, we use inline asm */
 
 static long set_teb_base(void *teb)
 {
-	/* Directly set tpidr_el0 — QEMU user-static allows this. */
-	__asm__ volatile("msr tpidr_el0, %0" : : "r"(teb));
+	__asm__ volatile("mov x18, %0" : : "r"(teb));
 	return 0;
 }
 
@@ -117,6 +126,24 @@ static void *mock_GetStdHandle(unsigned long nStdHandle)
 	if (nStdHandle == (unsigned long)-10)
 		return (void *)0; /* stdin */
 	return (void *)-1;	  /* INVALID_HANDLE_VALUE */
+}
+
+static void *mock_VirtualAlloc(void *lpAddress, pic_uintptr dwSize,
+	unsigned long flAllocationType, unsigned long flProtect)
+{
+	(void)lpAddress;
+	(void)flAllocationType;
+
+	/* Map protection flags: any combo with EXEC gets RWX. */
+	int prot = PIC_PROT_READ | PIC_PROT_WRITE;
+	if (flProtect == 0x10 || flProtect == 0x20 || flProtect == 0x40)
+		prot |= PIC_PROT_EXEC;
+
+	void *mem = pic_mmap(PIC_NULL, (pic_size_t)dwSize, prot,
+		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
+	if ((long)mem == -1)
+		return PIC_NULL;
+	return mem;
 }
 
 static int mock_WriteFile(void *hFile, const void *lpBuffer,
@@ -154,7 +181,8 @@ static void mock_ExitProcess(unsigned int uExitCode)
  *   +0x298: AddressOfNameOrdinals table
  *   +0x300: Trampolines
  *
- * Export names (alphabetical): ExitProcess, GetStdHandle, WriteFile
+ * Export names (alphabetical): ExitProcess, GetStdHandle, VirtualAlloc,
+ *                              WriteFile
  */
 
 #define MOCK_PE_SIZE 4096
@@ -162,9 +190,9 @@ static void mock_ExitProcess(unsigned int uExitCode)
 #define OPT_HDR_OFFSET 0x98
 #define EXPORT_DIR_OFF 0x200
 #define NAME_STR_OFF 0x228
-#define FUNC_TBL_OFF 0x280
-#define NAME_TBL_OFF 0x28C
-#define ORD_TBL_OFF 0x298
+#define FUNC_TBL_OFF 0x2A0
+#define NAME_TBL_OFF 0x2B0
+#define ORD_TBL_OFF 0x2C0
 #define TRAMP_OFF 0x300
 
 static void pe_write32(pic_u8 *base, int offset, pic_u32 val)
@@ -199,21 +227,63 @@ static int pe_write_str(pic_u8 *base, int offset, const char *str)
 static int write_trampoline(pic_u8 *dest, void *target)
 {
 #if defined(__x86_64__)
-	/* movabs rax, imm64; jmp rax (12 bytes) */
+	/*
+	 * MS ABI → SysV ABI thunk for mock functions.
+	 *
+	 * The blob calls through ms_abi function pointers (rcx, rdx, r8, r9,
+	 * [rsp+0x28]). The mock functions use SysV ABI (rdi, rsi, rdx, rcx,
+	 * r8). This thunk translates args AND preserves rdi/rsi which are
+	 * non-volatile in MS ABI but volatile in SysV.
+	 *
+	 *   push rdi             ; save (ms_abi non-volatile)
+	 *   push rsi             ; save (ms_abi non-volatile)
+	 *   mov rdi, rcx         ; 1st arg
+	 *   mov rsi, rdx         ; 2nd arg
+	 *   mov rdx, r8          ; 3rd arg
+	 *   mov rcx, r9          ; 4th arg
+	 *   mov r8, [rsp+0x38]   ; 5th arg (+0x28 shadow + 2 pushes)
+	 *   movabs rax, imm64
+	 *   call rax             ; call mock (preserves our pushes)
+	 *   pop rsi              ; restore
+	 *   pop rdi              ; restore
+	 *   ret
+	 */
 	pic_u64 addr = (pic_u64)(pic_uintptr)target;
-	dest[0] = 0x48;
-	dest[1] = 0xb8;
-	dest[2] = (pic_u8)(addr);
-	dest[3] = (pic_u8)(addr >> 8);
-	dest[4] = (pic_u8)(addr >> 16);
-	dest[5] = (pic_u8)(addr >> 24);
-	dest[6] = (pic_u8)(addr >> 32);
-	dest[7] = (pic_u8)(addr >> 40);
-	dest[8] = (pic_u8)(addr >> 48);
-	dest[9] = (pic_u8)(addr >> 56);
-	dest[10] = 0xff;
-	dest[11] = 0xe0;
-	return 12;
+	int i = 0;
+	/* push rdi */
+	dest[i++] = 0x57;
+	/* push rsi */
+	dest[i++] = 0x56;
+	/* mov rdi, rcx */
+	dest[i++] = 0x48; dest[i++] = 0x89; dest[i++] = 0xcf;
+	/* mov rsi, rdx */
+	dest[i++] = 0x48; dest[i++] = 0x89; dest[i++] = 0xd6;
+	/* mov rdx, r8 */
+	dest[i++] = 0x4c; dest[i++] = 0x89; dest[i++] = 0xc2;
+	/* mov rcx, r9 */
+	dest[i++] = 0x4c; dest[i++] = 0x89; dest[i++] = 0xc9;
+	/* mov r8, [rsp+0x38] (0x28 shadow + 0x08 ret + 0x08 two pushes) */
+	dest[i++] = 0x4c; dest[i++] = 0x8b; dest[i++] = 0x44;
+	dest[i++] = 0x24; dest[i++] = 0x38;
+	/* movabs rax, imm64 */
+	dest[i++] = 0x48; dest[i++] = 0xb8;
+	dest[i++] = (pic_u8)(addr);
+	dest[i++] = (pic_u8)(addr >> 8);
+	dest[i++] = (pic_u8)(addr >> 16);
+	dest[i++] = (pic_u8)(addr >> 24);
+	dest[i++] = (pic_u8)(addr >> 32);
+	dest[i++] = (pic_u8)(addr >> 40);
+	dest[i++] = (pic_u8)(addr >> 48);
+	dest[i++] = (pic_u8)(addr >> 56);
+	/* call rax */
+	dest[i++] = 0xff; dest[i++] = 0xd0;
+	/* pop rsi */
+	dest[i++] = 0x5e;
+	/* pop rdi */
+	dest[i++] = 0x5f;
+	/* ret */
+	dest[i++] = 0xc3;
+	return i; /* 34 bytes */
 
 #elif defined(__i386__)
 	/* mov eax, imm32; jmp eax (7 bytes) */
@@ -257,8 +327,9 @@ static int write_trampoline(pic_u8 *dest, void *target)
 #endif
 }
 
-/* Max trampoline size across all architectures. */
-#define TRAMP_STRIDE 16
+/* Max trampoline size across all architectures.
+ * x86_64 ABI thunk is 34 bytes; i686/aarch64 are 7/16 bytes. */
+#define TRAMP_STRIDE 48
 
 static pic_u8 *build_mock_pe(void)
 {
@@ -300,20 +371,24 @@ static pic_u8 *build_mock_pe(void)
 	name_off += pe_write_str(pe, name_off, "ExitProcess");
 	int get_std_handle_off = name_off;
 	name_off += pe_write_str(pe, name_off, "GetStdHandle");
+	int virtual_alloc_off = name_off;
+	name_off += pe_write_str(pe, name_off, "VirtualAlloc");
 	int write_file_off = name_off;
 	name_off += pe_write_str(pe, name_off, "WriteFile");
 	(void)name_off;
 
-	/* Trampolines. */
+	/* Trampolines (same order as names: alphabetical). */
 	int off = TRAMP_OFF;
 	write_trampoline(pe + off, (void *)mock_ExitProcess);
 	off += TRAMP_STRIDE;
 	write_trampoline(pe + off, (void *)mock_GetStdHandle);
 	off += TRAMP_STRIDE;
+	write_trampoline(pe + off, (void *)mock_VirtualAlloc);
+	off += TRAMP_STRIDE;
 	write_trampoline(pe + off, (void *)mock_WriteFile);
 
 	/* Export directory header. */
-	pe_write32(pe, EXPORT_DIR_OFF + 0x18, 3); /* NumberOfNames */
+	pe_write32(pe, EXPORT_DIR_OFF + 0x18, 4); /* NumberOfNames */
 	pe_write32(pe, EXPORT_DIR_OFF + 0x1C, FUNC_TBL_OFF);
 	pe_write32(pe, EXPORT_DIR_OFF + 0x20, NAME_TBL_OFF);
 	pe_write32(pe, EXPORT_DIR_OFF + 0x24, ORD_TBL_OFF);
@@ -322,16 +397,19 @@ static pic_u8 *build_mock_pe(void)
 	pe_write32(pe, FUNC_TBL_OFF + 0, TRAMP_OFF + 0 * TRAMP_STRIDE);
 	pe_write32(pe, FUNC_TBL_OFF + 4, TRAMP_OFF + 1 * TRAMP_STRIDE);
 	pe_write32(pe, FUNC_TBL_OFF + 8, TRAMP_OFF + 2 * TRAMP_STRIDE);
+	pe_write32(pe, FUNC_TBL_OFF + 12, TRAMP_OFF + 3 * TRAMP_STRIDE);
 
 	/* AddressOfNames (RVAs to name strings). */
 	pe_write32(pe, NAME_TBL_OFF + 0, (pic_u32)exit_process_off);
 	pe_write32(pe, NAME_TBL_OFF + 4, (pic_u32)get_std_handle_off);
-	pe_write32(pe, NAME_TBL_OFF + 8, (pic_u32)write_file_off);
+	pe_write32(pe, NAME_TBL_OFF + 8, (pic_u32)virtual_alloc_off);
+	pe_write32(pe, NAME_TBL_OFF + 12, (pic_u32)write_file_off);
 
 	/* AddressOfNameOrdinals. */
 	pe_write16(pe, ORD_TBL_OFF + 0, 0);
 	pe_write16(pe, ORD_TBL_OFF + 2, 1);
 	pe_write16(pe, ORD_TBL_OFF + 4, 2);
+	pe_write16(pe, ORD_TBL_OFF + 6, 3);
 
 	return pe;
 }
@@ -438,14 +516,14 @@ static pic_u8 *build_mock_env(pic_u8 *mock_pe)
 	 * LDR_DATA_TABLE_ENTRY (from InMemoryOrderLinks):
 	 *   Flink/Blink at +0x00/+ptr_size
 	 *   DllBase:     64-bit +0x20, 32-bit +0x10
-	 *   BaseDllName: 64-bit +0x48, 32-bit +0x28
+	 *   BaseDllName: 64-bit +0x48, 32-bit +0x24
 	 */
 	write_ptr(entry, 0x00, list_head);
 	write_ptr(entry, sizeof(void *), list_head);
 
 #if PIC_ARCH_IS_32BIT
 	write_ptr(entry, 0x10, mock_pe);
-	pic_u8 *ustr = entry + 0x28;
+	pic_u8 *ustr = entry + 0x24;
 #else
 	write_ptr(entry, 0x20, mock_pe);
 	pic_u8 *ustr = entry + 0x48;

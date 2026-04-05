@@ -76,14 +76,22 @@ required for Windows targets, beyond the TEB/PEB offsets
 which are C-level struct field accesses.
 ```
 
+### i686
+
+```
+TEB is at fs:[0x18]  (self-pointer in TEB)
+PEB is at TEB + 0x30
+
+Accessing TEB requires reading from the fs segment register.
+```
+
 ### aarch64
 
 ```
-(conceptual)
-On Windows ARM64, the TEB is accessed via a dedicated register
-or memory-mapped location per the Windows ARM64 ABI.
-The exact mechanism will be documented during implementation
-based on the Windows ARM64 ABI specification.
+TEB is read from x18 (the platform register, reserved by AAPCS).
+PEB is at TEB + 0x60 (same as x86_64).
+
+The runner sets x18 directly via inline asm before calling the blob.
 ```
 
 ## DJB2 Hash Computation
@@ -99,7 +107,13 @@ For DLL names: input = lowercase(ascii(BaseDllName))
 For function names: input = ascii(export_name) (case-sensitive)
 ```
 
-## PEB Structure Offsets (x86_64)
+## PEB Structure Offsets
+
+All offsets below are relative to the `InMemoryOrderLinks` pointer
+(the LIST_ENTRY Flink obtained from `InMemoryOrderModuleList`), NOT
+from the start of `LDR_DATA_TABLE_ENTRY`.
+
+### 64-bit (x86_64, aarch64)
 
 ```
 TEB (Thread Environment Block):
@@ -112,18 +126,49 @@ PEB (Process Environment Block):
 PEB_LDR_DATA:
   +0x20: InMemoryOrderModuleList (LIST_ENTRY)
 
-LDR_DATA_TABLE_ENTRY (InMemoryOrder):
-  +0x00: InMemoryOrderLinks (LIST_ENTRY)
-  +0x20: DllBase (module base address)
-  +0x28: EntryPoint
-  +0x30: SizeOfImage
-  +0x38: FullDllName (UNICODE_STRING)
-  +0x48: BaseDllName (UNICODE_STRING)
+From InMemoryOrderLinks (Flink):
+  +0x00: Flink/Blink (LIST_ENTRY, 16 bytes)
+  +0x20: DllBase         (struct offset 0x30)
+  +0x48: BaseDllName     (struct offset 0x58, UNICODE_STRING)
 
-Note: These offsets are for x86_64 (64-bit pointers).
-32-bit offsets would differ but are not needed (Windows
-targets are x86_64 and aarch64 only, both 64-bit).
+UNICODE_STRING:
+  +0x00: Length (u16, byte count)
+  +0x08: Buffer (pointer)
 ```
+
+### 32-bit (i686)
+
+```
+TEB:
+  +0x18: Self pointer
+  +0x30: PEB pointer
+
+PEB:
+  +0x0C: Ldr (PEB_LDR_DATA pointer)
+
+PEB_LDR_DATA:
+  +0x14: InMemoryOrderModuleList (LIST_ENTRY)
+
+From InMemoryOrderLinks (Flink):
+  +0x00: Flink/Blink (LIST_ENTRY, 8 bytes)
+  +0x10: DllBase         (struct offset 0x18)
+  +0x28: BaseDllName     (struct offset 0x30, UNICODE_STRING) [*]
+
+UNICODE_STRING:
+  +0x00: Length (u16, byte count)
+  +0x04: Buffer (pointer)
+```
+
+**[*] i686 BaseDllName offset**: Originally set to `0x28` (incorrect),
+fixed to `0x24` after Wine validation exposed the discrepancy. The
+correct derivation: `BaseDllName` is at struct offset `0x2C`, and
+`InMemoryOrderLinks` is at struct offset `0x08`, so the relative
+offset is `0x2C - 0x08 = 0x24`. Wine validation now passes on i686.
+
+**Build cache note**: After changing PEB offsets, run
+`python tools/extract_release.py` to regenerate the pre-extracted
+`.bin` files in `blobs/`. The `get_blob()` API reads from these
+release blobs, not directly from the `.so` files in `_blobs/`.
 
 ## Export Directory Parsing
 
@@ -174,6 +219,76 @@ On first use, each slot is NULL. The resolve_function wrapper
 checks the slot before doing a full PEB walk. After resolution,
 the pointer is stored in the slot for reuse.
 ```
+
+## Mock Runner Correctness
+
+### The Self-Consistency Problem
+
+The mock runner constructs fake TEB/PEB/PE structures and provides
+mock API implementations. Because the blob and mock are compiled from
+the same headers and offsets, bugs in those offsets are invisible to
+mock-based tests — both sides read/write at the wrong offset
+consistently. This class of bug can only be caught by running the
+blob against a real Windows implementation.
+
+### Wine Validation
+
+`tools/validate_wine.py` wraps blobs in a minimal PE (built in pure
+Python, no toolchain) and runs them under Wine. It compares stdout and
+exit code against the mock runner. This catches offset/ABI bugs that
+mock self-consistency hides.
+
+Limitations:
+- **x86_64**: Fully validated. Requires `PIC_WINAPI` (ms_abi) on
+  function pointer types and ABI thunks in the mock runner trampolines.
+- **i686**: Fully validated. Calling convention is the same (cdecl).
+- **aarch64**: Cannot validate (Wine doesn't run ARM64 PEs on x86
+  hosts). Offsets are correct by structural analysis (same 64-bit
+  layout as x86_64, validated via Wine). TEB access via x18 is
+  correct per Windows ARM64 ABI but untested against real Windows.
+
+### Bugs Found and Fixed
+
+**i686 BaseDllName offset** (peb.h + runner.c): Was `0x28`, should
+be `0x24`. The mock used the same wrong offset so tests passed.
+Wine crashed reading from the wrong PEB offset. Root cause: the
+offset was calculated from the struct start rather than from the
+`InMemoryOrderLinks` pointer (which is at struct offset `0x08`).
+Correct derivation: struct `0x2C` - InMemoryOrderLinks `0x08` = `0x24`.
+
+**aarch64 TEB register** (teb.h + runner.c): Used `tpidr_el0`
+(Linux thread pointer), should be `x18` (Windows ARM64 platform
+register). The mock set `tpidr_el0` and the blob read `tpidr_el0`,
+so tests passed. Fixed to `x18` per the Windows ARM64 ABI. GCC
+reserves x18 and never uses it as a scratch register, so this is
+safe in freestanding code.
+
+**x86_64 calling convention** (os/windows.h, blobs, runner.c):
+Blobs compiled with GCC default to SysV ABI (args in rdi, rsi, rdx).
+Real Windows APIs expect MS x64 ABI (args in rcx, rdx, r8, r9).
+The mock functions also used SysV, so tests passed. Fixed by adding
+`PIC_WINAPI` (`__attribute__((ms_abi))`) to function pointer types
+and ABI translation thunks in the mock PE trampolines. See ADR-025.
+
+### Debugging Build Cache Issues
+
+When changing PEB offsets or calling conventions, stale binaries can
+mask fixes. The build has three cache layers:
+
+1. **Bazel action cache**: `bazel clean --expunge` clears it, but
+   genrule-based blob builds may not track header changes. Touch the
+   `.c` source file to force recompilation.
+2. **Staged .so files** (`_blobs/`): Rebuilt by `stage_blobs.py`.
+   After building blobs, stage them BEFORE building the runner (the
+   runner build changes the `bazel-bin` symlink to a different
+   platform config).
+3. **Pre-extracted release blobs** (`blobs/*.bin`): `get_blob()` reads
+   from these, NOT from `_blobs/*.so`. Run `python tools/extract_release.py`
+   after staging to regenerate them.
+
+If a fix "doesn't work", check all three layers. The symptom is
+usually that `objdump` of the `.so` shows the fix but `get_blob()`
+returns old code.
 
 ## Derives From
 - REQ-005

@@ -6,6 +6,13 @@ load("//src/payload:extract.bzl", "extract_bin")
 package(default_visibility = ["//visibility:public"])
 
 pic_blob(
+    name = "alloc_jump_windows",
+    srcs = ["alloc_jump_windows.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "hello",
     srcs = ["hello.c"],
     deps = ["//src/include/picblobs:headers"],
@@ -74,6 +81,13 @@ pic_blob(
 extract_bin(
     name = "nacl_server_hosted_bin",
     src = ":nacl_server_hosted",
+)
+
+pic_blob(
+    name = "test_pass",
+    srcs = ["test_pass.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
 )
 
 pic_blob(

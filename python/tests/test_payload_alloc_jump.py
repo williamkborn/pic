@@ -168,7 +168,10 @@ class TestAllocJumpEdgeCases:
             pytest.skip(f"alloc_jump not staged: {target_os}/{target_arch}")
 
         blob = get_blob("alloc_jump", target_os, target_arch)
-        assert len(blob.code) < 512, (
+        # Windows blobs include the TEB/PEB/PE resolution chain (~400 bytes
+        # on i686) so they need a higher limit than unix blobs.
+        limit = 768 if target_os == "windows" else 512
+        assert len(blob.code) < limit, (
             f"alloc_jump {target_os}:{target_arch}: "
-            f"code size {len(blob.code)} bytes exceeds 512 byte limit"
+            f"code size {len(blob.code)} bytes exceeds {limit} byte limit"
         )

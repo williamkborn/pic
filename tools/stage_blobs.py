@@ -27,7 +27,7 @@ from pathlib import Path
 import sys as _sys
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
-from registry import platform_configs
+from registry import BLOB_TYPES, platform_configs
 
 _sys.path.pop(0)
 
@@ -83,6 +83,40 @@ def stage_file(src: Path, dest: Path, executable: bool = False) -> bool:
     if executable:
         dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return True
+
+
+# Substrings from `file -b` output for architecture validation.
+_ELF_MACHINES = {
+    "x86_64": "x86-64",
+    "i686": "Intel",  # matches "Intel 80386" and "Intel i386"
+    "aarch64": "aarch64",
+    "armv5_arm": "ARM",
+    "armv5_thumb": "ARM",
+    "armv7_thumb": "ARM",
+    "s390x": "S/390",
+    "mipsel32": "MIPS",
+    "mipsbe32": "MIPS",
+}
+
+
+def verify_elf_arch(so_path: Path, expected_arch: str) -> bool:
+    """Verify a staged .so has the expected ELF machine type.
+
+    Catches the bug where bazel-bin symlink points to wrong-platform output.
+    """
+    expected = _ELF_MACHINES.get(expected_arch)
+    if expected is None:
+        return True  # unknown arch, skip check
+    try:
+        result = subprocess.run(
+            ["file", "-b", str(so_path)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return expected in result.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return True  # can't check, don't block
 
 
 def find_bazel_output(label: str, extension: str) -> Path:
@@ -158,8 +192,35 @@ def build_and_stage(
             else:
                 log.info("  [%s] blobs OK", config_key)
 
-        # Build runner. The Windows/FreeBSD runners are Linux binaries
-        # (mock environments), so they must be built with a Linux config.
+        # Stage blobs immediately after building them, BEFORE the runner
+        # build changes the bazel-bin symlink to a different config.
+        for blob_name in os_targets:
+            if not blob_labels:
+                break  # build failed, skip staging
+            total += 1
+            label = BLOB_LABEL_TEMPLATE.format(name=blob_name)
+            src = find_bazel_output(label, ".so")
+            # Use staged_name from registry if set (e.g. alloc_jump_windows
+            # stages as alloc_jump.so), otherwise use the blob name as-is.
+            bt = BLOB_TYPES.get(blob_name)
+            staged_name = (bt.staged_name if bt and bt.staged_name else blob_name)
+            dest = output_dir / os_name / arch_name / f"{staged_name}.so"
+
+            tag = f"    {staged_name}.so -> {os_name}/{arch_name}"
+            if stage_file(src, dest):
+                if not verify_elf_arch(dest, arch_name):
+                    log.error(
+                        "%-50s ARCH MISMATCH (expected %s)", tag, arch_name
+                    )
+                else:
+                    log.info("%-50s OK", tag)
+                    passed += 1
+            else:
+                log.error("%-50s NOT FOUND: %s", tag, src)
+
+        # Build runner AFTER staging blobs. The Windows/FreeBSD runners
+        # are Linux binaries (mock environments), built with a Linux config
+        # which changes the bazel-bin symlink.
         if runner_label:
             if os_name in ("windows", "freebsd"):
                 runner_bazel_config = f"linux_{arch_name}"
@@ -172,21 +233,6 @@ def build_and_stage(
                 runner_label = ""  # skip staging
             else:
                 log.info("  [%s] runner OK", config_key)
-
-        for blob_name in os_targets:
-            if not blob_labels:
-                break  # build failed, skip staging
-            total += 1
-            label = BLOB_LABEL_TEMPLATE.format(name=blob_name)
-            src = find_bazel_output(label, ".so")
-            dest = output_dir / os_name / arch_name / f"{blob_name}.so"
-
-            tag = f"    {blob_name}.so -> {os_name}/{arch_name}"
-            if stage_file(src, dest):
-                log.info("%-50s OK", tag)
-                passed += 1
-            else:
-                log.error("%-50s NOT FOUND: %s", tag, src)
 
         if runner_label:
             total += 1
@@ -249,6 +295,22 @@ def main() -> int:
     log.info("%d/%d staged", passed, total)
     if passed < total:
         return 1
+
+    # Auto-regenerate pre-extracted release blobs so get_blob() sees
+    # the freshly-staged .so files immediately. Without this step,
+    # get_blob() reads stale .bin files from blobs/ and changes appear
+    # to have no effect — a common source of debugging confusion.
+    if not args.debug and passed > 0:
+        log.info("  extracting release blobs...")
+        from extract_release import extract_release
+
+        so_dir = BLOB_DIR
+        out_dir = PROJECT_ROOT / "python" / "picblobs"
+        extracted, errors = extract_release(so_dir, out_dir)
+        log.info("  %d blobs extracted (%d errors)", extracted, errors)
+        if errors:
+            return 1
+
     return 0
 
 
