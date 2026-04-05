@@ -35,6 +35,9 @@ python/picblobs/_blobs/**/*.so
 python/picblobs/blobs/
 python/picblobs/manifest.json
 
+# mdbook build output
+docs/book/
+
 # Claude Code
 .claude/
 

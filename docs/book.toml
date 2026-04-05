@@ -1,0 +1,13 @@
+[book]
+title = "picblobs"
+description = "Position-independent code blob library documentation"
+authors = ["William Born"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/williamkborn/pic"
+edit-url-template = "https://github.com/williamkborn/pic/edit/main/docs/src/{path}"
