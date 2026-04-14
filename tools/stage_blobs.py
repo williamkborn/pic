@@ -4,7 +4,7 @@
 Builds all blob and runner targets for all platform configs via Bazel,
 then copies outputs into:
   python/picblobs/_blobs/{os}/{arch}/{name}.so
-  python/picblobs/_runners/{os}/{arch}/runner
+  python_cli/picblobs_cli/_runners/{os}/{arch}/runner
 
 Usage:
     python tools/stage_blobs.py                       # build + stage all
@@ -42,7 +42,7 @@ RUNNER_LABEL = "//tests/runners/{runner_type}:runner"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BLOB_DIR = PROJECT_ROOT / "python" / "picblobs" / "_blobs"
-RUNNER_DIR = PROJECT_ROOT / "python" / "picblobs" / "_runners"
+RUNNER_DIR = PROJECT_ROOT / "python_cli" / "picblobs_cli" / "_runners"
 DEBUG_BLOB_DIR = PROJECT_ROOT / "debug"
 
 

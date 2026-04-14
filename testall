@@ -94,4 +94,19 @@ echo ""
 
 # pytest must run from python/ for testpaths/conftest to resolve.
 cd "$SCRIPT_DIR/python"
-exec python -m pytest "${TEST_FILES[@]}" "${PYTEST_ARGS[@]}"
+python -m pytest "${TEST_FILES[@]}" "${PYTEST_ARGS[@]}"
+PICBLOBS_STATUS=$?
+
+# Also run the picblobs-cli suite (separate rootdir — click testing +
+# runner-discovery checks that depend on picblobs_cli being installed).
+if [[ "$UNIT_ONLY" -eq 0 && "$PAYLOAD_ONLY" -eq 0 ]]; then
+    echo ""
+    echo "==> Running picblobs-cli test suite"
+    cd "$SCRIPT_DIR/python_cli"
+    python -m pytest tests/ "${PYTEST_ARGS[@]}"
+    CLI_STATUS=$?
+else
+    CLI_STATUS=0
+fi
+
+exit $(( PICBLOBS_STATUS + CLI_STATUS ))

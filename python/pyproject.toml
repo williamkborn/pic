@@ -34,8 +34,8 @@ packages = ["picblobs"]
 "picblobs/blobs" = "picblobs/blobs"
 # Legacy .so files for development fallback.
 "picblobs/_blobs" = "picblobs/_blobs"
-# Cross-compiled QEMU test runners.
-"picblobs/_runners" = "picblobs/_runners"
+# NOTE: Cross-compiled QEMU test runners live in the `picblobs-cli`
+# companion package (see ADR-026 / REQ-020) — not in this wheel.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

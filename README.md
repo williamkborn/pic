@@ -75,6 +75,7 @@ mdbook build docs/
 - [Getting Started](docs/src/getting-started.md) -- prerequisites, setup, Docker
 - [Building](docs/src/building.md) -- Bazel build system, platform configs, staging
 - [Running Blobs](docs/src/running.md) -- CLI usage
+- [picblobs-cli](docs/src/picblobs-cli.md) -- click CLI companion package (build / run / verify)
 - [Testing](docs/src/testing.md) -- test suite, filtered runs, test architecture
 
 ### Development

@@ -24,14 +24,32 @@ log = logging.getLogger(__name__)
 from picblobs._extractor import BlobData, extract
 from picblobs._qemu import QEMU_BINARIES
 
-# Embedded runners inside the package.
-_PACKAGE_RUNNER_DIR = Path(__file__).parent / "_runners"
-
 # Fallback: Bazel build tree.
 _BAZEL_RUNNER_SEARCH = [
     Path("bazel-bin/tests/runners"),
     Path("../bazel-bin/tests/runners"),
 ]
+
+
+def _picblobs_cli_runner_dir() -> Path | None:
+    """Return the on-disk path to the picblobs_cli bundled runners, or None.
+
+    Companion package ``picblobs-cli`` ships the cross-compiled test
+    runners under ``picblobs_cli/_runners``. When installed alongside
+    picblobs it provides the primary source of runner binaries; if the
+    package isn't importable we fall back to the Bazel build tree.
+    """
+    try:
+        import importlib
+        import importlib.resources
+
+        mod = importlib.import_module("picblobs_cli")
+    except ImportError:
+        return None
+    try:
+        return Path(str(importlib.resources.files(mod) / "_runners"))
+    except (AttributeError, ModuleNotFoundError, TypeError):
+        return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,8 +88,9 @@ def find_runner(
     """Locate a compiled C test runner binary.
 
     Search order:
-      1. Embedded in package: picblobs/_runners/{runner_type}/{arch}/runner
-      2. Bazel build tree: bazel-bin/tests/runners/{runner_type}/runner.bin
+      1. ``picblobs-cli`` package: ``picblobs_cli/_runners/{runner_type}/{arch}/runner``
+      2. Bazel build tree: ``bazel-bin/tests/runners/{runner_type}/{arch}/runner[.bin]``
+      3. Caller-supplied ``search_paths``
 
     Args:
         runner_type: One of "linux", "freebsd", "windows".
@@ -79,18 +98,19 @@ def find_runner(
         search_paths: Override search directories.
 
     Raises:
-        FileNotFoundError: If runner binary is not found.
+        FileNotFoundError: If runner binary is not found. The error text
+            mentions ``picblobs-cli`` so installation guidance is visible.
     """
-    # 1. Check embedded runners (cross-compiled, per-arch).
-    if arch:
-        embedded = _PACKAGE_RUNNER_DIR / runner_type / arch / "runner"
+    # 1. Check the picblobs-cli bundle first (preferred when installed).
+    cli_dir = _picblobs_cli_runner_dir()
+    if cli_dir and arch:
+        embedded = cli_dir / runner_type / arch / "runner"
         if embedded.exists():
             return embedded
 
-    # 2. Fallback to Bazel build tree.
+    # 2. Fallback to Bazel build tree (development / CI).
     paths = search_paths or _BAZEL_RUNNER_SEARCH
     for base in paths:
-        # Try arch-specific first.
         if arch:
             runner = base / runner_type / arch / "runner"
             if runner.exists():
@@ -98,7 +118,6 @@ def find_runner(
             runner = base / runner_type / arch / "runner.bin"
             if runner.exists():
                 return runner
-        # Then generic (current config's output).
         runner = base / runner_type / "runner.bin"
         if runner.exists():
             return runner
@@ -107,7 +126,9 @@ def find_runner(
             return runner
 
     raise FileNotFoundError(
-        f"Test runner not found for {runner_type}/{arch}. Run: picblobs build"
+        f"Test runner not found for {runner_type}/{arch}. "
+        f"Install picblobs-cli (pip install picblobs-cli) or run "
+        f"tools/stage_blobs.py from a source checkout."
     )
 
 

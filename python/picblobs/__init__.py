@@ -20,10 +20,71 @@ import functools
 import json
 from pathlib import Path
 
+from picblobs._builder import (
+    AllocJumpBuilder,
+    Blob,
+    HelloBuilder,
+    ReflectivePeBuilder,
+    StagerFdBuilder,
+    StagerMmapBuilder,
+    StagerPipeBuilder,
+    StagerTcpBuilder,
+    UlExecBuilder,
+)
+from picblobs._enums import OS, Arch, BlobType, ValidationError
 from picblobs._extractor import BlobData, extract, load_from_sidecar
+from picblobs._introspect import (
+    ConfigField,
+    ConfigLayout,
+    Target,
+    blob_size,
+    blob_types,
+    build_hash,
+    config_layout,
+    djb2,
+    djb2_dll,
+    is_supported,
+    raw_blob,
+    targets,
+)
 
 __version__ = "0.1.0"
-__all__ = ["get_blob", "list_blobs", "BlobData", "extract", "clear_cache"]
+__all__ = [
+    # Core extraction
+    "get_blob",
+    "list_blobs",
+    "BlobData",
+    "extract",
+    "clear_cache",
+    # Enums
+    "OS",
+    "Arch",
+    "BlobType",
+    "ValidationError",
+    # Builder API (REQ-015)
+    "Blob",
+    "AllocJumpBuilder",
+    "HelloBuilder",
+    "ReflectivePeBuilder",
+    "StagerFdBuilder",
+    "StagerMmapBuilder",
+    "StagerPipeBuilder",
+    "StagerTcpBuilder",
+    "UlExecBuilder",
+    # Introspection (REQ-016)
+    "Target",
+    "ConfigField",
+    "ConfigLayout",
+    "targets",
+    "blob_types",
+    "is_supported",
+    "raw_blob",
+    "blob_size",
+    "build_hash",
+    "config_layout",
+    "djb2",
+    "djb2_dll",
+]
 
 _PKG_DIR = Path(__file__).parent
 _MANIFEST_PATH = _PKG_DIR / "manifest.json"

@@ -9,6 +9,7 @@
 - [Getting Started](./getting-started.md)
 - [Building](./building.md)
 - [Running Blobs](./running.md)
+- [picblobs-cli](./picblobs-cli.md)
 - [Testing](./testing.md)
 
 # Development

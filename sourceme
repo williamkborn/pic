@@ -20,10 +20,13 @@ fi
 echo "==> Installing picblobs in dev mode"
 uv pip install -e '.[dev]'
 
+echo "==> Installing picblobs-cli in dev mode"
+uv pip install -e "${_picblobs_root}/python_cli"
+
 source .venv/bin/activate
 
 cd "${_picblobs_root}"
 
-echo "==> Ready. Try: python -m picblobs --help"
+echo "==> Ready. Try: picblobs-cli --help"
 
 unset _picblobs_root
