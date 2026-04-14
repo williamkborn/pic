@@ -1091,6 +1091,90 @@ _register_blob(
 
 _register_blob(
     BlobType(
+        name="stager_fd_windows",
+        description="Windows stager_fd: read length-prefixed payload from stdin HANDLE",
+        has_config=True,
+        platforms={
+            "windows": _os_arches("windows"),
+        },
+        staged_name="stager_fd",
+        config_schema=ConfigSchema(
+            fixed_size=4,
+            fields=[
+                ConfigField(name="stream_id", type="u32", offset=0),
+            ],
+            trailing_data=[],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="stager_pipe_windows",
+        description="Windows stager_pipe: CreateFileA a pipe path, read payload",
+        has_config=True,
+        platforms={
+            "windows": _os_arches("windows"),
+        },
+        staged_name="stager_pipe",
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="path_len", type="u16", offset=0),
+            ],
+            trailing_data=[
+                TrailingData(name="path", length_field="path_len"),
+            ],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="stager_tcp_windows",
+        description="Windows stager_tcp: Winsock connect-back stager",
+        has_config=True,
+        platforms={
+            "windows": _os_arches("windows"),
+        },
+        staged_name="stager_tcp",
+        config_schema=ConfigSchema(
+            fixed_size=7,
+            fields=[
+                ConfigField(name="af", type="u8", offset=0),
+                ConfigField(name="port", type="u16", offset=1),
+                ConfigField(name="addr", type="u8[4]", offset=3),
+            ],
+            trailing_data=[],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="reflective_pe_windows",
+        description="Reflective PE loader: validate headers, alloc RWX, signal LOADED",
+        has_config=True,
+        platforms={
+            "windows": _os_arches("windows"),
+        },
+        staged_name="reflective_pe",
+        config_schema=ConfigSchema(
+            fixed_size=9,
+            fields=[
+                ConfigField(name="pe_size", type="u32", offset=0),
+                ConfigField(name="flags", type="u32", offset=4),
+                ConfigField(name="entry_type", type="u8", offset=8),
+            ],
+            trailing_data=[
+                TrailingData(name="pe_data", length_field="pe_size"),
+            ],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
         name="alloc_jump_windows",
         description="Allocate RWX memory, copy inner payload, jump (Windows TEB)",
         has_config=True,

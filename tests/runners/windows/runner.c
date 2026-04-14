@@ -6,13 +6,31 @@
  * list, export tables with DJB2-matched function names) and then
  * executes a Windows-targeting blob within it.
  *
+ * Two mock DLLs are exposed to the blob via the LDR module list:
+ *
+ *   kernel32.dll
+ *     - GetStdHandle, WriteFile, ReadFile
+ *     - VirtualAlloc, CreateFileA, CloseHandle
+ *     - ExitProcess
+ *
+ *   ws2_32.dll
+ *     - WSAStartup, socket, connect, recv, closesocket
+ *     - htons
+ *
+ * HANDLE values in this runner are just integer file descriptors cast
+ * to void* — the mocks translate Windows-style API calls to the
+ * equivalent Linux syscalls. INVALID_HANDLE_VALUE is represented as
+ * (void*)-1 and SOCKET_ERROR is -1.
+ *
  * Supports: x86_64, i686, aarch64.
  *
  * Usage: ./runner <blob.bin>
  */
 
+#include "picblobs/net.h"
 #include "picblobs/os/linux.h"
 #include "picblobs/sys/close.h"
+#include "picblobs/sys/connect.h"
 #include "picblobs/sys/exit.h"
 #include "picblobs/sys/exit_group.h"
 #include "picblobs/sys/lseek.h"
@@ -20,6 +38,7 @@
 #include "picblobs/sys/mprotect.h"
 #include "picblobs/sys/open.h"
 #include "picblobs/sys/read.h"
+#include "picblobs/sys/socket.h"
 #include "picblobs/sys/write.h"
 #include "picblobs/syscall.h"
 #include "picblobs/types.h"
@@ -51,15 +70,6 @@ static long set_teb_base(void *teb)
 
 #elif defined(__i386__)
 
-/*
- * i686: set fs base via set_thread_area or arch_prctl.
- * QEMU user-static supports arch_prctl on i386 for setting
- * the segment base.  Fallback: use set_thread_area (syscall 243).
- *
- * We use modify_ldt (syscall 123) to install an LDT entry,
- * then load fs with the selector.
- */
-
 struct user_desc {
 	unsigned int entry_number;
 	unsigned int base_addr;
@@ -79,7 +89,7 @@ static long set_teb_base(void *teb)
 	struct user_desc desc;
 	for (int i = 0; i < (int)sizeof(desc); i++)
 		((char *)&desc)[i] = 0;
-	desc.entry_number = (unsigned int)-1; /* kernel picks a free slot */
+	desc.entry_number = (unsigned int)-1;
 	desc.base_addr = (unsigned int)(unsigned long)teb;
 	desc.limit = 0xfffff;
 	desc.seg_32bit = 1;
@@ -90,20 +100,12 @@ static long set_teb_base(void *teb)
 	if (ret < 0)
 		return ret;
 
-	/* Load the new selector into fs.
-	 * Selector = (entry_number << 3) | 3  (RPL=3, LDT bit=0 for GDT). */
 	unsigned short sel = (unsigned short)((desc.entry_number << 3) | 3);
 	__asm__ volatile("mov %0, %%fs" : : "r"(sel));
 	return 0;
 }
 
 #elif defined(__aarch64__)
-
-/*
- * aarch64: set x18 (the platform register) to point at the mock TEB.
- * On real Windows ARM64, x18 holds the TEB pointer. GCC reserves x18
- * and never uses it as a scratch register, so this is safe.
- */
 
 static long set_teb_base(void *teb)
 {
@@ -117,15 +119,39 @@ static long set_teb_base(void *teb)
 
 /* ---------- Mock Windows API implementations ---------- */
 
+/*
+ * Helper: a pic_u8 write-byte stream for building things like
+ * UNICODE_STRING buffers without needing libc-style strcpy.
+ */
+
+/*
+ * GetStdHandle returns pseudo-handles that our other mocks map back to
+ * fds. Real Windows never returns NULL here, so using the fd value
+ * directly (0 for stdin) would collide with the NULL-check convention
+ * callers use. We bias by STD_HANDLE_BIAS so every standard handle is
+ * non-zero, and mock_ReadFile / mock_WriteFile / mock_CloseHandle peel
+ * the bias off again.
+ */
+#define STD_HANDLE_BIAS 0x80000000u
+#define STD_HANDLE_MASK 0x7fffffffu
+
+static int unwrap_handle(void *hFile)
+{
+	pic_uintptr v = (pic_uintptr)hFile;
+	if (v & STD_HANDLE_BIAS)
+		return (int)(v & STD_HANDLE_MASK);
+	return (int)v;
+}
+
 static void *mock_GetStdHandle(unsigned long nStdHandle)
 {
-	if (nStdHandle == (unsigned long)-11)
-		return (void *)1; /* stdout */
-	if (nStdHandle == (unsigned long)-12)
-		return (void *)2; /* stderr */
 	if (nStdHandle == (unsigned long)-10)
-		return (void *)0; /* stdin */
-	return (void *)-1;	  /* INVALID_HANDLE_VALUE */
+		return (void *)(pic_uintptr)(STD_HANDLE_BIAS | 0u); /* stdin */
+	if (nStdHandle == (unsigned long)-11)
+		return (void *)(pic_uintptr)(STD_HANDLE_BIAS | 1u); /* stdout */
+	if (nStdHandle == (unsigned long)-12)
+		return (void *)(pic_uintptr)(STD_HANDLE_BIAS | 2u); /* stderr */
+	return (void *)-1; /* INVALID_HANDLE_VALUE */
 }
 
 static void *mock_VirtualAlloc(void *lpAddress, pic_uintptr dwSize,
@@ -134,8 +160,9 @@ static void *mock_VirtualAlloc(void *lpAddress, pic_uintptr dwSize,
 	(void)lpAddress;
 	(void)flAllocationType;
 
-	/* Map protection flags: any combo with EXEC gets RWX. */
 	int prot = PIC_PROT_READ | PIC_PROT_WRITE;
+	/* PAGE_EXECUTE=0x10, PAGE_EXECUTE_READ=0x20,
+	 * PAGE_EXECUTE_READWRITE=0x40 */
 	if (flProtect == 0x10 || flProtect == 0x20 || flProtect == 0x40)
 		prot |= PIC_PROT_EXEC;
 
@@ -151,8 +178,8 @@ static int mock_WriteFile(void *hFile, const void *lpBuffer,
 	unsigned long *lpNumberOfBytesWritten, void *lpOverlapped)
 {
 	(void)lpOverlapped;
-	long ret = pic_write(
-		(int)(long)hFile, lpBuffer, (pic_size_t)nNumberOfBytesToWrite);
+	long ret = pic_write(unwrap_handle(hFile), lpBuffer,
+		(pic_size_t)nNumberOfBytesToWrite);
 	if (ret < 0) {
 		if (lpNumberOfBytesWritten)
 			*lpNumberOfBytesWritten = 0;
@@ -163,37 +190,147 @@ static int mock_WriteFile(void *hFile, const void *lpBuffer,
 	return 1;
 }
 
+static int mock_ReadFile(void *hFile, void *lpBuffer,
+	unsigned long nNumberOfBytesToRead, unsigned long *lpNumberOfBytesRead,
+	void *lpOverlapped)
+{
+	(void)lpOverlapped;
+	long ret = pic_read(unwrap_handle(hFile), lpBuffer,
+		(pic_size_t)nNumberOfBytesToRead);
+	if (ret < 0) {
+		if (lpNumberOfBytesRead)
+			*lpNumberOfBytesRead = 0;
+		return 0;
+	}
+	if (lpNumberOfBytesRead)
+		*lpNumberOfBytesRead = (unsigned long)ret;
+	return 1;
+}
+
+/*
+ * CreateFileA — opens a file. We honor the three common desired-access
+ * combinations that blobs need: GENERIC_READ, GENERIC_WRITE, and both.
+ */
+#define GENERIC_READ 0x80000000u
+#define GENERIC_WRITE 0x40000000u
+#define OPEN_EXISTING 3u
+
+static void *mock_CreateFileA(const char *lpFileName,
+	unsigned long dwDesiredAccess, unsigned long dwShareMode,
+	void *lpSecurityAttributes, unsigned long dwCreationDisposition,
+	unsigned long dwFlagsAndAttributes, void *hTemplateFile)
+{
+	(void)dwShareMode;
+	(void)lpSecurityAttributes;
+	(void)dwCreationDisposition;
+	(void)dwFlagsAndAttributes;
+	(void)hTemplateFile;
+
+	int flags = PIC_O_RDONLY;
+	if ((dwDesiredAccess & GENERIC_WRITE) &&
+		(dwDesiredAccess & GENERIC_READ))
+		flags = 2; /* O_RDWR */
+	else if (dwDesiredAccess & GENERIC_WRITE)
+		flags = 1; /* O_WRONLY */
+
+	long fd = pic_open(lpFileName, flags, 0);
+	if (fd < 0)
+		return (void *)-1; /* INVALID_HANDLE_VALUE */
+	return (void *)(pic_uintptr)fd;
+}
+
+static int mock_CloseHandle(void *hObject)
+{
+	pic_uintptr v = (pic_uintptr)hObject;
+	if (v & STD_HANDLE_BIAS)
+		return 1; /* pseudo-handle — never close stdio fds */
+	int fd = (int)v;
+	if (fd <= 2)
+		return 1;
+	return pic_close(fd) == 0 ? 1 : 0;
+}
+
 static void mock_ExitProcess(unsigned int uExitCode)
 {
 	pic_exit_group((int)uExitCode);
 }
 
+/* ---------- Mock ws2_32.dll implementations ---------- */
+
+static int mock_WSAStartup(unsigned short wVersionRequested, void *lpWSAData)
+{
+	(void)wVersionRequested;
+	if (lpWSAData) {
+		/*
+		 * Zero out the first 400-odd bytes of WSADATA — blobs rarely
+		 * read it but they may. 408 is the x86_64 struct size; smaller
+		 * ABIs are fine since we only write the prefix.
+		 */
+		pic_u8 *p = (pic_u8 *)lpWSAData;
+		for (int i = 0; i < 408; i++)
+			p[i] = 0;
+	}
+	return 0;
+}
+
+static pic_uintptr mock_socket(int af, int type, int protocol)
+{
+	long fd = pic_socket(af, type, protocol);
+	if (fd < 0)
+		return (pic_uintptr)-1; /* INVALID_SOCKET */
+	return (pic_uintptr)fd;
+}
+
+static int mock_connect(pic_uintptr s, const void *name, int namelen)
+{
+	long ret = pic_connect((int)s, name, (pic_size_t)namelen);
+	return ret < 0 ? -1 : 0;
+}
+
+static int mock_recv(pic_uintptr s, void *buf, int len, int flags)
+{
+	(void)flags;
+	long ret = pic_read((int)s, buf, (pic_size_t)len);
+	return ret < 0 ? -1 : (int)ret;
+}
+
+static int mock_closesocket(pic_uintptr s)
+{
+	long ret = pic_close((int)s);
+	return ret < 0 ? -1 : 0;
+}
+
+/*
+ * htons is normally resolved through the import table but PIC blobs
+ * just do the byte swap inline. Provide it anyway so any blob that
+ * does go through resolution gets a correct implementation.
+ */
+static unsigned short mock_htons(unsigned short hostshort)
+{
+	return (unsigned short)((hostshort >> 8) | (hostshort << 8));
+}
+
 /* ---------- Mock PE image builder ---------- */
 
 /*
- * Mock PE image layout (4096 bytes):
- *   +0x000: DOS header (e_lfanew at +0x3C)
- *   +0x080: PE signature + COFF header + Optional header
- *   +0x200: Export directory (40 bytes)
- *   +0x228: Export name strings
- *   +0x280: AddressOfFunctions table
- *   +0x28C: AddressOfNames table
- *   +0x298: AddressOfNameOrdinals table
- *   +0x300: Trampolines
+ * Each mock PE is a single 4 KiB page with a minimal DOS header, PE/COFF
+ * header, export directory, name strings, function table, ordinals, and
+ * a block of per-export trampolines that jump to the mock implementations.
  *
- * Export names (alphabetical): ExitProcess, GetStdHandle, VirtualAlloc,
- *                              WriteFile
+ * The layout is identical for kernel32.dll and ws2_32.dll; only the
+ * export names and trampoline targets differ.
  */
 
 #define MOCK_PE_SIZE 4096
 #define PE_SIG_OFFSET 0x80
 #define OPT_HDR_OFFSET 0x98
 #define EXPORT_DIR_OFF 0x200
-#define NAME_STR_OFF 0x228
-#define FUNC_TBL_OFF 0x2A0
-#define NAME_TBL_OFF 0x2B0
-#define ORD_TBL_OFF 0x2C0
-#define TRAMP_OFF 0x300
+#define NAME_STR_OFF 0x400
+#define FUNC_TBL_OFF 0x600
+#define NAME_TBL_OFF 0x700
+#define ORD_TBL_OFF 0x800
+#define TRAMP_OFF 0x900
+#define MAX_EXPORTS 16
 
 static void pe_write32(pic_u8 *base, int offset, pic_u32 val)
 {
@@ -232,51 +369,43 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	 *
 	 * The blob calls through ms_abi function pointers (rcx, rdx, r8, r9,
 	 * [rsp+0x28]). The mock functions use SysV ABI (rdi, rsi, rdx, rcx,
-	 * r8). This thunk translates args AND preserves rdi/rsi which are
-	 * non-volatile in MS ABI but volatile in SysV.
+	 * r8). This thunk translates the first five args and preserves
+	 * rdi/rsi, which are non-volatile in MS ABI but volatile in SysV.
 	 *
-	 *   push rdi             ; save (ms_abi non-volatile)
-	 *   push rsi             ; save (ms_abi non-volatile)
-	 *   mov rdi, rcx         ; 1st arg
-	 *   mov rsi, rdx         ; 2nd arg
-	 *   mov rdx, r8          ; 3rd arg
-	 *   mov rcx, r9          ; 4th arg
-	 *   mov r8, [rsp+0x38]   ; 5th arg (+0x28 shadow + 2 pushes)
+	 *   push rdi
+	 *   push rsi
+	 *   mov rdi, rcx
+	 *   mov rsi, rdx
+	 *   mov rdx, r8
+	 *   mov rcx, r9
+	 *   mov r8, [rsp+0x38]   ; 0x28 shadow + 0x08 ret + 0x08 two pushes
 	 *   movabs rax, imm64
-	 *   call rax             ; call mock (preserves our pushes)
-	 *   pop rsi              ; restore
-	 *   pop rdi              ; restore
+	 *   call rax
+	 *   pop rsi
+	 *   pop rdi
 	 *   ret
 	 */
 	pic_u64 addr = (pic_u64)(pic_uintptr)target;
 	int i = 0;
-	/* push rdi */
 	dest[i++] = 0x57;
-	/* push rsi */
 	dest[i++] = 0x56;
-	/* mov rdi, rcx */
 	dest[i++] = 0x48;
 	dest[i++] = 0x89;
 	dest[i++] = 0xcf;
-	/* mov rsi, rdx */
 	dest[i++] = 0x48;
 	dest[i++] = 0x89;
 	dest[i++] = 0xd6;
-	/* mov rdx, r8 */
 	dest[i++] = 0x4c;
 	dest[i++] = 0x89;
 	dest[i++] = 0xc2;
-	/* mov rcx, r9 */
 	dest[i++] = 0x4c;
 	dest[i++] = 0x89;
 	dest[i++] = 0xc9;
-	/* mov r8, [rsp+0x38] (0x28 shadow + 0x08 ret + 0x08 two pushes) */
 	dest[i++] = 0x4c;
 	dest[i++] = 0x8b;
 	dest[i++] = 0x44;
 	dest[i++] = 0x24;
 	dest[i++] = 0x38;
-	/* movabs rax, imm64 */
 	dest[i++] = 0x48;
 	dest[i++] = 0xb8;
 	dest[i++] = (pic_u8)(addr);
@@ -287,19 +416,14 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	dest[i++] = (pic_u8)(addr >> 40);
 	dest[i++] = (pic_u8)(addr >> 48);
 	dest[i++] = (pic_u8)(addr >> 56);
-	/* call rax */
 	dest[i++] = 0xff;
 	dest[i++] = 0xd0;
-	/* pop rsi */
 	dest[i++] = 0x5e;
-	/* pop rdi */
 	dest[i++] = 0x5f;
-	/* ret */
 	dest[i++] = 0xc3;
 	return i; /* 34 bytes */
 
 #elif defined(__i386__)
-	/* mov eax, imm32; jmp eax (7 bytes) */
 	pic_u32 addr = (pic_u32)(pic_uintptr)target;
 	dest[0] = 0xb8;
 	dest[1] = (pic_u8)(addr);
@@ -311,22 +435,15 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	return 7;
 
 #elif defined(__aarch64__)
-	/*
-	 * ldr x9, .+8; br x9; .quad addr  (16 bytes)
-	 * The literal pool immediately follows the branch.
-	 */
 	pic_u64 addr = (pic_u64)(pic_uintptr)target;
-	/* ldr x9, #8  (PC-relative load, offset = +8 bytes = 2 instructions) */
 	dest[0] = 0x49;
 	dest[1] = 0x00;
 	dest[2] = 0x00;
 	dest[3] = 0x58;
-	/* br x9 */
 	dest[4] = 0x20;
 	dest[5] = 0x01;
 	dest[6] = 0x1f;
 	dest[7] = 0xd6;
-	/* 8-byte address literal */
 	dest[8] = (pic_u8)(addr);
 	dest[9] = (pic_u8)(addr >> 8);
 	dest[10] = (pic_u8)(addr >> 16);
@@ -340,11 +457,21 @@ static int write_trampoline(pic_u8 *dest, void *target)
 #endif
 }
 
-/* Max trampoline size across all architectures.
- * x86_64 ABI thunk is 34 bytes; i686/aarch64 are 7/16 bytes. */
+/* Max trampoline size across all architectures. */
 #define TRAMP_STRIDE 48
 
-static pic_u8 *build_mock_pe(void)
+/*
+ * Export record used when constructing a mock PE.
+ * Exports must be listed in strict alphabetical order — Windows's
+ * binary search of the name table requires it, and our blobs use the
+ * same scan semantics.
+ */
+struct mock_export {
+	const char *name;
+	void *func;
+};
+
+static pic_u8 *build_mock_pe(const struct mock_export *exports, int n_exports)
 {
 	pic_u8 *pe = (pic_u8 *)pic_mmap(PIC_NULL, MOCK_PE_SIZE,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
@@ -365,77 +492,70 @@ static pic_u8 *build_mock_pe(void)
 	/* COFF header: SizeOfOptionalHeader at PE_SIG+4+16. */
 	pe_write16(pe, PE_SIG_OFFSET + 4 + 16, 0xF0);
 
-	/* Optional header magic. */
+	/* Optional header magic + DataDirectory[0] (export) RVA + size. */
 #if PIC_ARCH_IS_32BIT
 	pe_write16(pe, OPT_HDR_OFFSET, 0x010B); /* PE32 */
-	/* DataDirectory[0] at optional_header + 0x60. */
 	pe_write32(pe, OPT_HDR_OFFSET + 0x60, EXPORT_DIR_OFF);
 	pe_write32(pe, OPT_HDR_OFFSET + 0x64, 40);
 #else
 	pe_write16(pe, OPT_HDR_OFFSET, 0x020B); /* PE32+ */
-	/* DataDirectory[0] at optional_header + 0x70. */
 	pe_write32(pe, OPT_HDR_OFFSET + 0x70, EXPORT_DIR_OFF);
 	pe_write32(pe, OPT_HDR_OFFSET + 0x74, 40);
 #endif
 
-	/* Export name strings (alphabetically sorted). */
+	/* Name strings (alphabetically sorted — caller's responsibility). */
+	int name_offs[MAX_EXPORTS];
 	int name_off = NAME_STR_OFF;
-	int exit_process_off = name_off;
-	name_off += pe_write_str(pe, name_off, "ExitProcess");
-	int get_std_handle_off = name_off;
-	name_off += pe_write_str(pe, name_off, "GetStdHandle");
-	int virtual_alloc_off = name_off;
-	name_off += pe_write_str(pe, name_off, "VirtualAlloc");
-	int write_file_off = name_off;
-	name_off += pe_write_str(pe, name_off, "WriteFile");
-	(void)name_off;
+	for (int i = 0; i < n_exports; i++) {
+		name_offs[i] = name_off;
+		name_off += pe_write_str(pe, name_off, exports[i].name);
+	}
 
-	/* Trampolines (same order as names: alphabetical). */
-	int off = TRAMP_OFF;
-	write_trampoline(pe + off, (void *)mock_ExitProcess);
-	off += TRAMP_STRIDE;
-	write_trampoline(pe + off, (void *)mock_GetStdHandle);
-	off += TRAMP_STRIDE;
-	write_trampoline(pe + off, (void *)mock_VirtualAlloc);
-	off += TRAMP_STRIDE;
-	write_trampoline(pe + off, (void *)mock_WriteFile);
+	/* Trampolines. */
+	int tramp_off = TRAMP_OFF;
+	for (int i = 0; i < n_exports; i++) {
+		write_trampoline(pe + tramp_off, exports[i].func);
+		tramp_off += TRAMP_STRIDE;
+	}
 
 	/* Export directory header. */
-	pe_write32(pe, EXPORT_DIR_OFF + 0x18, 4); /* NumberOfNames */
+	pe_write32(pe, EXPORT_DIR_OFF + 0x18, (pic_u32)n_exports);
 	pe_write32(pe, EXPORT_DIR_OFF + 0x1C, FUNC_TBL_OFF);
 	pe_write32(pe, EXPORT_DIR_OFF + 0x20, NAME_TBL_OFF);
 	pe_write32(pe, EXPORT_DIR_OFF + 0x24, ORD_TBL_OFF);
 
-	/* AddressOfFunctions (RVAs to trampolines). */
-	pe_write32(pe, FUNC_TBL_OFF + 0, TRAMP_OFF + 0 * TRAMP_STRIDE);
-	pe_write32(pe, FUNC_TBL_OFF + 4, TRAMP_OFF + 1 * TRAMP_STRIDE);
-	pe_write32(pe, FUNC_TBL_OFF + 8, TRAMP_OFF + 2 * TRAMP_STRIDE);
-	pe_write32(pe, FUNC_TBL_OFF + 12, TRAMP_OFF + 3 * TRAMP_STRIDE);
-
-	/* AddressOfNames (RVAs to name strings). */
-	pe_write32(pe, NAME_TBL_OFF + 0, (pic_u32)exit_process_off);
-	pe_write32(pe, NAME_TBL_OFF + 4, (pic_u32)get_std_handle_off);
-	pe_write32(pe, NAME_TBL_OFF + 8, (pic_u32)virtual_alloc_off);
-	pe_write32(pe, NAME_TBL_OFF + 12, (pic_u32)write_file_off);
-
-	/* AddressOfNameOrdinals. */
-	pe_write16(pe, ORD_TBL_OFF + 0, 0);
-	pe_write16(pe, ORD_TBL_OFF + 2, 1);
-	pe_write16(pe, ORD_TBL_OFF + 4, 2);
-	pe_write16(pe, ORD_TBL_OFF + 6, 3);
+	/* AddressOfFunctions / AddressOfNames / AddressOfNameOrdinals. */
+	for (int i = 0; i < n_exports; i++) {
+		pe_write32(pe, FUNC_TBL_OFF + i * 4,
+			(pic_u32)(TRAMP_OFF + i * TRAMP_STRIDE));
+		pe_write32(pe, NAME_TBL_OFF + i * 4, (pic_u32)name_offs[i]);
+		pe_write16(pe, ORD_TBL_OFF + i * 2, (pic_u16)i);
+	}
 
 	return pe;
 }
 
 /* ---------- Mock TEB/PEB/LDR structures ---------- */
 
+/*
+ * Layout (4 KiB region):
+ *   +0x000  TEB
+ *   +0x100  PEB
+ *   +0x200  PEB_LDR_DATA
+ *   +0x300  LDR_DATA_TABLE_ENTRY for kernel32
+ *   +0x500  LDR_DATA_TABLE_ENTRY for ws2_32
+ *   +0x700  UTF-16 "kernel32.dll"
+ *   +0x780  UTF-16 "ws2_32.dll"
+ */
 #define MOCK_REGION_SIZE 4096
 
 #define TEB_OFF 0x000
 #define PEB_OFF 0x100
 #define LDR_OFF 0x200
-#define MODULE_ENTRY_OFF 0x300
-#define DLL_NAME_OFF 0x400
+#define ENTRY_K32_OFF 0x300
+#define ENTRY_WS2_OFF 0x500
+#define NAME_K32_OFF 0x700
+#define NAME_WS2_OFF 0x780
 
 static pic_u16 write_utf16le(pic_u8 *dest, const char *str)
 {
@@ -469,7 +589,33 @@ static void write_ptr(pic_u8 *base, int offset, void *ptr)
 #endif
 }
 
-static pic_u8 *build_mock_env(pic_u8 *mock_pe)
+/*
+ * Write a LDR_DATA_TABLE_ENTRY at *entry* with DllBase=pe_base and a
+ * BaseDllName UNICODE_STRING pointing at *name_buf* (utf-16 string of
+ * *name_bytes* bytes). Returns nothing; caller wires up list links.
+ */
+static void write_ldr_entry(
+	pic_u8 *entry, void *pe_base, pic_u8 *name_buf, pic_u16 name_bytes)
+{
+#if PIC_ARCH_IS_32BIT
+	write_ptr(entry, 0x10, pe_base);
+	pic_u8 *ustr = entry + 0x24;
+#else
+	write_ptr(entry, 0x20, pe_base);
+	pic_u8 *ustr = entry + 0x48;
+#endif
+	ustr[0] = (pic_u8)(name_bytes);
+	ustr[1] = (pic_u8)(name_bytes >> 8);
+	ustr[2] = (pic_u8)(name_bytes + 2);
+	ustr[3] = 0;
+#if PIC_ARCH_IS_32BIT
+	write_ptr(ustr, 0x04, name_buf);
+#else
+	write_ptr(ustr, 0x08, name_buf);
+#endif
+}
+
+static pic_u8 *build_mock_env(pic_u8 *pe_kernel32, pic_u8 *pe_ws2_32)
 {
 	pic_u8 *region = (pic_u8 *)pic_mmap(PIC_NULL, MOCK_REGION_SIZE,
 		PIC_PROT_READ | PIC_PROT_WRITE,
@@ -483,77 +629,41 @@ static pic_u8 *build_mock_env(pic_u8 *mock_pe)
 	pic_u8 *teb = region + TEB_OFF;
 	pic_u8 *peb = region + PEB_OFF;
 	pic_u8 *ldr = region + LDR_OFF;
-	pic_u8 *entry = region + MODULE_ENTRY_OFF;
-	pic_u8 *dll_name_buf = region + DLL_NAME_OFF;
+	pic_u8 *entry_k32 = region + ENTRY_K32_OFF;
+	pic_u8 *entry_ws2 = region + ENTRY_WS2_OFF;
+	pic_u8 *name_k32 = region + NAME_K32_OFF;
+	pic_u8 *name_ws2 = region + NAME_WS2_OFF;
 
-	pic_u16 dll_name_bytes = write_utf16le(dll_name_buf, "kernel32.dll");
+	pic_u16 k32_bytes = write_utf16le(name_k32, "kernel32.dll");
+	pic_u16 ws2_bytes = write_utf16le(name_ws2, "ws2_32.dll");
 
-	/*
-	 * TEB layout:
-	 *   64-bit: +0x30 = self, +0x60 = PEB
-	 *   32-bit: +0x18 = self, +0x30 = PEB
-	 */
 #if PIC_ARCH_IS_32BIT
-	write_ptr(teb, 0x18, teb);
-	write_ptr(teb, 0x30, peb);
+	write_ptr(teb, 0x18, teb); /* TEB self */
+	write_ptr(teb, 0x30, peb); /* PEB */
+	write_ptr(peb, 0x0C, ldr); /* Ldr */
+	pic_u8 *list_head = ldr + 0x14;
 #else
 	write_ptr(teb, 0x30, teb);
 	write_ptr(teb, 0x60, peb);
-#endif
-
-	/*
-	 * PEB layout:
-	 *   64-bit: +0x18 = Ldr
-	 *   32-bit: +0x0C = Ldr
-	 */
-#if PIC_ARCH_IS_32BIT
-	write_ptr(peb, 0x0C, ldr);
-#else
 	write_ptr(peb, 0x18, ldr);
-#endif
-
-	/*
-	 * PEB_LDR_DATA → InMemoryOrderModuleList:
-	 *   64-bit: +0x20
-	 *   32-bit: +0x14
-	 */
-#if PIC_ARCH_IS_32BIT
-	pic_u8 *list_head = ldr + 0x14;
-#else
 	pic_u8 *list_head = ldr + 0x20;
 #endif
-	write_ptr(list_head, 0x00, entry);
-	write_ptr(list_head, sizeof(void *), entry);
 
 	/*
-	 * LDR_DATA_TABLE_ENTRY (from InMemoryOrderLinks):
-	 *   Flink/Blink at +0x00/+ptr_size
-	 *   DllBase:     64-bit +0x20, 32-bit +0x10
-	 *   BaseDllName: 64-bit +0x48, 32-bit +0x24
+	 * Doubly-linked InMemoryOrderModuleList:
+	 *   head <-> k32 <-> ws2 <-> head
 	 */
-	write_ptr(entry, 0x00, list_head);
-	write_ptr(entry, sizeof(void *), list_head);
+	write_ptr(list_head, 0x00, entry_k32);
+	write_ptr(list_head, sizeof(void *), entry_ws2);
 
-#if PIC_ARCH_IS_32BIT
-	write_ptr(entry, 0x10, mock_pe);
-	pic_u8 *ustr = entry + 0x24;
-#else
-	write_ptr(entry, 0x20, mock_pe);
-	pic_u8 *ustr = entry + 0x48;
-#endif
+	write_ptr(entry_k32, 0x00, entry_ws2);
+	write_ptr(entry_k32, sizeof(void *), list_head);
 
-	/* UNICODE_STRING: Length, MaximumLength, Buffer. */
-	ustr[0] = (pic_u8)(dll_name_bytes);
-	ustr[1] = (pic_u8)(dll_name_bytes >> 8);
-	ustr[2] = (pic_u8)(dll_name_bytes + 2);
-	ustr[3] = 0;
+	write_ptr(entry_ws2, 0x00, list_head);
+	write_ptr(entry_ws2, sizeof(void *), entry_k32);
 
-	/* Buffer pointer: at +4 (32-bit) or +8 (64-bit). */
-#if PIC_ARCH_IS_32BIT
-	write_ptr(ustr, 0x04, dll_name_buf);
-#else
-	write_ptr(ustr, 0x08, dll_name_buf);
-#endif
+	write_ldr_entry(entry_k32, pe_kernel32, name_k32, k32_bytes);
+	write_ldr_entry(entry_ws2, pe_ws2_32, name_ws2, ws2_bytes);
 
 	return teb;
 }
@@ -600,11 +710,42 @@ int runner_main(int argc, char **argv)
 	if (argc < 2)
 		pic_exit_group(RUNNER_ERROR);
 
-	pic_u8 *mock_pe = build_mock_pe();
-	if (!mock_pe)
+	/*
+	 * kernel32.dll exports — alphabetically sorted.
+	 * The blob's pic_find_export uses hash lookup, but Windows stores
+	 * exports sorted by name and some blob techniques rely on that.
+	 * We keep the order strictly alphabetical for compatibility.
+	 */
+	static const struct mock_export k32_exports[] = {
+		{"CloseHandle", (void *)mock_CloseHandle},
+		{"CreateFileA", (void *)mock_CreateFileA},
+		{"ExitProcess", (void *)mock_ExitProcess},
+		{"GetStdHandle", (void *)mock_GetStdHandle},
+		{"ReadFile", (void *)mock_ReadFile},
+		{"VirtualAlloc", (void *)mock_VirtualAlloc},
+		{"WriteFile", (void *)mock_WriteFile},
+	};
+	static const int k32_n = sizeof(k32_exports) / sizeof(k32_exports[0]);
+
+	static const struct mock_export ws2_exports[] = {
+		{"WSAStartup", (void *)mock_WSAStartup},
+		{"closesocket", (void *)mock_closesocket},
+		{"connect", (void *)mock_connect},
+		{"htons", (void *)mock_htons},
+		{"recv", (void *)mock_recv},
+		{"socket", (void *)mock_socket},
+	};
+	static const int ws2_n = sizeof(ws2_exports) / sizeof(ws2_exports[0]);
+
+	pic_u8 *pe_k32 = build_mock_pe(k32_exports, k32_n);
+	if (!pe_k32)
 		pic_exit_group(RUNNER_ERROR);
 
-	pic_u8 *teb = build_mock_env(mock_pe);
+	pic_u8 *pe_ws2 = build_mock_pe(ws2_exports, ws2_n);
+	if (!pe_ws2)
+		pic_exit_group(RUNNER_ERROR);
+
+	pic_u8 *teb = build_mock_env(pe_k32, pe_ws2);
 	if (!teb)
 		pic_exit_group(RUNNER_ERROR);
 

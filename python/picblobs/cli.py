@@ -298,6 +298,12 @@ def cmd_verify(args: argparse.Namespace) -> int:
                         arch,
                         args.timeout,
                     )
+                elif blob_type == "reflective_pe":
+                    result = _verify_reflective_pe(
+                        os_name,
+                        arch,
+                        args.timeout,
+                    )
                 else:
                     blob = get_blob(blob_type, os_name, arch)
                     result = run_blob(
@@ -562,6 +568,28 @@ def _verify_stager_mmap(
             Path(fpath).unlink()
         except OSError:
             pass
+
+
+def _verify_reflective_pe(
+    os_name: str,
+    arch: str,
+    timeout: float,
+) -> "RunResult":
+    """Verify reflective_pe by feeding it a minimal MZ-prefixed dummy PE.
+
+    The blob validates the DOS magic, allocates RWX via VirtualAlloc,
+    and writes "LOADED\\n" on success. A full PE with section mapping
+    and import resolution belongs in a dedicated end-to-end test.
+    """
+    import struct
+
+    from picblobs import get_blob
+    from picblobs.runner import run_blob
+
+    dummy_pe = b"MZ" + b"\x00" * 126
+    config = struct.pack("<IIB", len(dummy_pe), 0, 0) + dummy_pe
+    blob = get_blob("reflective_pe", os_name, arch)
+    return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
 
 
 def _verify_alloc_jump(

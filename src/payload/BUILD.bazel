@@ -91,8 +91,22 @@ extract_bin(
 )
 
 pic_blob(
+    name = "reflective_pe_windows",
+    srcs = ["reflective_pe_windows.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "stager_fd",
     srcs = ["stager_fd.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "stager_fd_windows",
+    srcs = ["stager_fd_windows.c"],
     deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
 )
@@ -112,8 +126,22 @@ pic_blob(
 )
 
 pic_blob(
+    name = "stager_pipe_windows",
+    srcs = ["stager_pipe_windows.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "stager_tcp",
     srcs = ["stager_tcp.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "stager_tcp_windows",
+    srcs = ["stager_tcp_windows.c"],
     deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
 )
