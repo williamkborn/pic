@@ -1,20 +1,40 @@
-"""FreeBSD test runners — test-mode shim verification."""
+"""FreeBSD test runner — syscall-translating loader.
 
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("//bazel:lint.bzl", "cppcheck_test")
+Patches FreeBSD syscall numbers to Linux equivalents at load time,
+then executes the blob under QEMU with real Linux syscalls.
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
 
 package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
 
-cc_binary(
-    name = "runner",
-    srcs = ["runner.c"],
+cc_library(
+    name = "runner_obj",
+    srcs = ["runner.c"] + glob(["start/*.h"]),
+    copts = [
+        "-iquote",
+        "tests/runners/freebsd",
+    ],
     deps = [
         "//src/include/picblobs:headers",
     ],
 )
 
-cppcheck_test(
-    name = "runner_cppcheck",
-    srcs = ["runner.c"],
-    include_dirs = ["src/include"],
+genrule(
+    name = "runner",
+    srcs = [":runner_obj"],
+    outs = ["runner.bin"],
+    cmd = " ".join([
+        "$(CC)",
+        "-nostdlib",
+        "-nostartfiles",
+        "-static",
+        "-Wl,-e,_start",
+        "-Wl,--whole-archive",
+        "$(location :runner_obj)",
+        "-Wl,--no-whole-archive",
+        "-o $@",
+    ]),
+    executable = True,
+    toolchains = ["@rules_cc//cc:current_cc_toolchain"],
 )

@@ -21,7 +21,11 @@ def _project_root() -> Path:
 
 PROJECT_ROOT = _project_root()
 BAZEL_BIN = PROJECT_ROOT / "bazel-bin"
-_RUNNER_CHECK_PATH = BAZEL_BIN / "tests" / "runners" / "linux" / "runner"
+_PACKAGE_RUNNERS = PROJECT_ROOT / "python" / "picblobs" / "_runners"
+_BAZEL_RUNNER_PATHS = (
+    BAZEL_BIN / "tests" / "runners" / "linux" / "runner.bin",
+    BAZEL_BIN / "tests" / "runners" / "linux" / "runner",
+)
 
 # Import the registry for cross-arch parametrization.
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -38,7 +42,9 @@ sys.path.pop(0)
 
 
 def _runners_exist() -> bool:
-    return _RUNNER_CHECK_PATH.exists()
+    if any(_PACKAGE_RUNNERS.rglob("runner")):
+        return True
+    return any(p.exists() for p in _BAZEL_RUNNER_PATHS)
 
 
 # --- Environment-based filters (set by `picblobs test --os/--arch/--type`) ---
@@ -115,8 +121,8 @@ def project_root() -> Path:
 
 @pytest.fixture(scope="session")
 def blob_dir() -> Path:
-    """Path to built .so blob files."""
-    return BAZEL_BIN / "src" / "blob"
+    """Path to staged .so blob files (populated by ``./buildall``)."""
+    return PROJECT_ROOT / "python" / "picblobs" / "_blobs"
 
 
 @pytest.fixture(scope="session")

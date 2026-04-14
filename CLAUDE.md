@@ -54,7 +54,7 @@ bazel build --config=lint //src/... //tests/...   # clang-tidy
 - Toolchain SHA256 hashes in `MODULE.bazel` must be pinned. Never leave them empty.
 - `hello_windows` only builds for `windows:*` platform configs (TEB support is arch-gated).
 - Windows test runner (`tests/runners/windows/runner.c`) is hand-written (not generated) — it's a Linux binary that mocks TEB/PEB. Build with a Linux config: `bazel build --config=linux_x86_64 //tests/runners/windows:runner`.
-- FreeBSD test runner has WIP compile errors and is commented out of `//release:full`.
+- FreeBSD test runner is a translating loader (hand-written, like the Windows runner) — it patches FreeBSD syscall numbers to Linux equivalents at load time so FreeBSD-targeted blobs can run under QEMU-on-Linux. Included in `//release:full`.
 
 ---
 

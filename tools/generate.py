@@ -889,9 +889,10 @@ def main() -> int:
 
     # Per-OS runner.c files.
     # The Windows runner is hand-written (mock TEB/PEB, not a generic loader)
-    # and must NOT be overwritten by the generator.
+    # and the FreeBSD runner is hand-written (syscall number translation).
+    # Neither must be overwritten by the generator.
     for os_name in OPERATING_SYSTEMS:
-        if os_name == "windows":
+        if os_name in ("windows", "freebsd"):
             continue
         runner_c = _gen_runner_c(os_name)
         if runner_c:

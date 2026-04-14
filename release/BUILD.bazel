@@ -18,8 +18,7 @@ filegroup(
             "//src/payload:hello",
             "//tests/runners/linux:runner",
             "//tests/runners/windows:runner",
-            # TODO: enable when FreeBSD runner compile errors are fixed
-            # "//tests/runners/freebsd:runner",
+            "//tests/runners/freebsd:runner",
         ],
         "//platforms:freebsd": [
             "//src/payload:hello",

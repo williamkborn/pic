@@ -1,77 +1,314 @@
 /*
- * FreeBSD test runner for PIC blobs (test-mode shim).
+ * FreeBSD test runner — syscall-translating loader on Linux.
  *
- * This runner tests FreeBSD blobs compiled in test-mode, where the
- * bottom-level syscall handler jumps to a fixed shim address instead
- * of executing a real FreeBSD syscall instruction.
+ * Loads a FreeBSD-targeting PIC blob, patches FreeBSD syscall numbers
+ * to their Linux equivalents in the code, then executes the blob.
+ * The blob thinks it's calling FreeBSD syscalls but actually hits
+ * the Linux kernel with correct numbers.
  *
- * The shim (placed at a fixed address by a test-specific linker script):
- *   1. Receives the FreeBSD syscall number and up to 6 arguments.
- *   2. Logs the call to a verification buffer.
- *   3. Validates the syscall number matches FreeBSD conventions.
- *   4. Returns canned success values.
+ * This runner is hand-written (not generated) because it needs to
+ * use Linux syscalls internally while translating FreeBSD numbers
+ * in the loaded blob. See generate.py which skips this file.
  *
- * After blob execution, the runner inspects the verification buffer
- * and reports results.
+ * Supports: x86_64, i686, aarch64, armv5, armv7, s390x, mipsel32, mipsbe32.
  *
  * Usage: ./runner <blob.bin>
  */
 
 #include "picblobs/os/linux.h"
+#include "picblobs/sys/accept.h"
+#include "picblobs/sys/bind.h"
+#include "picblobs/sys/close.h"
+#include "picblobs/sys/connect.h"
 #include "picblobs/sys/exit.h"
 #include "picblobs/sys/exit_group.h"
+#include "picblobs/sys/listen.h"
+#include "picblobs/sys/lseek.h"
+#include "picblobs/sys/mmap.h"
+#include "picblobs/sys/mprotect.h"
+#include "picblobs/sys/munmap.h"
+#include "picblobs/sys/open.h"
+#include "picblobs/sys/read.h"
+#include "picblobs/sys/setsockopt.h"
+#include "picblobs/sys/socket.h"
+#include "picblobs/sys/write.h"
 #include "picblobs/syscall.h"
 #include "picblobs/types.h"
 
 #define RUNNER_ERROR 127
-#define MAX_SYSCALL_LOG 256
 
-/* Verification log entry. */
-struct syscall_record {
-	long number;
-	long args[6];
+struct nr_map {
+	pic_u32 freebsd_nr;
+	pic_u32 linux_nr;
 };
 
-/* Verification buffer — filled by the shim, read by the runner. */
-static struct syscall_record syscall_log[MAX_SYSCALL_LOG];
-static int syscall_log_count = 0;
+static const struct nr_map syscall_table[] = {
+	{1, __NR_exit},
+	{3, __NR_read},
+	{4, __NR_write},
+#ifdef __NR_open
+	{5, __NR_open},
+#endif
+	{6, __NR_close},
+#ifdef __NR_lseek
+	{478, __NR_lseek},
+#endif
+#ifdef __NR_llseek
+	{478, __NR_llseek},
+#endif
+	{9, __NR_mmap},
+	{74, __NR_mprotect},
+	{73, __NR_munmap},
+	{97, __NR_socket},
+	{98, __NR_connect},
+	{30, __NR_accept},
+	{104, __NR_bind},
+	{106, __NR_listen},
+	{105, __NR_setsockopt},
+	{431, __NR_exit_group},
+};
 
-/*
- * Shim entry point — this function will be placed at the fixed shim
- * address by the test-mode linker script. The blob's syscall dispatch
- * jumps here instead of executing a real syscall instruction.
- *
- * The calling convention matches the architecture's syscall convention:
- * syscall number in the standard register, args in subsequent registers.
- */
-long __attribute__((section(".shim"))) freebsd_syscall_shim(
-	long number, long a0, long a1, long a2, long a3, long a4, long a5)
+#define NR_TABLE_SIZE (sizeof(syscall_table) / sizeof(syscall_table[0]))
+
+static inline pic_u32 translate_nr(pic_u32 freebsd_nr)
 {
-	if (syscall_log_count < MAX_SYSCALL_LOG) {
-		struct syscall_record *rec = &syscall_log[syscall_log_count++];
-		rec->number = number;
-		rec->args[0] = a0;
-		rec->args[1] = a1;
-		rec->args[2] = a2;
-		rec->args[3] = a3;
-		rec->args[4] = a4;
-		rec->args[5] = a5;
-	}
-
-	/* Return canned success value. */
-	/* TODO: per-syscall return value table for FreeBSD. */
-	return 0;
+	for (int i = 0; i < (int)NR_TABLE_SIZE; i++)
+		if (syscall_table[i].freebsd_nr == freebsd_nr)
+			return syscall_table[i].linux_nr;
+	return freebsd_nr;
 }
 
-void runner_main(int argc, char **argv)
+static inline void write32_le(pic_u8 *p, pic_u32 v)
 {
-	if (argc < 2) {
+	p[0] = (pic_u8)v;
+	p[1] = (pic_u8)(v >> 8);
+	p[2] = (pic_u8)(v >> 16);
+	p[3] = (pic_u8)(v >> 24);
+}
+static inline pic_u32 read32_le(const pic_u8 *p)
+{
+	return (pic_u32)p[0] | ((pic_u32)p[1] << 8) | ((pic_u32)p[2] << 16) |
+		((pic_u32)p[3] << 24);
+}
+static inline void write32_be(pic_u8 *p, pic_u32 v)
+{
+	p[0] = (pic_u8)(v >> 24);
+	p[1] = (pic_u8)(v >> 16);
+	p[2] = (pic_u8)(v >> 8);
+	p[3] = (pic_u8)v;
+}
+static inline pic_u32 read32_be(const pic_u8 *p)
+{
+	return ((pic_u32)p[0] << 24) | ((pic_u32)p[1] << 16) |
+		((pic_u32)p[2] << 8) | (pic_u32)p[3];
+}
+static inline pic_u16 read16_be(const pic_u8 *p)
+{
+	return (pic_u16)(((pic_u16)p[0] << 8) | (pic_u16)p[1]);
+}
+static inline void write16_be(pic_u8 *p, pic_u16 v)
+{
+	p[0] = (pic_u8)(v >> 8);
+	p[1] = (pic_u8)v;
+}
+
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+#if defined(__x86_64__)
+	for (pic_size_t i = 0; i + 6 < size; i++) {
+		if (code[i] == 0xb8 && code[i + 5] == 0x0f &&
+			code[i + 6] == 0x05) {
+			pic_u32 nr = read32_le(code + i + 1);
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr)
+				write32_le(code + i + 1, lnr);
+		}
+	}
+#elif defined(__i386__)
+	for (pic_size_t i = 0; i + 6 < size; i++) {
+		if (code[i] == 0xb8 && code[i + 5] == 0xcd &&
+			code[i + 6] == 0x80) {
+			pic_u32 nr = read32_le(code + i + 1);
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr)
+				write32_le(code + i + 1, lnr);
+		}
+	}
+#elif defined(__aarch64__)
+	for (pic_size_t i = 0; i + 7 < size; i += 4) {
+		pic_u32 insn = read32_le(code + i);
+		pic_u32 next = read32_le(code + i + 4);
+		if ((insn & 0xFFE0001F) == 0xD2800008 && next == 0xD4000001) {
+			pic_u32 nr = (insn >> 5) & 0xFFFF;
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr) {
+				insn = (insn & ~(0xFFFF << 5)) | (lnr << 5);
+				write32_le(code + i, insn);
+			}
+		}
+	}
+#elif defined(__arm__)
+	for (pic_size_t i = 0; i + 3 < size; i += 2) {
+		pic_u16 insn = (pic_u16)code[i] | ((pic_u16)code[i + 1] << 8);
+		pic_u16 next =
+			(pic_u16)code[i + 2] | ((pic_u16)code[i + 3] << 8);
+		if ((insn & 0xFF00) == 0x2700 && next == 0xdf00) {
+			pic_u32 nr = insn & 0xFF;
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr && lnr < 256)
+				code[i] = (pic_u8)lnr;
+		}
+	}
+#elif defined(__s390x__)
+	for (pic_size_t i = 0; i + 5 < size; i += 2) {
+		if (code[i] == 0xa7 && code[i + 1] == 0x19 &&
+			code[i + 4] == 0x0a && code[i + 5] == 0x00) {
+			pic_u16 nr = read16_be(code + i + 2);
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr && lnr < 0x8000)
+				write16_be(code + i + 2, (pic_u16)lnr);
+		}
+	}
+#elif defined(__mips__)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	for (pic_size_t i = 0; i + 7 < size; i += 4) {
+		pic_u32 insn = read32_be(code + i);
+		pic_u32 next = read32_be(code + i + 4);
+		if ((insn & 0xFFFF0000) == 0x24020000 && next == 0x0000000c) {
+			pic_u32 nr = insn & 0xFFFF;
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr)
+				write32_be(code + i,
+					(insn & 0xFFFF0000) | (lnr & 0xFFFF));
+		}
+	}
+#else
+	for (pic_size_t i = 0; i + 7 < size; i += 4) {
+		pic_u32 insn = read32_le(code + i);
+		pic_u32 next = read32_le(code + i + 4);
+		if ((insn & 0xFFFF0000) == 0x24020000 && next == 0x0000000c) {
+			pic_u32 nr = insn & 0xFFFF;
+			pic_u32 lnr = translate_nr(nr);
+			if (lnr != nr)
+				write32_le(code + i,
+					(insn & 0xFFFF0000) | (lnr & 0xFFFF));
+		}
+	}
+#endif
+#endif
+}
+
+static long file_size(int fd)
+{
+	long end = pic_lseek(fd, 0, PIC_SEEK_END);
+	if (end < 0)
+		return -1;
+	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0)
+		return -1;
+	return end;
+}
+
+static long read_all(int fd, void *buf, pic_size_t count)
+{
+	pic_u8 *p = (pic_u8 *)buf;
+	pic_size_t done = 0;
+	while (done < count) {
+		long n = pic_read(fd, p + done, count - done);
+		if (n <= 0)
+			return -1;
+		done += (pic_size_t)n;
+	}
+	return (long)done;
+}
+
+#if defined(__x86_64__)
+#include "start/x86_64.h"
+#elif defined(__i386__)
+#include "start/i386.h"
+#elif defined(__aarch64__)
+#include "start/aarch64.h"
+#elif defined(__arm__)
+#include "start/arm.h"
+#elif defined(__s390x__)
+#include "start/s390x.h"
+#elif defined(__mips__)
+#include "start/mips.h"
+#else
+#error "FreeBSD runner: unsupported architecture for _start"
+#endif
+
+/*
+ * Parse an unsigned hex/decimal literal from a NUL-terminated string.
+ * Accepts "0x"/"0X" prefix for hex. Returns 0 on empty/invalid input.
+ */
+static pic_size_t parse_size(const char *s)
+{
+	if (!s || !*s)
+		return 0;
+	pic_size_t v = 0;
+	int base = 10;
+	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+		base = 16;
+		s += 2;
+	}
+	for (; *s; s++) {
+		int d;
+		if (*s >= '0' && *s <= '9')
+			d = *s - '0';
+		else if (base == 16 && *s >= 'a' && *s <= 'f')
+			d = *s - 'a' + 10;
+		else if (base == 16 && *s >= 'A' && *s <= 'F')
+			d = *s - 'A' + 10;
+		else
+			return 0;
+		v = v * (pic_size_t)base + (pic_size_t)d;
+	}
+	return v;
+}
+
+int runner_main(int argc, char **argv)
+{
+	if (argc < 2)
+		pic_exit_group(RUNNER_ERROR);
+
+	int fd = (int)pic_open(argv[1], PIC_O_RDONLY, 0);
+	if (fd < 0)
+		pic_exit_group(RUNNER_ERROR);
+
+	long size = file_size(fd);
+	if (size <= 0) {
+		pic_close(fd);
 		pic_exit_group(RUNNER_ERROR);
 	}
 
-	/* TODO: load blob, execute, then inspect syscall_log. */
+	void *blob = pic_mmap(PIC_NULL, (pic_size_t)size,
+		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
+		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
+	if ((long)blob == -1) {
+		pic_close(fd);
+		pic_exit_group(RUNNER_ERROR);
+	}
 
-	/* Report results via exit code. */
-	int result = (syscall_log_count > 0) ? 0 : 1;
-	pic_exit_group(result);
+	if (read_all(fd, blob, (pic_size_t)size) < 0) {
+		pic_close(fd);
+		pic_exit_group(RUNNER_ERROR);
+	}
+	pic_close(fd);
+
+	/* Optional argv[2]: hex text_end — scope syscall patching to the
+	 * code region so .rodata/.data/.config can't cause false matches. */
+	pic_size_t patch_limit = (pic_size_t)size;
+	if (argc >= 3) {
+		pic_size_t t_end = parse_size(argv[2]);
+		if (t_end > 0 && t_end <= (pic_size_t)size)
+			patch_limit = t_end;
+	}
+	patch_syscalls((pic_u8 *)blob, patch_limit);
+
+#ifdef __thumb__
+	((void (*)(void))((pic_uintptr)blob | 1))();
+#else
+	((void (*)(void))blob)();
+#endif
+	pic_exit_group(RUNNER_ERROR);
 }

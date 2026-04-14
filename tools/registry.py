@@ -850,6 +850,7 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -872,6 +873,7 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -883,6 +885,7 @@ _register_blob(
         has_config=True,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
         config_schema=ConfigSchema(
             fixed_size=7,
@@ -898,11 +901,109 @@ _register_blob(
 
 _register_blob(
     BlobType(
+        name="stager_fd",
+        description="File-descriptor stager (read payload from fd, alloc RWX, jump)",
+        has_config=True,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+        config_schema=ConfigSchema(
+            fixed_size=4,
+            fields=[
+                ConfigField(name="fd", type="u32", offset=0),
+            ],
+            trailing_data=[],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="stager_pipe",
+        description="Named-pipe stager (open FIFO, read payload, alloc RWX, jump)",
+        has_config=True,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="path_len", type="u16", offset=0),
+            ],
+            trailing_data=[
+                TrailingData(name="path", length_field="path_len"),
+            ],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="stager_mmap",
+        description="Mmap-file stager (open file, read segment, alloc RWX, jump)",
+        has_config=True,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="path_len", type="u16", offset=0),
+            ],
+            trailing_data=[
+                TrailingData(name="path", length_field="path_len"),
+            ],
+        ),
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="test_fd_ok",
+        description="Inner test payload for stager_fd (writes FD_OK)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="test_pipe_ok",
+        description="Inner test payload for stager_pipe (writes PIPE_OK)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="test_mmap_ok",
+        description="Inner test payload for stager_mmap (writes MMAP_OK)",
+        has_config=False,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+    )
+)
+
+_register_blob(
+    BlobType(
         name="nacl_hello",
         description="NaCl crypto self-test (TweetNaCl)",
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -914,6 +1015,7 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -925,6 +1027,7 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -936,6 +1039,7 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -947,6 +1051,7 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
     )
 )
@@ -958,7 +1063,29 @@ _register_blob(
         has_config=False,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
+    )
+)
+
+_register_blob(
+    BlobType(
+        name="alloc_jump",
+        description="Allocate RWX memory, copy inner payload, jump (unix: mmap)",
+        has_config=True,
+        platforms={
+            "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
+        },
+        config_schema=ConfigSchema(
+            fixed_size=4,
+            fields=[
+                ConfigField(name="payload_size", type="u32", offset=0),
+            ],
+            trailing_data=[
+                TrailingData(name="payload_data", length_field="payload_size"),
+            ],
+        ),
     )
 )
 
@@ -990,6 +1117,7 @@ _register_blob(
         has_config=True,
         platforms={
             "linux": _os_arches("linux"),
+            "freebsd": _os_arches("freebsd"),
         },
         config_schema=ConfigSchema(
             fixed_size=20,

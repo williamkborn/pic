@@ -10,6 +10,7 @@ from picblobs._extractor import BlobData
 from picblobs.runner import (
     QEMU_BINARIES,
     RunResult,
+    _text_end,
     find_qemu,
     find_runner,
     prepare_blob,
@@ -100,6 +101,36 @@ class TestPrepareBlob:
         data = path.read_bytes()
         assert len(data) >= 10
         assert data[8:10] == b"\xff\xff"
+
+
+class TestTextEnd:
+    """_text_end bounds the FreeBSD syscall patcher to the code region."""
+
+    def _blob_with_sections(self, sections: dict[str, tuple[int, int]]) -> BlobData:
+        return BlobData(
+            code=b"\x00" * 256,
+            config_offset=256,
+            entry_offset=0,
+            blob_type="test",
+            target_os="freebsd",
+            target_arch="x86_64",
+            sha256="",
+            sections=sections,
+        )
+
+    def test_single_text_section(self) -> None:
+        blob = self._blob_with_sections({".text": (0, 0x40), ".rodata": (0x40, 0x10)})
+        assert _text_end(blob) == 0x40
+
+    def test_multiple_text_sections_takes_max(self) -> None:
+        blob = self._blob_with_sections(
+            {".text.pic_entry": (0, 0x30), ".text.helper": (0x40, 0x20)}
+        )
+        assert _text_end(blob) == 0x60
+
+    def test_no_text_section_returns_zero(self) -> None:
+        blob = self._blob_with_sections({".rodata": (0, 0x10)})
+        assert _text_end(blob) == 0
 
 
 class TestRunResult:

@@ -18,9 +18,9 @@
 #include "picblobs/win/resolve.h"
 
 /* DJB2 hashes — precomputed. */
-#define HASH_KERNEL32_DLL 0x7040EE75   /* djb2("kernel32.dll") lowercase */
-#define HASH_VIRTUAL_ALLOC 0x382C0F97  /* djb2("VirtualAlloc") */
-#define HASH_EXIT_PROCESS 0xB769339E   /* djb2("ExitProcess") */
+#define HASH_KERNEL32_DLL 0x7040EE75  /* djb2("kernel32.dll") lowercase */
+#define HASH_VIRTUAL_ALLOC 0x382C0F97 /* djb2("VirtualAlloc") */
+#define HASH_EXIT_PROCESS 0xB769339E  /* djb2("ExitProcess") */
 
 /* Windows constants. */
 #define MEM_COMMIT 0x1000
@@ -30,7 +30,7 @@
 /* Windows API function pointer types. */
 typedef void *(PIC_WINAPI *fn_VirtualAlloc)(void *lpAddress, pic_uintptr dwSize,
 	unsigned long flAllocationType, unsigned long flProtect);
-typedef void (PIC_WINAPI *fn_ExitProcess)(unsigned int uExitCode);
+typedef void(PIC_WINAPI *fn_ExitProcess)(unsigned int uExitCode);
 
 /* Config struct (fixed header only). */
 struct alloc_jump_config {
@@ -85,8 +85,8 @@ void _start(void)
 
 	/* Copy payload into allocated memory. */
 	pic_u8 *dst = (pic_u8 *)mem;
-	const pic_u8 *src =
-		(const pic_u8 *)alloc_jump_config + sizeof(struct alloc_jump_config);
+	const pic_u8 *src = (const pic_u8 *)alloc_jump_config +
+		sizeof(struct alloc_jump_config);
 	for (pic_u32 i = 0; i < size; i++)
 		dst[i] = src[i];
 

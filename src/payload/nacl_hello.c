@@ -10,10 +10,12 @@
  * 4. Prints "NaCl OK\n" and exits 0 on success, 1 on failure.
  */
 
+/* OS header must precede crypto headers (which transitively pull sys/). */
+#include "picblobs/os/linux.h"
+
 #include "picblobs/crypto/randombytes.h"
 #include "picblobs/crypto/tweetnacl.h"
 #include "picblobs/mem.h"
-#include "picblobs/os/linux.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/exit_group.h"

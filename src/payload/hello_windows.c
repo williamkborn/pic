@@ -23,10 +23,10 @@
 
 /* Windows API function pointer types. */
 typedef void *(PIC_WINAPI *fn_GetStdHandle)(unsigned long nStdHandle);
-typedef int (PIC_WINAPI *fn_WriteFile)(void *hFile, const void *lpBuffer,
+typedef int(PIC_WINAPI *fn_WriteFile)(void *hFile, const void *lpBuffer,
 	unsigned long nNumberOfBytesToWrite,
 	unsigned long *lpNumberOfBytesWritten, void *lpOverlapped);
-typedef void (PIC_WINAPI *fn_ExitProcess)(unsigned int uExitCode);
+typedef void(PIC_WINAPI *fn_ExitProcess)(unsigned int uExitCode);
 
 PIC_RODATA
 static const char msg[] = "Hello, world!\n";

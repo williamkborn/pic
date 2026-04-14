@@ -255,18 +255,30 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	/* push rsi */
 	dest[i++] = 0x56;
 	/* mov rdi, rcx */
-	dest[i++] = 0x48; dest[i++] = 0x89; dest[i++] = 0xcf;
+	dest[i++] = 0x48;
+	dest[i++] = 0x89;
+	dest[i++] = 0xcf;
 	/* mov rsi, rdx */
-	dest[i++] = 0x48; dest[i++] = 0x89; dest[i++] = 0xd6;
+	dest[i++] = 0x48;
+	dest[i++] = 0x89;
+	dest[i++] = 0xd6;
 	/* mov rdx, r8 */
-	dest[i++] = 0x4c; dest[i++] = 0x89; dest[i++] = 0xc2;
+	dest[i++] = 0x4c;
+	dest[i++] = 0x89;
+	dest[i++] = 0xc2;
 	/* mov rcx, r9 */
-	dest[i++] = 0x4c; dest[i++] = 0x89; dest[i++] = 0xc9;
+	dest[i++] = 0x4c;
+	dest[i++] = 0x89;
+	dest[i++] = 0xc9;
 	/* mov r8, [rsp+0x38] (0x28 shadow + 0x08 ret + 0x08 two pushes) */
-	dest[i++] = 0x4c; dest[i++] = 0x8b; dest[i++] = 0x44;
-	dest[i++] = 0x24; dest[i++] = 0x38;
+	dest[i++] = 0x4c;
+	dest[i++] = 0x8b;
+	dest[i++] = 0x44;
+	dest[i++] = 0x24;
+	dest[i++] = 0x38;
 	/* movabs rax, imm64 */
-	dest[i++] = 0x48; dest[i++] = 0xb8;
+	dest[i++] = 0x48;
+	dest[i++] = 0xb8;
 	dest[i++] = (pic_u8)(addr);
 	dest[i++] = (pic_u8)(addr >> 8);
 	dest[i++] = (pic_u8)(addr >> 16);
@@ -276,7 +288,8 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	dest[i++] = (pic_u8)(addr >> 48);
 	dest[i++] = (pic_u8)(addr >> 56);
 	/* call rax */
-	dest[i++] = 0xff; dest[i++] = 0xd0;
+	dest[i++] = 0xff;
+	dest[i++] = 0xd0;
 	/* pop rsi */
 	dest[i++] = 0x5e;
 	/* pop rdi */

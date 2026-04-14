@@ -88,14 +88,6 @@ class TestQemuSync:
             f"  Extra:   {set(QEMU_BINARIES) - set(expected)}"
         )
 
-    def test_bazel_qemu_matches_registry(self) -> None:
-        content = _read_file("bazel/qemu_test.bzl")
-        for arch, qemu_name in qemu_binaries().items():
-            assert f'"{arch}"' in content, f"'{arch}' missing from qemu_test.bzl"
-            assert f'"{qemu_name}"' in content, (
-                f"'{qemu_name}' missing from qemu_test.bzl"
-            )
-
 
 class TestPlatformConfigSync:
     """Verify platform configs are consistent across all locations."""

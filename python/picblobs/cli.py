@@ -268,6 +268,36 @@ def cmd_verify(args: argparse.Namespace) -> int:
                         arch,
                         args.timeout,
                     )
+                elif blob_type == "stager_tcp":
+                    result = _verify_stager_tcp(
+                        os_name,
+                        arch,
+                        args.timeout,
+                    )
+                elif blob_type == "stager_fd":
+                    result = _verify_stager_fd(
+                        os_name,
+                        arch,
+                        args.timeout,
+                    )
+                elif blob_type == "stager_pipe":
+                    result = _verify_stager_pipe(
+                        os_name,
+                        arch,
+                        args.timeout,
+                    )
+                elif blob_type == "stager_mmap":
+                    result = _verify_stager_mmap(
+                        os_name,
+                        arch,
+                        args.timeout,
+                    )
+                elif blob_type == "alloc_jump":
+                    result = _verify_alloc_jump(
+                        os_name,
+                        arch,
+                        args.timeout,
+                    )
                 else:
                     blob = get_blob(blob_type, os_name, arch)
                     result = run_blob(
@@ -361,6 +391,209 @@ def _verify_ul_exec(
     blob = get_blob("ul_exec", os_name, arch)
     config = build_ul_exec_config(elf_data, arch, argv=["verify"])
     return run_blob(blob, config=config, timeout=timeout)
+
+
+def _verify_stager_tcp(
+    os_name: str,
+    arch: str,
+    timeout: float,
+) -> "RunResult":
+    """Verify stager_tcp end-to-end by serving test_tcp_ok over a local TCP socket.
+
+    Spins up a one-shot localhost TCP server that serves the test_tcp_ok blob
+    (``u32 length`` + payload bytes), builds a stager_tcp config pointing at
+    it, and runs the stager. The inner payload uses Linux syscalls, so we
+    always load test_tcp_ok from the ``linux`` OS regardless of the stager's
+    target OS — the translating freebsd runner makes this work uniformly.
+    """
+    import socket
+    import struct
+    import threading
+
+    from picblobs import get_blob
+    from picblobs.runner import run_blob
+
+    try:
+        inner = get_blob("test_tcp_ok", "linux", arch)
+    except FileNotFoundError as e:
+        raise _VerifySkip(f"test_tcp_ok/linux/{arch} not staged") from e
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        host, port = srv.getsockname()
+
+        payload = struct.pack("<I", len(inner.code)) + inner.code
+
+        def _serve() -> None:
+            try:
+                srv.settimeout(max(timeout, 1.0))
+                conn, _ = srv.accept()
+                try:
+                    conn.sendall(payload)
+                finally:
+                    conn.close()
+            except OSError:
+                pass
+
+        t = threading.Thread(target=_serve, daemon=True)
+        t.start()
+
+        config = struct.pack("<BH", 2, port) + socket.inet_aton(host)
+        blob = get_blob("stager_tcp", os_name, arch)
+        try:
+            return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
+        finally:
+            t.join(timeout=5.0)
+    finally:
+        srv.close()
+
+
+def _verify_stager_fd(
+    os_name: str,
+    arch: str,
+    timeout: float,
+) -> "RunResult":
+    """Verify stager_fd by piping a length-prefixed test_fd_ok into stdin."""
+    import struct
+
+    from picblobs import get_blob
+    from picblobs.runner import run_blob
+
+    try:
+        inner = get_blob("test_fd_ok", "linux", arch)
+    except FileNotFoundError as e:
+        raise _VerifySkip(f"test_fd_ok/linux/{arch} not staged") from e
+
+    config = struct.pack("<I", 0)  # stdin
+    stdin_data = struct.pack("<I", len(inner.code)) + inner.code
+    blob = get_blob("stager_fd", os_name, arch)
+    return run_blob(
+        blob,
+        config=config,
+        runner_type=os_name,
+        timeout=timeout,
+        stdin_data=stdin_data,
+    )
+
+
+def _verify_stager_pipe(
+    os_name: str,
+    arch: str,
+    timeout: float,
+) -> "RunResult":
+    """Verify stager_pipe by writing a length-prefixed test_pipe_ok into a FIFO."""
+    import os as _os
+    import struct
+    import tempfile
+    import threading
+
+    from picblobs import get_blob
+    from picblobs.runner import run_blob
+
+    try:
+        inner = get_blob("test_pipe_ok", "linux", arch)
+    except FileNotFoundError as e:
+        raise _VerifySkip(f"test_pipe_ok/linux/{arch} not staged") from e
+
+    tmpdir = tempfile.mkdtemp(prefix="picblobs_pipe_")
+    fifo = Path(tmpdir) / "payload.fifo"
+    _os.mkfifo(str(fifo))
+
+    payload = struct.pack("<I", len(inner.code)) + inner.code
+
+    def _writer() -> None:
+        try:
+            with open(str(fifo), "wb") as f:
+                f.write(payload)
+        except OSError:
+            pass
+
+    t = threading.Thread(target=_writer, daemon=True)
+    t.start()
+    try:
+        path_bytes = str(fifo).encode()
+        config = struct.pack("<H", len(path_bytes)) + path_bytes
+        blob = get_blob("stager_pipe", os_name, arch)
+        return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
+    finally:
+        t.join(timeout=5.0)
+        try:
+            fifo.unlink()
+            Path(tmpdir).rmdir()
+        except OSError:
+            pass
+
+
+def _verify_stager_mmap(
+    os_name: str,
+    arch: str,
+    timeout: float,
+) -> "RunResult":
+    """Verify stager_mmap by writing test_mmap_ok to a file and mapping it in."""
+    import struct
+    import tempfile
+
+    from picblobs import get_blob
+    from picblobs.runner import run_blob
+
+    try:
+        inner = get_blob("test_mmap_ok", "linux", arch)
+    except FileNotFoundError as e:
+        raise _VerifySkip(f"test_mmap_ok/linux/{arch} not staged") from e
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as f:
+        f.write(inner.code)
+        fpath = f.name
+
+    try:
+        path_bytes = fpath.encode()
+        config = (
+            struct.pack("<H", len(path_bytes))
+            + path_bytes
+            + struct.pack("<QQ", 0, len(inner.code))
+        )
+        blob = get_blob("stager_mmap", os_name, arch)
+        return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
+    finally:
+        try:
+            Path(fpath).unlink()
+        except OSError:
+            pass
+
+
+def _verify_alloc_jump(
+    os_name: str,
+    arch: str,
+    timeout: float,
+) -> "RunResult":
+    """Verify alloc_jump by packing an inner test payload into its config.
+
+    The inner payload writes a known string and exits 0. For Windows blobs
+    we use ``hello_windows`` (which drives the mocked WriteFile/ExitProcess
+    chain in the windows runner); for unix targets we use ``test_pass``
+    (raw syscalls).
+    """
+    import struct
+
+    from picblobs import get_blob
+    from picblobs.runner import run_blob
+
+    if os_name == "windows":
+        inner_type, inner_os = "hello_windows", "windows"
+    else:
+        inner_type, inner_os = "test_pass", "linux"
+
+    try:
+        inner = get_blob(inner_type, inner_os, arch)
+    except FileNotFoundError as e:
+        raise _VerifySkip(f"{inner_type}/{inner_os}/{arch} not staged") from e
+
+    config = struct.pack("<I", len(inner.code)) + inner.code
+    blob = get_blob("alloc_jump", os_name, arch)
+    return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
 
 
 # Architectures where QEMU-emulated TweetNaCl e2e may be slow.

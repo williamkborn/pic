@@ -224,12 +224,14 @@ class TestStagerFd:
 
         inner = get_blob("test_fd_ok", "linux", target_arch)
 
-        # Config: fd number (u32).
-        config = struct.pack("<I", 0)  # stdin
+        # Config: fd number (u32). stdin=0.
+        config = struct.pack("<I", 0)
 
-        # Note: actual stdin piping requires run_blob enhancement.
-        # For now, this test validates the blob + config structure.
-        result = run_blob(blob, config=config, timeout=exp.timeout)
+        # Pipe the length-prefixed inner payload into the blob's stdin.
+        stdin_data = _length_prefixed_payload(inner.code)
+        result = run_blob(
+            blob, config=config, timeout=exp.timeout, stdin_data=stdin_data
+        )
 
         assert result.exit_code == exp.exit_code, (
             f"stager_fd {target_os}:{target_arch}: "

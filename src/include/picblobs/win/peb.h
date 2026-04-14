@@ -24,8 +24,10 @@
 /* 32-bit Windows offsets (relative to InMemoryOrderLinks pointer). */
 #define PEB_LDR_OFFSET 0x0C
 #define LDR_IN_MEMORY_ORDER_LIST_OFFSET 0x14
-#define LDR_ENTRY_DLLBASE_OFFSET 0x10  /* struct 0x18 - InMemoryOrderLinks 0x08 */
-#define LDR_ENTRY_BASEDLLNAME_OFFSET 0x24 /* struct 0x2C - InMemoryOrderLinks 0x08 */
+#define LDR_ENTRY_DLLBASE_OFFSET                                               \
+	0x10 /* struct 0x18 - InMemoryOrderLinks 0x08 */
+#define LDR_ENTRY_BASEDLLNAME_OFFSET                                           \
+	0x24 /* struct 0x2C - InMemoryOrderLinks 0x08 */
 #define UNICODE_STRING_LENGTH_OFFSET 0x00
 #define UNICODE_STRING_BUFFER_OFFSET 0x04
 

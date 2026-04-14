@@ -13,6 +13,12 @@ exports_files([
     "runner_hosted.c",
 ])
 
+filegroup(
+    name = "start_headers",
+    srcs = glob(["start/*.h"]),
+    visibility = ["//tests/runners:__subpackages__"],
+)
+
 cc_library(
     name = "runner_obj",
     srcs = ["runner.c"] + glob(["start/*.h"]),
@@ -36,6 +42,7 @@ genrule(
         "-nostdlib",
         "-nostartfiles",
         "-static",
+        "-Wl,-e,_start",
         "-Wl,--whole-archive",
         "$(location :runner_obj)",
         "-Wl,--no-whole-archive",
@@ -75,6 +82,7 @@ genrule(
         "-nostdlib",
         "-nostartfiles",
         "-static",
+        "-Wl,-e,_start",
         "-Wl,--whole-archive",
         "$(location :runner_hosted_obj)",
         "-Wl,--no-whole-archive",

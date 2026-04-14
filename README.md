@@ -36,9 +36,9 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 
 | OS | Architectures | Blob types | Runner |
 |---|---|---|---|
-| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, ul_exec (+ future: alloc_jump, stagers) | Direct execution via QEMU user-static |
-| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello (+ future: alloc_jump, stagers) | Syscall shim (WIP) |
-| Windows | x86_64, i686, aarch64 | hello_windows (+ future: alloc_jump, stagers, reflective_pe) | Mock TEB/PEB on Linux |
+| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Direct execution via QEMU user-static |
+| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Translating loader: patches FreeBSD syscall numbers to Linux equivalents at load time |
+| Windows | x86_64, i686, aarch64 | hello_windows, alloc_jump | Mock TEB/PEB on Linux |
 
 ### Current blob inventory
 

@@ -27,9 +27,9 @@
 
 /* Config struct (packed — no padding between af and port). */
 struct __attribute__((packed)) stager_tcp_config {
-	pic_u8 af;	 /* AF_INET = 2 */
-	pic_u16 port;	 /* little-endian, converted to network order */
-	pic_u8 addr[4];	 /* IPv4 address, network order */
+	pic_u8 af;	/* AF_INET = 2 */
+	pic_u16 port;	/* little-endian, converted to network order */
+	pic_u8 addr[4]; /* IPv4 address, network order */
 };
 
 /*
@@ -97,8 +97,7 @@ void _start(void)
 		pic_exit_group(1);
 	}
 	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
-		       ((pic_u32)size_buf[2] << 16) |
-		       ((pic_u32)size_buf[3] << 24);
+		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
 
 	if (size == 0 || size > 0x10000000) {
 		pic_close(fd);

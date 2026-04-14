@@ -32,8 +32,7 @@ static inline long pic_raw_syscall(
 			 "1:\n\t"
 			 ".set reorder\n\t"
 		: [v0] "+r"(v0), "+r"(r7)
-		: "r"(r4), "r"(r5), "r"(r6),
-		[arg5] "r"(a4), [arg6] "r"(a5)
+		: "r"(r4), "r"(r5), "r"(r6), [arg5] "r"(a4), [arg6] "r"(a5)
 		: "memory", "$3", "$8", "$9", "$10", "$11", "$12", "$13", "$14",
 		"$15", "$24", "$25");
 	return v0;

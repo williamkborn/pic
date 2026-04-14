@@ -34,6 +34,7 @@ ARCH_TO_TRIPLE = {
     "aarch64": "aarch64-buildroot-linux-gnu",
     "armv5_arm": "arm-buildroot-linux-gnueabi",
     "armv5_thumb": "arm-buildroot-linux-gnueabi",
+    "armv7_thumb": "arm-buildroot-linux-gnueabihf",
     "mipsel32": "mipsel-buildroot-linux-gnu",
     "mipsbe32": "mips-buildroot-linux-gnu",
     "s390x": "s390x-buildroot-linux-gnu",
@@ -68,6 +69,7 @@ def _find_gcc(arch: str) -> str | None:
         "aarch64": "aarch64",
         "armv5_arm": "armv5",
         "armv5_thumb": "armv5",
+        "armv7_thumb": "armv7",
         "mipsel32": "mipsel32",
         "mipsbe32": "mipsbe32",
         "s390x": "s390x",
@@ -110,6 +112,7 @@ def _find_sysroot(arch: str) -> str | None:
         "aarch64": "aarch64",
         "armv5_arm": "armv5",
         "armv5_thumb": "armv5",
+        "armv7_thumb": "armv7",
         "mipsel32": "mipsel32",
         "mipsbe32": "mipsbe32",
         "s390x": "s390x",
@@ -315,6 +318,15 @@ RAW_SYSCALL_SRCS = {
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
     "armv5_thumb": (
+        ".syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n"
+        "  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n"
+        "  movs r2, #11\n  svc #0\n"
+        "  movs r7, #248\n  movs r0, #0\n  svc #0\n"
+        '.align 2\nmsg: .ascii "UL_EXEC_OK\\n"\n'
+    ),
+    # armv7_thumb: Thumb-2 uses the same Thumb-1 encodings for these
+    # instructions — reuse the armv5_thumb source.
+    "armv7_thumb": (
         ".syntax unified\n.text\n.globl _start\n.thumb_func\n_start:\n"
         "  movs r7, #4\n  movs r0, #1\n  adr r1, msg\n"
         "  movs r2, #11\n  svc #0\n"

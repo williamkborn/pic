@@ -203,15 +203,13 @@ def build_and_stage(
             # Use staged_name from registry if set (e.g. alloc_jump_windows
             # stages as alloc_jump.so), otherwise use the blob name as-is.
             bt = BLOB_TYPES.get(blob_name)
-            staged_name = (bt.staged_name if bt and bt.staged_name else blob_name)
+            staged_name = bt.staged_name if bt and bt.staged_name else blob_name
             dest = output_dir / os_name / arch_name / f"{staged_name}.so"
 
             tag = f"    {staged_name}.so -> {os_name}/{arch_name}"
             if stage_file(src, dest):
                 if not verify_elf_arch(dest, arch_name):
-                    log.error(
-                        "%-50s ARCH MISMATCH (expected %s)", tag, arch_name
-                    )
+                    log.error("%-50s ARCH MISMATCH (expected %s)", tag, arch_name)
                 else:
                     log.info("%-50s OK", tag)
                     passed += 1
@@ -259,11 +257,12 @@ def main() -> int:
         default=None,
         help="Blob target names (default: auto-discovered from BUILD.bazel)",
     )
-    # Default to Linux + Windows configs. FreeBSD runners are not yet buildable.
     _default_configs = [
         k
         for k in PLATFORM_CONFIGS
-        if k.startswith("linux:") or k.startswith("windows:")
+        if k.startswith("linux:")
+        or k.startswith("windows:")
+        or k.startswith("freebsd:")
     ]
     parser.add_argument(
         "--configs",

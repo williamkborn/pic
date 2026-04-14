@@ -6,6 +6,13 @@ load("//src/payload:extract.bzl", "extract_bin")
 package(default_visibility = ["//visibility:public"])
 
 pic_blob(
+    name = "alloc_jump",
+    srcs = ["alloc_jump.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "alloc_jump_windows",
     srcs = ["alloc_jump_windows.c"],
     deps = ["//src/include/picblobs:headers"],
@@ -84,6 +91,27 @@ extract_bin(
 )
 
 pic_blob(
+    name = "stager_fd",
+    srcs = ["stager_fd.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "stager_mmap",
+    srcs = ["stager_mmap.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "stager_pipe",
+    srcs = ["stager_pipe.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "stager_tcp",
     srcs = ["stager_tcp.c"],
     deps = ["//src/include/picblobs:headers"],
@@ -91,8 +119,29 @@ pic_blob(
 )
 
 pic_blob(
+    name = "test_fd_ok",
+    srcs = ["test_fd_ok.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "test_mmap_ok",
+    srcs = ["test_mmap_ok.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
     name = "test_pass",
     srcs = ["test_pass.c"],
+    deps = ["//src/include/picblobs:headers"],
+    linker_script = "//src/linker:blob.ld",
+)
+
+pic_blob(
+    name = "test_pipe_ok",
+    srcs = ["test_pipe_ok.c"],
     deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
 )

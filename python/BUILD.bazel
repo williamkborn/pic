@@ -2,7 +2,6 @@
 
 load("@pip//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//bazel:uv.bzl", "uv_wheel")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -71,12 +70,3 @@ py_test(
     data = ["tests/conftest.py"],
 )
 
-# The wheel target — depends on all blobs being built first.
-# Uncomment and populate `blobs` once blob targets exist.
-# uv_wheel(
-#     name = "wheel",
-#     package_dir = ":package_dir",
-#     blobs = ["//src/blob:all"],
-#     generated_srcs = ["//tools:config_codegen"],
-#     wheel_name = "picblobs-0.1.0-py3-none-any.whl",
-# )

@@ -195,13 +195,24 @@ def _build_command(
     runner_path: Path,
     blob_file: Path,
     arch: str,
+    extra_args: list[str] | None = None,
 ) -> list[str]:
     """Build the QEMU + runner command line."""
+    args = [str(blob_file), *(extra_args or [])]
     if _is_native_arch(arch):
-        return [str(runner_path), str(blob_file)]
+        return [str(runner_path), *args]
     else:
         qemu = find_qemu(arch)
-        return [str(qemu), str(runner_path), str(blob_file)]
+        return [str(qemu), str(runner_path), *args]
+
+
+def _text_end(blob: BlobData) -> int:
+    """Return the largest offset covered by a .text* section, or 0 if none."""
+    end = 0
+    for name, (off, size) in blob.sections.items():
+        if name.startswith(".text"):
+            end = max(end, off + size)
+    return end
 
 
 def _cleanup_blob_file(blob_file: Path) -> None:
@@ -221,6 +232,7 @@ def run_blob(
     timeout: float = 30.0,
     debug: bool = False,
     dry_run: bool = False,
+    stdin_data: bytes = b"",
 ) -> RunResult:
     """Prepare and execute a blob under QEMU.
 
@@ -233,6 +245,8 @@ def run_blob(
         timeout: Execution timeout in seconds.
         debug: Print verbose info (paths, command, timing). Keep temp files.
         dry_run: Build command but don't execute. Returns RunResult with command only.
+        stdin_data: Bytes to feed to the blob's stdin — used by stager_fd
+            tests so the blob can read a length-prefixed payload from fd 0.
 
     Returns:
         RunResult with stdout, stderr, exit code, and duration.
@@ -260,8 +274,14 @@ def run_blob(
         log.debug("runner:     %s", runner_path)
         log.debug("blob file:  %s", blob_file)
 
-    # Build the command.
-    cmd = _build_command(runner_path, blob_file, blob.target_arch)
+    # Build the command. FreeBSD runner accepts an optional text_end
+    # bound (hex) to scope syscall-number patching to the code region.
+    extra: list[str] = []
+    if runner_type == "freebsd":
+        t_end = _text_end(blob)
+        if t_end > 0:
+            extra = [f"{t_end:#x}"]
+    cmd = _build_command(runner_path, blob_file, blob.target_arch, extra)
 
     if debug:
         log.debug("command:    %s", " ".join(cmd))
@@ -283,6 +303,7 @@ def run_blob(
         proc = subprocess.run(
             cmd,
             capture_output=True,
+            input=stdin_data if stdin_data else None,
             timeout=timeout,
         )
         duration = time.monotonic() - start

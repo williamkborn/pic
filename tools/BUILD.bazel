@@ -1,15 +1,8 @@
-"""Build tools — codegen, formatting, linting."""
+"""Build tools — formatting, linting."""
 
-load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//visibility:public"])
-
-py_binary(
-    name = "config_codegen",
-    srcs = ["config_codegen.py"],
-    main = "config_codegen.py",
-)
 
 sh_test(
     name = "format_check",

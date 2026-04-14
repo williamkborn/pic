@@ -160,7 +160,9 @@ def find_wine(arch: str) -> str | None:
     return None
 
 
-def run_wine(pe_bytes: bytes, wine: str, timeout: float = 15.0) -> tuple[int, bytes, bytes]:
+def run_wine(
+    pe_bytes: bytes, wine: str, timeout: float = 15.0
+) -> tuple[int, bytes, bytes]:
     """Run a PE under Wine. Returns (exit_code, stdout, stderr)."""
     with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as f:
         f.write(pe_bytes)
@@ -222,9 +224,7 @@ def validate_blob(
         details.append(f"wine crashed: {exc_line}")
     elif mock_result.stdout != wine_stdout:
         ok = False
-        details.append(
-            f"stdout: mock={mock_result.stdout!r} wine={wine_stdout!r}"
-        )
+        details.append(f"stdout: mock={mock_result.stdout!r} wine={wine_stdout!r}")
 
     if ok:
         return True, f"MATCH (exit={wine_rc}, stdout={wine_stdout!r})"
