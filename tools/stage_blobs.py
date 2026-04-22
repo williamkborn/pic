@@ -129,6 +129,180 @@ def find_bazel_output(label: str, extension: str) -> Path:
     return PROJECT_ROOT / "bazel-bin" / pkg / f"{name}{extension}"
 
 
+def _os_compatible_targets(targets: list[str], os_name: str) -> list[str]:
+    """Filter blob targets to those compatible with one OS."""
+    os_targets = []
+    for blob_name in targets:
+        parts = blob_name.rsplit("_", 1)
+        if len(parts) == 2 and parts[1] in ("linux", "freebsd", "windows"):
+            if parts[1] != os_name:
+                continue
+        elif os_name == "windows":
+            continue
+        os_targets.append(blob_name)
+    return os_targets
+
+
+def _blob_labels(targets: list[str]) -> list[str]:
+    """Return Bazel labels for blob targets."""
+    return [BLOB_LABEL_TEMPLATE.format(name=blob_name) for blob_name in targets]
+
+
+def _runner_build_config(
+    os_name: str,
+    arch_name: str,
+    bazel_configs: list[str],
+) -> list[str]:
+    """Return the Bazel configs used to build the test runner."""
+    if os_name in ("windows", "freebsd"):
+        return [f"linux_{arch_name}"]
+    return list(bazel_configs)
+
+
+def _staged_blob_name(blob_name: str) -> str:
+    """Return the staged filename stem for a registry blob."""
+    bt = BLOB_TYPES.get(blob_name)
+    return bt.staged_name if bt and bt.staged_name else blob_name
+
+
+def _stage_blob_outputs(
+    os_targets: list[str],
+    os_name: str,
+    arch_name: str,
+    output_dir: Path,
+    blob_labels_built: bool,
+) -> tuple[int, int]:
+    """Stage built blob .so files for one platform."""
+    total = 0
+    passed = 0
+    for blob_name in os_targets:
+        total += 1
+        if not blob_labels_built:
+            continue
+        label = BLOB_LABEL_TEMPLATE.format(name=blob_name)
+        src = find_bazel_output(label, ".so")
+        staged_name = _staged_blob_name(blob_name)
+        dest = output_dir / os_name / arch_name / f"{staged_name}.so"
+        tag = f"    {staged_name}.so -> {os_name}/{arch_name}"
+        if stage_file(src, dest):
+            if not verify_elf_arch(dest, arch_name):
+                log.error("%-50s ARCH MISMATCH (expected %s)", tag, arch_name)
+            else:
+                log.info("%-50s OK", tag)
+                passed += 1
+        else:
+            log.error("%-50s NOT FOUND: %s", tag, src)
+    return passed, total
+
+
+def _stage_runner_output(
+    runner_label: str,
+    runner_type: str,
+    arch_name: str,
+) -> bool:
+    """Stage one built runner binary."""
+    src = find_bazel_output(runner_label, ".bin")
+    dest = RUNNER_DIR / runner_type / arch_name / "runner"
+    tag = f"    runner -> {runner_type}/{arch_name}"
+    if stage_file(src, dest, executable=True):
+        log.info("%-50s OK", tag)
+        return True
+    log.error("%-50s NOT FOUND: %s", tag, src)
+    return False
+
+
+def _platform_config(config_key: str) -> tuple[str, str, str, str] | None:
+    """Return (bazel_config, runner_type, os_name, arch_name) for a key."""
+    if config_key not in PLATFORM_CONFIGS:
+        log.error("Unknown config: %s", config_key)
+        return None
+    bazel_config, runner_type = PLATFORM_CONFIGS[config_key]
+    os_name, arch_name = config_key.split(":")
+    return bazel_config, runner_type, os_name, arch_name
+
+
+def _build_blob_set(
+    config_key: str,
+    mode: str,
+    bazel_configs: list[str],
+    blob_labels: list[str],
+) -> bool:
+    """Build one platform's blob outputs."""
+    if not blob_labels:
+        return False
+    log.info("  [%s] (%s) building blobs... ", config_key, mode)
+    if not bazel_build(bazel_configs, blob_labels):
+        log.error("  [%s] BLOB BUILD FAIL", config_key)
+        return False
+    log.info("  [%s] blobs OK", config_key)
+    return True
+
+
+def _build_runner(
+    config_key: str,
+    mode: str,
+    runner_label: str,
+    runner_configs: list[str],
+) -> bool:
+    """Build one platform's runner output."""
+    if not runner_label:
+        return False
+    log.info("  [%s] (%s) building runner... ", config_key, mode)
+    if not bazel_build(runner_configs, [runner_label]):
+        log.error("  [%s] RUNNER BUILD FAIL", config_key)
+        return False
+    log.info("  [%s] runner OK", config_key)
+    return True
+
+
+def _stage_platform(
+    config_key: str,
+    targets: list[str],
+    output_dir: Path,
+    no_runners: bool,
+    debug: bool,
+) -> tuple[int, int]:
+    """Build and stage blobs/runners for one platform config."""
+    platform = _platform_config(config_key)
+    if platform is None:
+        return 0, 0
+    bazel_config, runner_type, os_name, arch_name = platform
+    bazel_configs = [bazel_config]
+    if debug:
+        bazel_configs.append("debug")
+
+    os_targets = _os_compatible_targets(targets, os_name)
+    blob_labels = _blob_labels(os_targets)
+    runner_label = (
+        RUNNER_LABEL.format(runner_type=runner_type)
+        if not no_runners and not debug
+        else ""
+    )
+    if not blob_labels and not runner_label:
+        return 0, 0
+
+    mode = "debug" if debug else "release"
+    built_blobs = _build_blob_set(config_key, mode, bazel_configs, blob_labels)
+    passed, total = _stage_blob_outputs(
+        os_targets,
+        os_name,
+        arch_name,
+        output_dir,
+        built_blobs,
+    )
+
+    if _build_runner(
+        config_key,
+        mode,
+        runner_label,
+        _runner_build_config(os_name, arch_name, bazel_configs),
+    ):
+        total += 1
+        if _stage_runner_output(runner_label, runner_type, arch_name):
+            passed += 1
+    return passed, total
+
+
 def build_and_stage(
     targets: list[str],
     configs: list[str],
@@ -145,108 +319,15 @@ def build_and_stage(
     output_dir = DEBUG_BLOB_DIR if debug else BLOB_DIR
 
     for config_key in configs:
-        if config_key not in PLATFORM_CONFIGS:
-            log.error("Unknown config: %s", config_key)
-            continue
-
-        bazel_config, runner_type = PLATFORM_CONFIGS[config_key]
-        os_name, arch_name = config_key.split(":")
-
-        bazel_configs = [bazel_config]
-        if debug:
-            bazel_configs.append("debug")
-
-        # Filter targets to those compatible with this OS.
-        # Blobs with an OS suffix (e.g. hello_windows) only build for that OS.
-        # Blobs without a suffix are unix-only (use raw syscalls, not Win API).
-        os_targets = []
-        for blob_name in targets:
-            parts = blob_name.rsplit("_", 1)
-            if len(parts) == 2 and parts[1] in ("linux", "freebsd", "windows"):
-                # Explicit OS suffix — must match.
-                if parts[1] != os_name:
-                    continue
-            else:
-                # No OS suffix — unix blob, skip for Windows.
-                if os_name == "windows":
-                    continue
-            os_targets.append(blob_name)
-
-        blob_labels = []
-        for blob_name in os_targets:
-            blob_labels.append(BLOB_LABEL_TEMPLATE.format(name=blob_name))
-
-        want_runner = not no_runners and not debug
-        runner_label = (
-            RUNNER_LABEL.format(runner_type=runner_type) if want_runner else ""
+        cfg_passed, cfg_total = _stage_platform(
+            config_key,
+            targets,
+            output_dir,
+            no_runners,
+            debug,
         )
-
-        if not blob_labels and not runner_label:
-            continue
-
-        mode = "debug" if debug else "release"
-
-        # Build blobs with the target platform config.
-        if blob_labels:
-            log.info("  [%s] (%s) building blobs... ", config_key, mode)
-            if not bazel_build(bazel_configs, blob_labels):
-                log.error("  [%s] BLOB BUILD FAIL", config_key)
-                total += len(os_targets)
-                blob_labels = []  # skip staging
-            else:
-                log.info("  [%s] blobs OK", config_key)
-
-        # Stage blobs immediately after building them, BEFORE the runner
-        # build changes the bazel-bin symlink to a different config.
-        for blob_name in os_targets:
-            if not blob_labels:
-                break  # build failed, skip staging
-            total += 1
-            label = BLOB_LABEL_TEMPLATE.format(name=blob_name)
-            src = find_bazel_output(label, ".so")
-            # Use staged_name from registry if set (e.g. alloc_jump_windows
-            # stages as alloc_jump.so), otherwise use the blob name as-is.
-            bt = BLOB_TYPES.get(blob_name)
-            staged_name = bt.staged_name if bt and bt.staged_name else blob_name
-            dest = output_dir / os_name / arch_name / f"{staged_name}.so"
-
-            tag = f"    {staged_name}.so -> {os_name}/{arch_name}"
-            if stage_file(src, dest):
-                if not verify_elf_arch(dest, arch_name):
-                    log.error("%-50s ARCH MISMATCH (expected %s)", tag, arch_name)
-                else:
-                    log.info("%-50s OK", tag)
-                    passed += 1
-            else:
-                log.error("%-50s NOT FOUND: %s", tag, src)
-
-        # Build runner AFTER staging blobs. The Windows/FreeBSD runners
-        # are Linux binaries (mock environments), built with a Linux config
-        # which changes the bazel-bin symlink.
-        if runner_label:
-            if os_name in ("windows", "freebsd"):
-                runner_bazel_config = f"linux_{arch_name}"
-                runner_configs = [runner_bazel_config]
-            else:
-                runner_configs = list(bazel_configs)
-            log.info("  [%s] (%s) building runner... ", config_key, mode)
-            if not bazel_build(runner_configs, [runner_label]):
-                log.error("  [%s] RUNNER BUILD FAIL", config_key)
-                runner_label = ""  # skip staging
-            else:
-                log.info("  [%s] runner OK", config_key)
-
-        if runner_label:
-            total += 1
-            src = find_bazel_output(runner_label, ".bin")
-            dest = RUNNER_DIR / runner_type / arch_name / "runner"
-
-            tag = f"    runner -> {runner_type}/{arch_name}"
-            if stage_file(src, dest, executable=True):
-                log.info("%-50s OK", tag)
-                passed += 1
-            else:
-                log.error("%-50s NOT FOUND: %s", tag, src)
+        passed += cfg_passed
+        total += cfg_total
 
     return passed, total
 

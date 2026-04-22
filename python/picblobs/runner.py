@@ -94,6 +94,49 @@ def find_qemu(arch: str) -> Path:
     return Path(path)
 
 
+def _find_embedded_runner(runner_type: str, arch: str) -> Path | None:
+    """Return a bundled picblobs-cli runner if one is installed."""
+    cli_dir = _picblobs_cli_runner_dir()
+    if not cli_dir or not arch:
+        return None
+    embedded = cli_dir / runner_type / arch / "runner"
+    if embedded.exists():
+        return embedded
+    return None
+
+
+def _runner_candidates(base: Path, runner_type: str, arch: str) -> list[Path]:
+    """Return candidate runner paths under one search root."""
+    candidates: list[Path] = []
+    if arch:
+        candidates.extend(
+            [
+                base / runner_type / arch / "runner",
+                base / runner_type / arch / "runner.bin",
+            ]
+        )
+    candidates.extend(
+        [
+            base / runner_type / "runner.bin",
+            base / runner_type / "runner",
+        ]
+    )
+    return candidates
+
+
+def _find_runner_in_paths(
+    runner_type: str,
+    arch: str,
+    search_paths: list[Path],
+) -> Path | None:
+    """Return the first runner found in the supplied search roots."""
+    for base in search_paths:
+        for runner in _runner_candidates(base, runner_type, arch):
+            if runner.exists():
+                return runner
+    return None
+
+
 def find_runner(
     runner_type: str,
     arch: str = "",
@@ -115,29 +158,15 @@ def find_runner(
         FileNotFoundError: If runner binary is not found. The error text
             mentions ``picblobs-cli`` so installation guidance is visible.
     """
-    # 1. Check the picblobs-cli bundle first (preferred when installed).
-    cli_dir = _picblobs_cli_runner_dir()
-    if cli_dir and arch:
-        embedded = cli_dir / runner_type / arch / "runner"
-        if embedded.exists():
-            return embedded
+    embedded = _find_embedded_runner(runner_type, arch)
+    if embedded is not None:
+        return embedded
 
-    # 2. Fallback to Bazel build tree (development / CI).
-    paths = search_paths or _BAZEL_RUNNER_SEARCH
-    for base in paths:
-        if arch:
-            runner = base / runner_type / arch / "runner"
-            if runner.exists():
-                return runner
-            runner = base / runner_type / arch / "runner.bin"
-            if runner.exists():
-                return runner
-        runner = base / runner_type / "runner.bin"
-        if runner.exists():
-            return runner
-        runner = base / runner_type / "runner"
-        if runner.exists():
-            return runner
+    runner = _find_runner_in_paths(
+        runner_type, arch, search_paths or _BAZEL_RUNNER_SEARCH
+    )
+    if runner is not None:
+        return runner
 
     raise FileNotFoundError(
         f"Test runner not found for {runner_type}/{arch}. "
@@ -330,6 +359,90 @@ def reserve_tcp_port(host: str = "127.0.0.1") -> int:
         return int(sock.getsockname()[1])
 
 
+def _pair_commands(
+    server_blob: BlobData,
+    client_blob: BlobData,
+    runner_path: Path,
+    runner_type: str,
+    server_config: bytes,
+    client_config: bytes,
+) -> tuple[Path, Path, list[str], list[str]]:
+    """Prepare pair temp files and commands."""
+    server_bin = prepare_blob(server_blob, config=server_config)
+    client_bin = prepare_blob(client_blob, config=client_config)
+    return (
+        server_bin,
+        client_bin,
+        build_blob_command(server_blob, runner_path, server_bin, runner_type),
+        build_blob_command(client_blob, runner_path, client_bin, runner_type),
+    )
+
+
+def _terminate_proc(proc: subprocess.Popen[bytes] | None) -> None:
+    """Kill a running subprocess and wait for it to exit."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.kill()
+    proc.wait()
+
+
+def _pair_run_attempt(
+    server_cmd: list[str],
+    client_cmd: list[str],
+    ready_marker: bytes,
+    startup_timeout: float,
+    timeout: float,
+) -> tuple[PairRunResult | None, str]:
+    """Run one server/client attempt and return (result, error_message)."""
+    server_proc = subprocess.Popen(
+        server_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    client_proc: subprocess.Popen[bytes] | None = None
+    try:
+        server_prefix = wait_for_stdout_marker(
+            server_proc, ready_marker, startup_timeout
+        )
+        if ready_marker not in server_prefix:
+            server_proc.kill()
+            server_stdout, server_stderr = server_proc.communicate()
+            return None, (
+                "server did not reach listening state: "
+                f"stdout={(server_prefix + server_stdout)!r} "
+                f"stderr={server_stderr!r}"
+            )
+
+        client_proc = subprocess.Popen(
+            client_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
+        server_stdout, server_stderr = server_proc.communicate(timeout=timeout)
+        result = PairRunResult(
+            server_stdout=server_prefix + server_stdout,
+            server_stderr=server_stderr,
+            server_exit=server_proc.returncode,
+            client_stdout=client_stdout,
+            client_stderr=client_stderr,
+            client_exit=client_proc.returncode,
+        )
+        if result.server_exit == 0 and result.client_exit == 0:
+            return result, ""
+        return None, (
+            f"server exit={result.server_exit} stderr={result.server_stderr!r}; "
+            f"client exit={result.client_exit} stderr={result.client_stderr!r}"
+        )
+    except subprocess.TimeoutExpired:
+        _terminate_proc(server_proc)
+        _terminate_proc(client_proc)
+        return None, "pair timed out"
+    finally:
+        _terminate_proc(server_proc)
+        _terminate_proc(client_proc)
+
+
 def run_blob_pair(
     server_blob: BlobData,
     client_blob: BlobData,
@@ -348,76 +461,26 @@ def run_blob_pair(
     if not runner_type:
         runner_type = server_blob.target_os
 
-    server_bin = prepare_blob(server_blob, config=server_config)
-    client_bin = prepare_blob(client_blob, config=client_config)
+    server_bin, client_bin, server_cmd, client_cmd = _pair_commands(
+        server_blob,
+        client_blob,
+        runner_path,
+        runner_type,
+        server_config,
+        client_config,
+    )
     try:
-        server_cmd = build_blob_command(
-            server_blob, runner_path, server_bin, runner_type
-        )
-        client_cmd = build_blob_command(
-            client_blob, runner_path, client_bin, runner_type
-        )
-
         last_error = "pair did not run"
         for attempt in range(attempts):
-            server_proc = subprocess.Popen(
+            result, last_error = _pair_run_attempt(
                 server_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                client_cmd,
+                ready_marker,
+                startup_timeout,
+                timeout,
             )
-            client_proc: subprocess.Popen[bytes] | None = None
-            try:
-                server_prefix = wait_for_stdout_marker(
-                    server_proc, ready_marker, startup_timeout
-                )
-                if ready_marker not in server_prefix:
-                    server_proc.kill()
-                    server_stdout, server_stderr = server_proc.communicate()
-                    last_error = (
-                        "server did not reach listening state: "
-                        f"stdout={(server_prefix + server_stdout)!r} "
-                        f"stderr={server_stderr!r}"
-                    )
-                    continue
-
-                client_proc = subprocess.Popen(
-                    client_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
-                server_stdout, server_stderr = server_proc.communicate(timeout=timeout)
-                server_stdout = server_prefix + server_stdout
-
-                result = PairRunResult(
-                    server_stdout=server_stdout,
-                    server_stderr=server_stderr,
-                    server_exit=server_proc.returncode,
-                    client_stdout=client_stdout,
-                    client_stderr=client_stderr,
-                    client_exit=client_proc.returncode,
-                )
-                if result.server_exit == 0 and result.client_exit == 0:
-                    return result
-
-                last_error = (
-                    f"server exit={result.server_exit} stderr={result.server_stderr!r}; "
-                    f"client exit={result.client_exit} stderr={result.client_stderr!r}"
-                )
-            except subprocess.TimeoutExpired:
-                last_error = "pair timed out"
-                server_proc.kill()
-                if client_proc is not None:
-                    client_proc.kill()
-                    client_proc.wait()
-                server_proc.wait()
-            finally:
-                if server_proc.poll() is None:
-                    server_proc.kill()
-                    server_proc.wait()
-                if client_proc is not None and client_proc.poll() is None:
-                    client_proc.kill()
-                    client_proc.wait()
+            if result is not None:
+                return result
             if attempt + 1 < attempts:
                 time.sleep(retry_delay)
         raise RuntimeError(last_error)
@@ -460,45 +523,16 @@ def run_blob(
     if not runner_type:
         runner_type = blob.target_os
 
-    # Locate runner.
     if runner_path is None:
         runner_path = find_runner(runner_type, blob.target_arch)
 
     if dry_run:
-        blob_file = Path(_blob_filename(blob))
-        cmd = build_blob_command(blob, runner_path, blob_file, runner_type)
-        if debug:
-            log.debug(
-                "blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch
-            )
-            log.debug("code size:  %d bytes", len(blob.code))
-            log.debug(
-                "config:     %d bytes at offset %d", len(config), blob.config_offset
-            )
-            log.debug("runner:     %s", runner_path)
-            log.debug("blob file:  %s (dry-run placeholder)", blob_file)
-            log.debug("command:    %s", " ".join(cmd))
-            log.debug("dry run — not executing")
-        return RunResult(
-            stdout=b"",
-            stderr=b"",
-            exit_code=0,
-            duration_s=0.0,
-            command=cmd,
-            blob_file=str(blob_file),
-        )
+        return _run_blob_dry(blob, config, runner_type, runner_path, debug)
 
-    # Prepare the blob binary.
     blob_file = prepare_blob(blob, config)
 
     if debug:
-        log.debug(
-            "blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch
-        )
-        log.debug("code size:  %d bytes", len(blob.code))
-        log.debug("config:     %d bytes at offset %d", len(config), blob.config_offset)
-        log.debug("runner:     %s", runner_path)
-        log.debug("blob file:  %s", blob_file)
+        _log_run_blob_start(blob, config, runner_path, blob_file)
 
     cmd = build_blob_command(blob, runner_path, blob_file, runner_type)
 
@@ -506,28 +540,7 @@ def run_blob(
         log.debug("command:    %s", " ".join(cmd))
 
     try:
-        start = time.monotonic()
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            input=stdin_data if stdin_data else None,
-            timeout=timeout,
-        )
-        duration = time.monotonic() - start
-
-        if debug:
-            log.debug("exit code:  %d", proc.returncode)
-            log.debug("duration:   %.3fs", duration)
-            log.debug("temp dir:   %s (preserved)", blob_file.parent)
-
-        return RunResult(
-            stdout=proc.stdout,
-            stderr=proc.stderr,
-            exit_code=proc.returncode,
-            duration_s=duration,
-            command=cmd,
-            blob_file=str(blob_file),
-        )
+        return _execute_blob_command(cmd, blob_file, timeout, debug, stdin_data)
     except subprocess.TimeoutExpired:
         if not debug:
             _cleanup_blob_file(blob_file)
@@ -535,6 +548,75 @@ def run_blob(
     finally:
         if not debug:
             _cleanup_blob_file(blob_file)
+
+
+def _log_run_blob_start(
+    blob: BlobData,
+    config: bytes,
+    runner_path: Path,
+    blob_file: Path,
+) -> None:
+    """Emit debug logging before executing a blob."""
+    log.debug("blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch)
+    log.debug("code size:  %d bytes", len(blob.code))
+    log.debug("config:     %d bytes at offset %d", len(config), blob.config_offset)
+    log.debug("runner:     %s", runner_path)
+    log.debug("blob file:  %s", blob_file)
+
+
+def _run_blob_dry(
+    blob: BlobData,
+    config: bytes,
+    runner_type: str,
+    runner_path: Path,
+    debug: bool,
+) -> RunResult:
+    """Build a dry-run command without creating temp files."""
+    blob_file = Path(_blob_filename(blob))
+    cmd = build_blob_command(blob, runner_path, blob_file, runner_type)
+    if debug:
+        _log_run_blob_start(blob, config, runner_path, blob_file)
+        log.debug("blob file:  %s (dry-run placeholder)", blob_file)
+        log.debug("command:    %s", " ".join(cmd))
+        log.debug("dry run — not executing")
+    return RunResult(
+        stdout=b"",
+        stderr=b"",
+        exit_code=0,
+        duration_s=0.0,
+        command=cmd,
+        blob_file=str(blob_file),
+    )
+
+
+def _execute_blob_command(
+    cmd: list[str],
+    blob_file: Path,
+    timeout: float,
+    debug: bool,
+    stdin_data: bytes,
+) -> RunResult:
+    """Execute a prepared blob command and return the captured result."""
+    start = time.monotonic()
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        input=stdin_data if stdin_data else None,
+        timeout=timeout,
+    )
+    duration = time.monotonic() - start
+    if debug:
+        log.debug("exit code:  %d", proc.returncode)
+        log.debug("duration:   %.3fs", duration)
+        log.debug("temp dir:   %s (preserved)", blob_file.parent)
+    return RunResult(
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        exit_code=proc.returncode,
+        duration_s=duration,
+        command=cmd,
+        blob_file=str(blob_file),
+    )
 
 
 def run_so(

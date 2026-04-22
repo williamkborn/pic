@@ -64,21 +64,55 @@ static int read_all(fn_ReadFile rf, void *hFile, void *buf, pic_u32 count)
 	return 1;
 }
 
+struct resolved_funcs {
+	fn_GetStdHandle pGetStdHandle;
+	fn_ReadFile pReadFile;
+	fn_VirtualAlloc pVirtualAlloc;
+	fn_ExitProcess pExitProcess;
+};
+
+PIC_TEXT
+static int resolve_funcs(struct resolved_funcs *f)
+{
+	f->pGetStdHandle = (fn_GetStdHandle)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_GET_STD_HANDLE);
+	f->pReadFile =
+		(fn_ReadFile)pic_resolve(HASH_KERNEL32_DLL, HASH_READ_FILE);
+	f->pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
+	f->pExitProcess = (fn_ExitProcess)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
+	return f->pGetStdHandle && f->pReadFile && f->pVirtualAlloc &&
+		f->pExitProcess;
+}
+
+PIC_TEXT
+static unsigned long stream_handle_id(pic_u32 stream_id)
+{
+	if (stream_id == 1)
+		return STD_OUTPUT_HANDLE;
+	if (stream_id == 2)
+		return STD_ERROR_HANDLE;
+	return STD_INPUT_HANDLE;
+}
+
+PIC_TEXT
+static pic_u32 read_payload_size(fn_ReadFile rf, void *hFile)
+{
+	pic_u8 size_buf[4];
+	if (!read_all(rf, hFile, size_buf, 4))
+		return 0;
+	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
+		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
+}
+
 PIC_ENTRY
 void _start(void)
 {
 	PIC_SELF_RELOCATE();
 
-	fn_GetStdHandle pGetStdHandle = (fn_GetStdHandle)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_GET_STD_HANDLE);
-	fn_ReadFile pReadFile =
-		(fn_ReadFile)pic_resolve(HASH_KERNEL32_DLL, HASH_READ_FILE);
-	fn_VirtualAlloc pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
-	fn_ExitProcess pExitProcess = (fn_ExitProcess)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
-
-	if (!pGetStdHandle || !pReadFile || !pVirtualAlloc || !pExitProcess)
+	struct resolved_funcs f;
+	if (!resolve_funcs(&f))
 		for (;;)
 			;
 
@@ -88,32 +122,23 @@ void _start(void)
 	pic_u32 stream_id = (pic_u32)cfg[0] | ((pic_u32)cfg[1] << 8) |
 		((pic_u32)cfg[2] << 16) | ((pic_u32)cfg[3] << 24);
 
-	unsigned long std_id = STD_INPUT_HANDLE;
-	if (stream_id == 1)
-		std_id = STD_OUTPUT_HANDLE;
-	else if (stream_id == 2)
-		std_id = STD_ERROR_HANDLE;
-	void *h = pGetStdHandle(std_id);
+	void *h = f.pGetStdHandle(stream_handle_id(stream_id));
 	if (h == (void *)-1 || h == PIC_NULL)
-		pExitProcess(1);
+		f.pExitProcess(1);
 
-	pic_u8 size_buf[4];
-	if (!read_all(pReadFile, h, size_buf, 4))
-		pExitProcess(1);
-	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
-		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
+	pic_u32 size = read_payload_size(f.pReadFile, h);
 	if (size == 0 || size > 0x10000000)
-		pExitProcess(1);
+		f.pExitProcess(1);
 
-	void *mem = pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
+	void *mem = f.pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!mem)
-		pExitProcess(1);
+		f.pExitProcess(1);
 
-	if (!read_all(pReadFile, h, mem, size))
-		pExitProcess(1);
+	if (!read_all(f.pReadFile, h, mem, size))
+		f.pExitProcess(1);
 
 	((void (*)(void))mem)();
 
-	pExitProcess(0);
+	f.pExitProcess(0);
 }

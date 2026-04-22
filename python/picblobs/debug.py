@@ -46,6 +46,43 @@ def _find_debug_so(blob_type: str, target_os: str, target_arch: str) -> str | No
     return None
 
 
+def _resolve_disasm_so_path(
+    blob_type: str,
+    target_os: str,
+    target_arch: str,
+    direct_so: str,
+) -> str | None:
+    """Return the .so path to inspect, preferring an explicit path."""
+    if direct_so:
+        return direct_so
+    return _find_debug_so(blob_type, target_os, target_arch)
+
+
+def _load_symbols(so_path: str, objdump: str) -> list[tuple[str, str, str]] | None:
+    """Return function symbols or None when the objdump step fails."""
+    from picblobs._objdump import list_symbols
+
+    try:
+        return list_symbols(so_path, objdump)
+    except RuntimeError as e:
+        log.error("%s", e)
+        return None
+
+
+def _print_symbols(so_path: str, symbols: list[tuple[str, str, str]]) -> int:
+    """Print a function symbol table."""
+    if not symbols:
+        log.info("No function symbols found in %s", so_path)
+        return 0
+
+    fmt = "  {:<16s} {:<10s} {}"
+    log.info("Functions in %s:", Path(so_path).name)
+    log.info(fmt.format("ADDRESS", "SIZE", "NAME"))
+    for addr, size, name in symbols:
+        log.info(fmt.format(addr, size, name))
+    return 0
+
+
 # ============================================================
 # disasm
 # ============================================================
@@ -62,19 +99,16 @@ def cmd_disasm(args: argparse.Namespace) -> int:
 
     target_os, target_arch = _parse_target(args.target)
 
-    if args.so:
-        so_path = args.so
-    else:
-        so_path = _find_debug_so(args.type, target_os, target_arch)
-        if not so_path:
-            log.error(
-                "Debug .so not found for %s %s:%s. "
-                "Build with: python tools/stage_blobs.py --debug",
-                args.type,
-                target_os,
-                target_arch,
-            )
-            return 1
+    so_path = _resolve_disasm_so_path(args.type, target_os, target_arch, args.so)
+    if not so_path:
+        log.error(
+            "Debug .so not found for %s %s:%s. "
+            "Build with: python tools/stage_blobs.py --debug",
+            args.type,
+            target_os,
+            target_arch,
+        )
+        return 1
 
     if not Path(so_path).exists():
         log.error("File not found: %s", so_path)
@@ -90,22 +124,10 @@ def cmd_disasm(args: argparse.Namespace) -> int:
 
     if not args.function:
         # List all function symbols.
-        try:
-            symbols = list_symbols(so_path, objdump)
-        except RuntimeError as e:
-            log.error("%s", e)
+        symbols = _load_symbols(so_path, objdump)
+        if symbols is None:
             return 1
-
-        if not symbols:
-            log.info("No function symbols found in %s", so_path)
-            return 0
-
-        fmt = "  {:<16s} {:<10s} {}"
-        log.info("Functions in %s:", Path(so_path).name)
-        log.info(fmt.format("ADDRESS", "SIZE", "NAME"))
-        for addr, size, name in symbols:
-            log.info(fmt.format(addr, size, name))
-        return 0
+        return _print_symbols(so_path, symbols)
 
     # Disassemble a specific function.
     if not has_debug:

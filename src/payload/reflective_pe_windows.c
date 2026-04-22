@@ -56,21 +56,70 @@ __asm__(".section .config,\"aw\"\n"
 PIC_RODATA
 static const char msg_loaded[] = "LOADED\n";
 
+struct resolved_funcs {
+	fn_GetStdHandle pGetStdHandle;
+	fn_WriteFile pWriteFile;
+	fn_VirtualAlloc pVirtualAlloc;
+	fn_ExitProcess pExitProcess;
+};
+
+PIC_TEXT
+static int resolve_funcs(struct resolved_funcs *f)
+{
+	f->pGetStdHandle = (fn_GetStdHandle)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_GET_STD_HANDLE);
+	f->pWriteFile =
+		(fn_WriteFile)pic_resolve(HASH_KERNEL32_DLL, HASH_WRITE_FILE);
+	f->pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
+	f->pExitProcess = (fn_ExitProcess)pic_resolve(
+		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
+	return f->pGetStdHandle && f->pWriteFile && f->pVirtualAlloc &&
+		f->pExitProcess;
+}
+
+PIC_TEXT
+static pic_u32 config_pe_size(const pic_u8 *cfg)
+{
+	return (pic_u32)cfg[0] | ((pic_u32)cfg[1] << 8) |
+		((pic_u32)cfg[2] << 16) | ((pic_u32)cfg[3] << 24);
+}
+
+PIC_TEXT
+static int write_loaded(void *hOut, fn_WriteFile pWriteFile)
+{
+	unsigned long written = 0;
+	return pWriteFile(
+		hOut, msg_loaded, sizeof(msg_loaded) - 1, &written, PIC_NULL);
+}
+
+PIC_TEXT
+static const pic_u8 *validate_pe(const pic_u8 *cfg, pic_u32 *pe_size)
+{
+	*pe_size = config_pe_size(cfg);
+	if (*pe_size < 2 || *pe_size > 0x10000000)
+		return PIC_NULL;
+	const pic_u8 *pe = cfg + 9;
+	if (pe[0] != 'M' || pe[1] != 'Z')
+		return PIC_NULL;
+	return pe;
+}
+
+PIC_TEXT
+static void copy_image(void *image, const pic_u8 *pe, pic_u32 pe_size)
+{
+	pic_u8 *dst = (pic_u8 *)image;
+	for (pic_u32 i = 0; i < pe_size; i++)
+		dst[i] = pe[i];
+}
+
 PIC_ENTRY
 void _start(void)
 {
 	PIC_SELF_RELOCATE();
 
-	fn_GetStdHandle pGetStdHandle = (fn_GetStdHandle)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_GET_STD_HANDLE);
-	fn_WriteFile pWriteFile =
-		(fn_WriteFile)pic_resolve(HASH_KERNEL32_DLL, HASH_WRITE_FILE);
-	fn_VirtualAlloc pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
-	fn_ExitProcess pExitProcess = (fn_ExitProcess)pic_resolve(
-		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
-
-	if (!pGetStdHandle || !pWriteFile || !pVirtualAlloc || !pExitProcess)
+	struct resolved_funcs f;
+	if (!resolve_funcs(&f))
 		for (;;)
 			;
 
@@ -78,15 +127,11 @@ void _start(void)
 		__attribute__((visibility("hidden")));
 	const pic_u8 *cfg = (const pic_u8 *)reflective_pe_config;
 
-	pic_u32 pe_size = (pic_u32)cfg[0] | ((pic_u32)cfg[1] << 8) |
-		((pic_u32)cfg[2] << 16) | ((pic_u32)cfg[3] << 24);
+	pic_u32 pe_size;
 	/* flags at +4 and entry_type at +8 are reserved for real loads. */
-	if (pe_size < 2 || pe_size > 0x10000000)
-		pExitProcess(1);
-
-	const pic_u8 *pe = cfg + 9;
-	if (pe[0] != 'M' || pe[1] != 'Z')
-		pExitProcess(1);
+	const pic_u8 *pe = validate_pe(cfg, &pe_size);
+	if (!pe)
+		f.pExitProcess(1);
 
 	/*
 	 * Allocate an RWX region and copy the PE headers in. A real
@@ -95,23 +140,17 @@ void _start(void)
 	 * we stop at header validation because the test harness supplies
 	 * a minimal MZ-prefixed blob rather than a full PE.
 	 */
-	void *image = pVirtualAlloc(PIC_NULL, (pic_uintptr)pe_size,
+	void *image = f.pVirtualAlloc(PIC_NULL, (pic_uintptr)pe_size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!image)
-		pExitProcess(1);
+		f.pExitProcess(1);
+	copy_image(image, pe, pe_size);
 
-	pic_u8 *dst = (pic_u8 *)image;
-	for (pic_u32 i = 0; i < pe_size; i++)
-		dst[i] = pe[i];
-
-	void *hOut = pGetStdHandle(STD_OUTPUT_HANDLE);
+	void *hOut = f.pGetStdHandle(STD_OUTPUT_HANDLE);
 	if (hOut == (void *)-1)
-		pExitProcess(1);
+		f.pExitProcess(1);
+	if (!write_loaded(hOut, f.pWriteFile))
+		f.pExitProcess(1);
 
-	unsigned long written = 0;
-	if (!pWriteFile(hOut, msg_loaded, sizeof(msg_loaded) - 1, &written,
-		    PIC_NULL))
-		pExitProcess(1);
-
-	pExitProcess(0);
+	f.pExitProcess(0);
 }

@@ -112,9 +112,9 @@ static inline void write16_be(pic_u8 *p, pic_u16 v)
 	p[1] = (pic_u8)v;
 }
 
-static void patch_syscalls(pic_u8 *code, pic_size_t size)
-{
 #if defined(__x86_64__)
+static void patch_syscalls_x86_64(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 6 < size; i++) {
 		if (code[i] == 0xb8 && code[i + 5] == 0x0f &&
 			code[i + 6] == 0x05) {
@@ -124,7 +124,10 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 				write32_le(code + i + 1, lnr);
 		}
 	}
+}
 #elif defined(__i386__)
+static void patch_syscalls_i386(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 6 < size; i++) {
 		if (code[i] == 0xb8 && code[i + 5] == 0xcd &&
 			code[i + 6] == 0x80) {
@@ -134,7 +137,10 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 				write32_le(code + i + 1, lnr);
 		}
 	}
+}
 #elif defined(__aarch64__)
+static void patch_syscalls_aarch64(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 7 < size; i += 4) {
 		pic_u32 insn = read32_le(code + i);
 		pic_u32 next = read32_le(code + i + 4);
@@ -147,7 +153,10 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 			}
 		}
 	}
+}
 #elif defined(__arm__)
+static void patch_syscalls_arm(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 3 < size; i += 2) {
 		pic_u16 insn = (pic_u16)code[i] | ((pic_u16)code[i + 1] << 8);
 		pic_u16 next =
@@ -159,7 +168,10 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 				code[i] = (pic_u8)lnr;
 		}
 	}
+}
 #elif defined(__s390x__)
+static void patch_syscalls_s390x(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 5 < size; i += 2) {
 		if (code[i] == 0xa7 && code[i + 1] == 0x19 &&
 			code[i + 4] == 0x0a && code[i + 5] == 0x00) {
@@ -169,8 +181,11 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 				write16_be(code + i + 2, (pic_u16)lnr);
 		}
 	}
+}
 #elif defined(__mips__)
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+static void patch_syscalls_mips_be(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 7 < size; i += 4) {
 		pic_u32 insn = read32_be(code + i);
 		pic_u32 next = read32_be(code + i + 4);
@@ -182,7 +197,10 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 					(insn & 0xFFFF0000) | (lnr & 0xFFFF));
 		}
 	}
+}
 #else
+static void patch_syscalls_mips_le(pic_u8 *code, pic_size_t size)
+{
 	for (pic_size_t i = 0; i + 7 < size; i += 4) {
 		pic_u32 insn = read32_le(code + i);
 		pic_u32 next = read32_le(code + i + 4);
@@ -194,9 +212,32 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 					(insn & 0xFFFF0000) | (lnr & 0xFFFF));
 		}
 	}
+}
 #endif
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+	patch_syscalls_mips_be(code, size);
+#else
+	patch_syscalls_mips_le(code, size);
 #endif
 }
+#else
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+#if defined(__x86_64__)
+	patch_syscalls_x86_64(code, size);
+#elif defined(__i386__)
+	patch_syscalls_i386(code, size);
+#elif defined(__aarch64__)
+	patch_syscalls_aarch64(code, size);
+#elif defined(__arm__)
+	patch_syscalls_arm(code, size);
+#elif defined(__s390x__)
+	patch_syscalls_s390x(code, size);
+#endif
+}
+#endif
 
 static long file_size(int fd)
 {
@@ -241,6 +282,17 @@ static long read_all(int fd, void *buf, pic_size_t count)
  * Parse an unsigned hex/decimal literal from a NUL-terminated string.
  * Accepts "0x"/"0X" prefix for hex. Returns 0 on empty/invalid input.
  */
+static int parse_digit(char c, int base)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	if (base == 16 && c >= 'a' && c <= 'f')
+		return c - 'a' + 10;
+	if (base == 16 && c >= 'A' && c <= 'F')
+		return c - 'A' + 10;
+	return -1;
+}
+
 static pic_size_t parse_size(const char *s)
 {
 	if (!s || !*s)
@@ -252,14 +304,8 @@ static pic_size_t parse_size(const char *s)
 		s += 2;
 	}
 	for (; *s; s++) {
-		int d;
-		if (*s >= '0' && *s <= '9')
-			d = *s - '0';
-		else if (base == 16 && *s >= 'a' && *s <= 'f')
-			d = *s - 'a' + 10;
-		else if (base == 16 && *s >= 'A' && *s <= 'F')
-			d = *s - 'A' + 10;
-		else
+		int d = parse_digit(*s, base);
+		if (d < 0)
 			return 0;
 		v = v * (pic_size_t)base + (pic_size_t)d;
 	}

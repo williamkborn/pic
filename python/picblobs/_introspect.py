@@ -138,6 +138,97 @@ def _load_sidecar_config(os_name: str, arch_name: str, blob_type: str) -> dict |
     return config if isinstance(config, dict) else None
 
 
+def _registry_blob_entry(registry: dict, blob_name: str):
+    """Return the registry BlobType entry, resolving staged-name aliases."""
+    bt = registry.get(blob_name)
+    if bt is not None:
+        return bt
+    for entry in registry.values():
+        if entry.staged_name == blob_name:
+            return entry
+    return None
+
+
+def _config_layout_from_config_dict(blob_e: BlobType, config: dict) -> ConfigLayout:
+    """Build a ConfigLayout from shipped sidecar metadata."""
+    fields = [
+        ConfigField(
+            name=field["name"],
+            type=field["type"],
+            offset=field["offset"],
+            size=_type_size(field["type"]),
+            variable=False,
+        )
+        for field in config.get("fields", [])
+    ]
+    for trailing in config.get("trailing_data", []):
+        fields.append(
+            ConfigField(
+                name=trailing["name"],
+                type="u8[]",
+                offset=config.get("fixed_size", 0),
+                size=0,
+                variable=True,
+            )
+        )
+    if not fields:
+        raise ValidationError(f"{blob_e.value} has no config struct")
+    return ConfigLayout(
+        blob_type=blob_e,
+        fields=tuple(fields),
+        total_fixed_size=config.get("fixed_size", 0),
+    )
+
+
+def _config_layout_from_sidecar(
+    blob_e: BlobType,
+    os_name: str,
+    arch_name: str,
+) -> ConfigLayout:
+    """Build a ConfigLayout from shipped sidecar JSON."""
+    config = _load_sidecar_config(os_name, arch_name, blob_e.value)
+    if config is None:
+        raise ValidationError(
+            "Config layout metadata is unavailable for "
+            f"{blob_e.value}/{os_name}/{arch_name}"
+        )
+    return _config_layout_from_config_dict(blob_e, config)
+
+
+def _config_layout_from_registry(blob_e: BlobType, registry: dict) -> ConfigLayout:
+    """Build a ConfigLayout from the source registry."""
+    bt = _registry_blob_entry(registry, blob_e.value)
+    if bt is None or bt.config_schema is None:
+        raise ValidationError(f"{blob_e.value} has no config struct")
+
+    fields = [
+        ConfigField(
+            name=f.name,
+            type=f.type,
+            offset=f.offset,
+            size=_type_size(f.type),
+            variable=False,
+        )
+        for f in bt.config_schema.fields
+    ]
+    for trailing in bt.config_schema.trailing_data:
+        fields.append(
+            ConfigField(
+                name=trailing.name,
+                type="u8[]",
+                offset=bt.config_schema.fixed_size,
+                size=0,
+                variable=True,
+            )
+        )
+
+    return ConfigLayout(
+        blob_type=blob_e,
+        fields=tuple(fields),
+        total_fixed_size=bt.config_schema.fixed_size,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Support matrix (REQ-016 §1) — source of truth is list_blobs().
 # ---------------------------------------------------------------------------
@@ -244,78 +335,8 @@ def config_layout(os, arch, blob_type) -> ConfigLayout:
 
     registry = _registry_blob_types()
     if registry is None:
-        config = _load_sidecar_config(os_e.value, arch_e.value, blob_e.value)
-        if config is None:
-            raise ValidationError(
-                "Config layout metadata is unavailable for "
-                f"{blob_e.value}/{os_e.value}/{arch_e.value}"
-            )
-        fields: list[ConfigField] = []
-        for field in config.get("fields", []):
-            fields.append(
-                ConfigField(
-                    name=field["name"],
-                    type=field["type"],
-                    offset=field["offset"],
-                    size=_type_size(field["type"]),
-                    variable=False,
-                )
-            )
-        for trailing in config.get("trailing_data", []):
-            fields.append(
-                ConfigField(
-                    name=trailing["name"],
-                    type="u8[]",
-                    offset=config.get("fixed_size", 0),
-                    size=0,
-                    variable=True,
-                )
-            )
-        if not fields:
-            raise ValidationError(f"{blob_e.value} has no config struct")
-        return ConfigLayout(
-            blob_type=blob_e,
-            fields=tuple(fields),
-            total_fixed_size=config.get("fixed_size", 0),
-        )
-
-    # Lookup handles the staged_name indirection (e.g. alloc_jump -> alloc_jump_windows).
-    bt = registry.get(blob_e.value)
-    if bt is None:
-        for entry in registry.values():
-            if entry.staged_name == blob_e.value:
-                bt = entry
-                break
-    if bt is None or bt.config_schema is None:
-        raise ValidationError(f"{blob_e.value} has no config struct")
-
-    fields: list[ConfigField] = []
-    for f in bt.config_schema.fields:
-        fields.append(
-            ConfigField(
-                name=f.name,
-                type=f.type,
-                offset=f.offset,
-                size=_type_size(f.type),
-                variable=False,
-            )
-        )
-    for t in bt.config_schema.trailing_data:
-        fields.append(
-            ConfigField(
-                name=t.name,
-                type="u8[]",
-                offset=bt.config_schema.fixed_size,
-                size=0,
-                variable=True,
-            )
-        )
-
-    return ConfigLayout(
-        blob_type=blob_e,
-        fields=tuple(fields),
-        total_fixed_size=bt.config_schema.fixed_size,
-    )
+        return _config_layout_from_sidecar(blob_e, os_e.value, arch_e.value)
+    return _config_layout_from_registry(blob_e, registry)
 
 
 # ---------------------------------------------------------------------------

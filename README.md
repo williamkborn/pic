@@ -121,7 +121,7 @@ mdbook build docs/
 - [Code Generation](docs/src/code-generation.md) -- registry and generated files
 - [Adding an Architecture](docs/src/adding-architecture.md) -- step-by-step guide
 - [Adding a Syscall](docs/src/adding-syscall.md) -- step-by-step guide
-- [Formatting and Linting](docs/src/formatting.md) -- clang-format, ruff
+- [Formatting and Linting](docs/src/formatting.md) -- clang-format, ruff, lizard
 
 ### Reference
 

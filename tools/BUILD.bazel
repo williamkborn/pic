@@ -17,3 +17,10 @@ sh_test(
     local = True,
     tags = ["lint"],
 )
+
+sh_test(
+    name = "lint_check",
+    srcs = ["lint_check.sh"],
+    local = True,
+    tags = ["lint"],
+)

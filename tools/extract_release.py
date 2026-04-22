@@ -63,68 +63,8 @@ def _extract_so(so_path: Path) -> dict:
     """
     with open(so_path, "rb") as f:
         elf = ELFFile(f)
-
-        symtab = elf.get_section_by_name(".symtab")
-        if symtab is None:
-            raise ValueError(f"No .symtab in {so_path}")
-
-        # Find required symbols.
-        needed = {"__blob_start", "__blob_end", "__config_start"}
-        syms: dict[str, int] = {}
-        for sym in symtab.iter_symbols():
-            if sym.name in needed:
-                syms[sym.name] = sym.entry.st_value
-                if len(syms) == len(needed):
-                    break
-        missing = needed - syms.keys()
-        if missing:
-            raise ValueError(
-                f"Missing symbols in {so_path}: {', '.join(sorted(missing))}"
-            )
-
-        blob_start = syms["__blob_start"]
-        blob_end = syms["__blob_end"]
-        config_start = syms["__config_start"]
-
-        size = blob_end - blob_start
-        buf = bytearray(size)
-        sections: dict[str, dict] = {}
-
-        for section in elf.iter_sections():
-            sh_flags = section.header.sh_flags
-            sh_addr = section.header.sh_addr
-            sh_size = section.header.sh_size
-            sh_type = section.header.sh_type
-            name = section.name
-
-            if not (sh_flags & _SHF_ALLOC):
-                continue
-            if sh_size == 0:
-                continue
-
-            sec_start = sh_addr
-            sec_end = sh_addr + sh_size
-            overlap_start = max(sec_start, blob_start)
-            overlap_end = min(sec_end, blob_end)
-
-            if overlap_start >= overlap_end:
-                continue
-
-            if name and sec_start >= blob_start and sec_start < blob_end:
-                sections[name] = {
-                    "offset": sec_start - blob_start,
-                    "size": sh_size,
-                    "perm": _section_perm(sh_flags),
-                }
-
-            buf_offset = overlap_start - blob_start
-            if sh_type != "SHT_NOBITS":
-                data = section.data()
-                data_offset = overlap_start - sec_start
-                length = overlap_end - overlap_start
-                buf[buf_offset : buf_offset + length] = data[
-                    data_offset : data_offset + length
-                ]
+        blob_start, blob_end, config_start = _extract_blob_bounds(elf, so_path)
+        buf, sections = _extract_alloc_sections(elf, blob_start, blob_end)
 
     code = bytes(buf)
     return {
@@ -135,6 +75,90 @@ def _extract_so(so_path: Path) -> dict:
         "sha256": hashlib.sha256(code).hexdigest(),
         "sections": sections,
     }
+
+
+def _extract_blob_bounds(elf: ELFFile, so_path: Path) -> tuple[int, int, int]:
+    """Return (__blob_start, __blob_end, __config_start) symbol values."""
+    symtab = elf.get_section_by_name(".symtab")
+    if symtab is None:
+        raise ValueError(f"No .symtab in {so_path}")
+
+    needed = {"__blob_start", "__blob_end", "__config_start"}
+    syms: dict[str, int] = {}
+    for sym in symtab.iter_symbols():
+        if sym.name in needed:
+            syms[sym.name] = sym.entry.st_value
+            if len(syms) == len(needed):
+                break
+    missing = needed - syms.keys()
+    if missing:
+        raise ValueError(f"Missing symbols in {so_path}: {', '.join(sorted(missing))}")
+    return syms["__blob_start"], syms["__blob_end"], syms["__config_start"]
+
+
+def _extract_alloc_sections(
+    elf: ELFFile,
+    blob_start: int,
+    blob_end: int,
+) -> tuple[bytearray, dict[str, dict]]:
+    """Copy allocatable ELF sections into a flat blob buffer."""
+    size = blob_end - blob_start
+    buf = bytearray(size)
+    sections: dict[str, dict] = {}
+    for section in elf.iter_sections():
+        section_info = _section_overlap(section, blob_start, blob_end)
+        if section_info is None:
+            continue
+        overlap_start, overlap_end = section_info
+        if (
+            section.name
+            and section.header.sh_addr >= blob_start
+            and section.header.sh_addr < blob_end
+        ):
+            sections[section.name] = {
+                "offset": section.header.sh_addr - blob_start,
+                "size": section.header.sh_size,
+                "perm": _section_perm(section.header.sh_flags),
+            }
+        _copy_section_bytes(buf, section, blob_start, overlap_start, overlap_end)
+    return buf, sections
+
+
+def _section_overlap(
+    section,
+    blob_start: int,
+    blob_end: int,
+) -> tuple[int, int] | None:
+    """Return overlap range between one alloc section and the blob window."""
+    sh_flags = section.header.sh_flags
+    sh_size = section.header.sh_size
+    if not (sh_flags & _SHF_ALLOC) or sh_size == 0:
+        return None
+    sec_start = section.header.sh_addr
+    sec_end = sec_start + sh_size
+    overlap_start = max(sec_start, blob_start)
+    overlap_end = min(sec_end, blob_end)
+    if overlap_start >= overlap_end:
+        return None
+    return overlap_start, overlap_end
+
+
+def _copy_section_bytes(
+    buf: bytearray,
+    section,
+    blob_start: int,
+    overlap_start: int,
+    overlap_end: int,
+) -> None:
+    """Copy one section's overlapping bytes into the flat buffer."""
+    if section.header.sh_type == "SHT_NOBITS":
+        return
+    data = section.data()
+    sec_start = section.header.sh_addr
+    data_offset = overlap_start - sec_start
+    buf_offset = overlap_start - blob_start
+    length = overlap_end - overlap_start
+    buf[buf_offset : buf_offset + length] = data[data_offset : data_offset + length]
 
 
 # ============================================================
@@ -200,25 +224,55 @@ def _build_manifest(
         version: picblobs version string.
         extracted_blobs: list of (blob_type, os, arch) that were extracted.
     """
-    # Build catalog from registry, filtered to what was actually extracted.
     extracted_set = set(extracted_blobs)
-    catalog: dict[str, dict] = {}
+    catalog = _manifest_catalog_from_registry(extracted_set)
+    _merge_unregistered_blobs(catalog, extracted_set)
 
+    return {
+        "schema_version": 1,
+        "picblobs_version": version,
+        "architectures": manifest_architectures(),
+        "catalog": catalog,
+    }
+
+
+def _manifest_catalog_from_registry(
+    extracted_set: set[tuple[str, str, str]],
+) -> dict[str, dict]:
+    """Build manifest catalog entries for registry-known blobs."""
+    catalog: dict[str, dict] = {}
     for bt_name, bt in BLOB_TYPES.items():
-        # Check which platforms actually had .so files extracted.
-        platforms: dict[str, list[str]] = {}
-        for os_name, arches in bt.platforms.items():
-            present = [a for a in arches if (bt_name, os_name, a) in extracted_set]
-            if present:
-                platforms[os_name] = present
+        platforms = _manifest_platforms(bt_name, bt.platforms, extracted_set)
         if platforms:
             catalog[bt_name] = {
                 "description": bt.description,
                 "has_config": bt.has_config,
                 "platforms": platforms,
             }
+    return catalog
 
-    # Also include any extracted blobs not in the registry (future-proofing).
+
+def _manifest_platforms(
+    blob_name: str,
+    platforms: dict[str, list[str]],
+    extracted_set: set[tuple[str, str, str]],
+) -> dict[str, list[str]]:
+    """Return extracted platforms for one registry blob."""
+    present_platforms: dict[str, list[str]] = {}
+    for os_name, arches in platforms.items():
+        present = [
+            arch for arch in arches if (blob_name, os_name, arch) in extracted_set
+        ]
+        if present:
+            present_platforms[os_name] = present
+    return present_platforms
+
+
+def _merge_unregistered_blobs(
+    catalog: dict[str, dict],
+    extracted_set: set[tuple[str, str, str]],
+) -> None:
+    """Add extracted blobs missing from the canonical registry."""
     for bt_name, os_name, arch in sorted(extracted_set):
         if bt_name not in catalog:
             catalog[bt_name] = {
@@ -231,13 +285,6 @@ def _build_manifest(
             platforms[os_name] = []
         if arch not in platforms[os_name]:
             platforms[os_name].append(arch)
-
-    return {
-        "schema_version": 1,
-        "picblobs_version": version,
-        "architectures": manifest_architectures(),
-        "catalog": catalog,
-    }
 
 
 def _get_version() -> str:

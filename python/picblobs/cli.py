@@ -146,21 +146,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     from picblobs._extractor import extract
     from picblobs.runner import run_blob
 
-    config = b""
-    if args.config_hex:
-        config = bytes.fromhex(args.config_hex)
-    elif args.payload:
-        config = Path(args.payload).read_bytes()
-
+    config = _load_run_config(args)
     runner_path = Path(args.runner_path) if args.runner_path else None
     target_os, target_arch = _parse_target(args.target)
 
     try:
-        if args.so:
-            blob = extract(args.so)
-        else:
-            blob = get_blob(args.type, target_os, target_arch)
-
+        blob = _load_run_blob(args, target_os, target_arch, get_blob, extract)
         result = run_blob(
             blob,
             config=config,
@@ -174,19 +165,228 @@ def cmd_run(args: argparse.Namespace) -> int:
         log.error("%s", e)
         return 1
 
+    return _emit_run_result(args, result)
+
+
+def _load_run_config(args: argparse.Namespace) -> bytes:
+    """Return run config bytes from the selected CLI input mode."""
+    if args.config_hex:
+        return bytes.fromhex(args.config_hex)
+    if args.payload:
+        return Path(args.payload).read_bytes()
+    return b""
+
+
+def _load_run_blob(
+    args: argparse.Namespace,
+    target_os: str,
+    target_arch: str,
+    get_blob,
+    extract,
+):
+    """Load the blob for cmd_run from the package or direct .so input."""
+    if args.so:
+        return extract(args.so)
+    return get_blob(args.type, target_os, target_arch)
+
+
+def _emit_run_result(args: argparse.Namespace, result) -> int:
+    """Emit run output and return the final exit code."""
     if args.dry_run:
         log.info(" ".join(result.command))
         return 0
-
     if result.stdout:
         sys.stdout.buffer.write(result.stdout)
     if result.stderr:
         sys.stderr.buffer.write(result.stderr)
-
     if args.debug:
         log.debug("exit_code=%d duration=%.3fs", result.exit_code, result.duration_s)
-
     return result.exit_code
+
+
+class _VerifySummary:
+    """Mutable counters and logging helpers for verify output."""
+
+    def __init__(self) -> None:
+        self.passed = 0
+        self.failed = 0
+        self.skipped = 0
+        self.errors: list[str] = []
+
+    def ok(self, label: str, detail: str) -> None:
+        log.info("  %-20s  OK   %s", label, detail)
+        self.passed += 1
+
+    def fail(self, blob_type: str, label: str, detail: str) -> None:
+        log.error("  %-20s  %s", label, detail)
+        self.failed += 1
+        self.errors.append(f"{blob_type}/{label}")
+
+    def skip(self, os_name: str, arch: str, reason: str) -> None:
+        label = f"{os_name}:{arch}"
+        log.info("  %-20s  SKIP (%s)", label, reason)
+        self.skipped += 1
+
+    def log(self) -> None:
+        total = self.passed + self.failed + self.skipped
+        log.info("")
+        parts = [f"{self.passed}/{total} passed"]
+        if self.skipped:
+            parts.append(f"{self.skipped} skipped")
+        if self.errors:
+            parts.append(f"failed: {', '.join(self.errors)}")
+        log.info("  ".join(parts))
+
+
+def _filter_verify_blobs(
+    available: list[tuple[str, str, str]],
+    args: argparse.Namespace,
+) -> list[tuple[str, str, str]]:
+    """Apply CLI blob/os/arch filters to the staged blob list."""
+    filters = (
+        (set(args.type) if args.type else None, 0),
+        (set(args.os) if args.os else None, 1),
+        (set(args.arch) if args.arch else None, 2),
+    )
+    for allowed, index in filters:
+        if allowed:
+            available = [entry for entry in available if entry[index] in allowed]
+    return available
+
+
+def _log_no_verify_matches(all_blobs: list[tuple[str, str, str]]) -> None:
+    """Log a helpful verify-empty result."""
+    log.error("No blobs found. Nothing to verify.")
+    log.error("Available blobs:")
+    for bt, os_name, arch in all_blobs:
+        log.error("  %s %s:%s", bt, os_name, arch)
+
+
+def _group_verify_blobs(
+    available: list[tuple[str, str, str]],
+) -> dict[tuple[str, str], list[str]]:
+    """Group blobs by (os, blob_type) for readable verify output."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    for bt, os_name, arch in available:
+        groups.setdefault((os_name, bt), []).append(arch)
+    return groups
+
+
+def _nacl_verify_arches(
+    groups: dict[tuple[str, str], list[str]],
+) -> dict[str, list[str]]:
+    """Return arches where both nacl_client and nacl_server are staged."""
+    nacl_e2e_arches: dict[str, list[str]] = {}
+    for (os_name, blob_type), arches in sorted(groups.items()):
+        if blob_type != "nacl_client":
+            continue
+        server_arches = groups.get((os_name, "nacl_server"), [])
+        common = sorted(set(arches) & set(server_arches))
+        if common:
+            nacl_e2e_arches[os_name] = common
+    return nacl_e2e_arches
+
+
+def _skip_standalone_verify_blob(blob_type: str) -> bool:
+    """Return True for blobs that are not standalone verify targets."""
+    return blob_type in {
+        "nacl_client",
+        "nacl_server",
+        "nacl_client_hosted",
+        "nacl_server_hosted",
+    }
+
+
+def _verify_single_result(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    result,
+    summary: _VerifySummary,
+) -> None:
+    """Record and log a single verify result."""
+    label = f"{os_name}:{arch}"
+    stdout = result.stdout.decode(errors="replace").strip()
+    if result.exit_code == 0:
+        summary.ok(label, repr(stdout))
+        return
+    summary.fail(blob_type, label, f"FAIL exit={result.exit_code:<4d} {stdout!r}")
+
+
+def _run_single_verify(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    timeout: float,
+    summary: _VerifySummary,
+    run_blob,
+) -> None:
+    """Run and record one standalone verify entry."""
+    try:
+        result = _VERIFY_RUNNERS.get(blob_type)
+        if result is None:
+            from picblobs import get_blob
+
+            blob = get_blob(blob_type, os_name, arch)
+            run_result = run_blob(
+                blob,
+                runner_type=os_name,
+                timeout=timeout,
+            )
+        else:
+            run_result = result(os_name, arch, timeout)
+        _verify_single_result(blob_type, os_name, arch, run_result, summary)
+    except _VerifySkip as e:
+        summary.skip(os_name, arch, str(e))
+    except Exception as e:
+        summary.fail(blob_type, f"{os_name}:{arch}", f"ERROR: {e}")
+
+
+def _run_verify_group(
+    os_name: str,
+    blob_type: str,
+    arches: list[str],
+    timeout: float,
+    summary: _VerifySummary,
+    is_arch_skip_rosetta,
+    run_blob,
+) -> None:
+    """Run one grouped standalone verify section."""
+    log.info("[%s] %s", os_name, blob_type)
+    for arch in sorted(arches):
+        if is_arch_skip_rosetta(arch):
+            summary.skip(os_name, arch, "Rosetta")
+            continue
+        _run_single_verify(blob_type, os_name, arch, timeout, summary, run_blob)
+
+
+def _run_nacl_verify_group(
+    os_name: str,
+    arches: list[str],
+    timeout: float,
+    slow: bool,
+    summary: _VerifySummary,
+    is_arch_skip_rosetta,
+) -> None:
+    """Run one grouped NaCl pair verify section."""
+    log.info("[%s] nacl e2e (server + client encrypted handshake)", os_name)
+    for arch in arches:
+        if is_arch_skip_rosetta(arch):
+            summary.skip(os_name, arch, "Rosetta")
+            continue
+        nacl_timeout = max(timeout, 600.0) if slow else timeout
+        try:
+            detail = _verify_nacl_e2e(
+                os_name,
+                arch,
+                nacl_timeout,
+                force_slow=slow,
+            )
+            summary.ok(f"{os_name}:{arch}", detail)
+        except _VerifySkip as e:
+            summary.skip(os_name, arch, str(e))
+        except Exception as e:
+            summary.fail("nacl_e2e", f"{os_name}:{arch}", f"FAIL {e}")
 
 
 # ============================================================
@@ -204,171 +404,45 @@ def cmd_verify(args: argparse.Namespace) -> int:
     per architecture using the Bootlin cross-toolchains, packs it into
     the config, and verifies it executes correctly.
     """
-    from picblobs import get_blob, list_blobs
+    from picblobs import list_blobs
     from picblobs.runner import is_arch_skip_rosetta, run_blob
 
-    filter_types = set(args.type) if args.type else None
-    filter_oses = set(args.os) if args.os else None
-    filter_arches = set(args.arch) if args.arch else None
-
-    # Discover everything staged in the package.
-    available = list_blobs()
-    if filter_types:
-        available = [(bt, o, a) for bt, o, a in available if bt in filter_types]
-    if filter_oses:
-        available = [(bt, o, a) for bt, o, a in available if o in filter_oses]
-    if filter_arches:
-        available = [(bt, o, a) for bt, o, a in available if a in filter_arches]
+    all_blobs = list_blobs()
+    available = _filter_verify_blobs(all_blobs, args)
 
     if not available:
-        log.error("No blobs found. Nothing to verify.")
-        log.error("Available blobs:")
-        for bt, o, a in list_blobs():
-            log.error("  %s %s:%s", bt, o, a)
+        _log_no_verify_matches(all_blobs)
         return 1
 
-    # Group by (os, blob_type) for readable output.
-    groups: dict[tuple[str, str], list[str]] = {}
-    for bt, os_name, arch in available:
-        groups.setdefault((os_name, bt), []).append(arch)
-
-    passed = 0
-    failed = 0
-    skipped = 0
-    errors = []
-
-    # Blobs that need paired execution or a hosted platform — not standalone.
-    _PAIRED_BLOBS = {"nacl_client", "nacl_server"}
-    _SKIP_BLOBS = {"nacl_client_hosted", "nacl_server_hosted"}
-
-    # Collect arches where both nacl_client and nacl_server are staged.
-    nacl_e2e_arches: dict[str, list[str]] = {}  # os -> [arches]
-    for (os_name, blob_type), arches in sorted(groups.items()):
-        if blob_type == "nacl_client":
-            server_arches = groups.get((os_name, "nacl_server"), [])
-            common = sorted(set(arches) & set(server_arches))
-            if common:
-                nacl_e2e_arches[os_name] = common
+    groups = _group_verify_blobs(available)
+    nacl_e2e_arches = _nacl_verify_arches(groups)
+    summary = _VerifySummary()
 
     for (os_name, blob_type), arches in sorted(groups.items()):
-        if blob_type in _PAIRED_BLOBS or blob_type in _SKIP_BLOBS:
+        if _skip_standalone_verify_blob(blob_type):
             continue
-        log.info("[%s] %s", os_name, blob_type)
-        for arch in sorted(arches):
-            label = f"{os_name}:{arch}"
-            if is_arch_skip_rosetta(arch):
-                log.info("  %-20s  SKIP (Rosetta)", label)
-                skipped += 1
-                continue
+        _run_verify_group(
+            os_name,
+            blob_type,
+            arches,
+            args.timeout,
+            summary,
+            is_arch_skip_rosetta,
+            run_blob,
+        )
 
-            try:
-                if blob_type == "ul_exec":
-                    result = _verify_ul_exec(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                elif blob_type == "stager_tcp":
-                    result = _verify_stager_tcp(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                elif blob_type == "stager_fd":
-                    result = _verify_stager_fd(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                elif blob_type == "stager_pipe":
-                    result = _verify_stager_pipe(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                elif blob_type == "stager_mmap":
-                    result = _verify_stager_mmap(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                elif blob_type == "alloc_jump":
-                    result = _verify_alloc_jump(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                elif blob_type == "reflective_pe":
-                    result = _verify_reflective_pe(
-                        os_name,
-                        arch,
-                        args.timeout,
-                    )
-                else:
-                    blob = get_blob(blob_type, os_name, arch)
-                    result = run_blob(
-                        blob,
-                        runner_type=os_name,
-                        timeout=args.timeout,
-                    )
-
-                stdout = result.stdout.decode(errors="replace").strip()
-                if result.exit_code == 0:
-                    log.info("  %-20s  OK   %r", label, stdout)
-                    passed += 1
-                else:
-                    log.error(
-                        "  %-20s  FAIL exit=%-4d %r",
-                        label,
-                        result.exit_code,
-                        stdout,
-                    )
-                    failed += 1
-                    errors.append(f"{blob_type}/{label}")
-            except _VerifySkip as e:
-                log.info("  %-20s  SKIP (%s)", label, e)
-                skipped += 1
-            except Exception as e:
-                log.error("  %-20s  ERROR: %s", label, e)
-                failed += 1
-                errors.append(f"{blob_type}/{label}")
-
-    # NaCl e2e: run nacl_server + nacl_client as a pair.
     for os_name, arches in sorted(nacl_e2e_arches.items()):
-        log.info("[%s] nacl e2e (server + client encrypted handshake)", os_name)
-        for arch in arches:
-            label = f"{os_name}:{arch}"
-            if is_arch_skip_rosetta(arch):
-                log.info("  %-20s  SKIP (Rosetta)", label)
-                skipped += 1
-                continue
-            nacl_timeout = max(args.timeout, 600.0) if args.slow else args.timeout
-            try:
-                detail = _verify_nacl_e2e(
-                    os_name,
-                    arch,
-                    nacl_timeout,
-                    force_slow=args.slow,
-                )
-                log.info("  %-20s  OK   %s", label, detail)
-                passed += 1
-            except _VerifySkip as e:
-                log.info("  %-20s  SKIP (%s)", label, e)
-                skipped += 1
-            except Exception as e:
-                log.error("  %-20s  FAIL %s", label, e)
-                failed += 1
-                errors.append(f"nacl_e2e/{label}")
+        _run_nacl_verify_group(
+            os_name,
+            arches,
+            args.timeout,
+            args.slow,
+            summary,
+            is_arch_skip_rosetta,
+        )
 
-    total = passed + failed + skipped
-    log.info("")
-    parts = [f"{passed}/{total} passed"]
-    if skipped:
-        parts.append(f"{skipped} skipped")
-    if errors:
-        parts.append(f"failed: {', '.join(errors)}")
-    log.info("  ".join(parts))
-    return 1 if failed else 0
+    summary.log()
+    return 1 if summary.failed else 0
 
 
 class _VerifySkip(Exception):
@@ -624,6 +698,17 @@ def _verify_alloc_jump(
     return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
 
 
+_VERIFY_RUNNERS = {
+    "alloc_jump": _verify_alloc_jump,
+    "reflective_pe": _verify_reflective_pe,
+    "stager_fd": _verify_stager_fd,
+    "stager_mmap": _verify_stager_mmap,
+    "stager_pipe": _verify_stager_pipe,
+    "stager_tcp": _verify_stager_tcp,
+    "ul_exec": _verify_ul_exec,
+}
+
+
 # Architectures where QEMU-emulated TweetNaCl e2e may be slow.
 _NACL_E2E_SLOW_ARCHES: frozenset[str] = frozenset()
 
@@ -654,17 +739,7 @@ def _verify_nacl_e2e(
         run_blob_pair,
     )
 
-    if arch in _NACL_E2E_SLOW_ARCHES and not force_slow:
-        is_32 = arch in ("mipsel32", "mipsbe32")
-        reason = (
-            f"TweetNaCl XSalsa20-Poly1305 uses 64-bit arithmetic — "
-            f"{'each 64-bit op becomes multiple 32-bit instructions on ' + arch if is_32 else arch + ' emulation is slow'}, "
-            f"all emulated through QEMU; expect 5-10+ minutes"
-        )
-        raise _VerifySkip(
-            f"QEMU {arch} too slow for crypto handshake — {reason}; "
-            f"use --slow to force (timeout=600s)"
-        )
+    _check_nacl_e2e_speed(arch, force_slow)
 
     runner_path = find_runner(os_name, arch)
     server_blob = get_blob("nacl_server", os_name, arch)
@@ -680,44 +755,62 @@ def _verify_nacl_e2e(
         client_config=config,
         timeout=timeout,
     )
-    server_stdout = result.server_stdout
-    server_stderr = result.server_stderr
-    server_exit = result.server_exit
-    client_stdout = result.client_stdout
-    client_stderr = result.client_stderr
-    client_exit = result.client_exit
+    _validate_nacl_pair_result(result)
+    return _summarize_nacl_pair_result(result)
 
-    # Validate both exited cleanly.
-    if server_exit != 0:
-        raise RuntimeError(f"server exit={server_exit} stderr={server_stderr!r}")
-    if client_exit != 0:
-        raise RuntimeError(f"client exit={client_exit} stderr={client_stderr!r}")
 
-    # Validate protocol completed.
+def _check_nacl_e2e_speed(arch: str, force_slow: bool) -> None:
+    """Raise when the NaCl pair is too slow to run by default."""
+    if arch not in _NACL_E2E_SLOW_ARCHES or force_slow:
+        return
+    is_32 = arch in ("mipsel32", "mipsbe32")
+    reason = (
+        f"TweetNaCl XSalsa20-Poly1305 uses 64-bit arithmetic — "
+        f"{'each 64-bit op becomes multiple 32-bit instructions on ' + arch if is_32 else arch + ' emulation is slow'}, "
+        f"all emulated through QEMU; expect 5-10+ minutes"
+    )
+    raise _VerifySkip(
+        f"QEMU {arch} too slow for crypto handshake — {reason}; "
+        f"use --slow to force (timeout=600s)"
+    )
+
+
+def _validate_nacl_pair_result(result) -> None:
+    """Validate the paired nacl_client/nacl_server run."""
+    if result.server_exit != 0:
+        raise RuntimeError(
+            f"server exit={result.server_exit} stderr={result.server_stderr!r}"
+        )
+    if result.client_exit != 0:
+        raise RuntimeError(
+            f"client exit={result.client_exit} stderr={result.client_stderr!r}"
+        )
+
     expected_msg = b"Hello from NaCl PIC blob!"
-    server_out = server_stdout.decode(errors="replace")
-    client_out = client_stdout.decode(errors="replace")
-
-    if expected_msg not in server_stdout:
+    server_out = result.server_stdout.decode(errors="replace")
+    client_out = result.client_stdout.decode(errors="replace")
+    if expected_msg not in result.server_stdout:
         raise RuntimeError(f"server did not decrypt expected plaintext: {server_out!r}")
-    if b"secure channel OK" not in server_stdout:
+    if b"secure channel OK" not in result.server_stdout:
         raise RuntimeError(f"server did not confirm channel: {server_out!r}")
-    if b"secure channel OK" not in client_stdout:
+    if b"secure channel OK" not in result.client_stdout:
         raise RuntimeError(f"client did not confirm channel: {client_out!r}")
 
-    # Extract the decrypted message and ACK for display.
-    decrypted = ""
-    for line in server_out.splitlines():
-        if "decrypted:" in line:
-            decrypted = line.split("decrypted:", 1)[1].strip()
-            break
 
-    ack = ""
-    for line in client_out.splitlines():
-        if "decrypted ACK:" in line:
-            ack = line.split("decrypted ACK:", 1)[1].strip()
-            break
+def _extract_line_suffix(output: str, marker: str) -> str:
+    """Return the suffix of the first line containing marker, else empty."""
+    for line in output.splitlines():
+        if marker in line:
+            return line.split(marker, 1)[1].strip()
+    return ""
 
+
+def _summarize_nacl_pair_result(result) -> str:
+    """Return a short success summary for a validated NaCl handshake."""
+    server_out = result.server_stdout.decode(errors="replace")
+    client_out = result.client_stdout.decode(errors="replace")
+    decrypted = _extract_line_suffix(server_out, "decrypted:")
+    ack = _extract_line_suffix(client_out, "decrypted ACK:")
     return f"encrypt->send->decrypt '{decrypted}', ACK '{ack}'"
 
 

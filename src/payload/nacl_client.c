@@ -215,6 +215,41 @@ static pic_u16 config_port(void)
 	return (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
 }
 
+PIC_TEXT
+static int connect_retry(struct pic_sockaddr_in *addr)
+{
+	int sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);
+	if (sock < 0)
+		return -1;
+
+	int attempts = 50;
+	while (attempts > 0) {
+		long ret = pic_connect(sock, addr, sizeof(*addr));
+		if (ret >= 0)
+			return sock;
+		for (volatile int i = 0; i < 1000000; i++)
+			;
+		attempts--;
+		if (attempts == 0)
+			break;
+		pic_close(sock);
+		sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);
+		if (sock < 0)
+			return -1;
+	}
+	pic_close(sock);
+	return -1;
+}
+
+PIC_TEXT
+static void init_sockaddr(struct pic_sockaddr_in *addr)
+{
+	pic_memset(addr, 0, sizeof(*addr));
+	addr->sin_family = PIC_AF_INET;
+	addr->sin_port = pic_htons(config_port());
+	addr->sin_addr = parse_ipv4(server_ip);
+}
+
 PIC_ENTRY
 void _start(
 #ifdef PIC_PLATFORM_HOSTED
@@ -231,35 +266,12 @@ void _start(
 
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
 	int sock;
-	long ret, pt_len;
-
-	sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);
-	if (sock < 0)
-		pic_exit_group(1);
+	long pt_len;
 
 	struct pic_sockaddr_in addr;
-	pic_memset(&addr, 0, sizeof(addr));
-	addr.sin_family = PIC_AF_INET;
-	addr.sin_port = pic_htons(config_port());
-	addr.sin_addr = parse_ipv4(server_ip);
-
-	/* Retry connect — server may need time to start. */
-	int attempts = 50;
-	while (attempts > 0) {
-		ret = pic_connect(sock, &addr, sizeof(addr));
-		if (ret >= 0)
-			break;
-		for (volatile int i = 0; i < 1000000; i++)
-			;
-		attempts--;
-		if (attempts > 0) {
-			pic_close(sock);
-			sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);
-			if (sock < 0)
-				pic_exit_group(1);
-		}
-	}
-	if (ret < 0)
+	init_sockaddr(&addr);
+	sock = connect_retry(&addr);
+	if (sock < 0)
 		goto fail;
 
 	/* Send encrypted message. */

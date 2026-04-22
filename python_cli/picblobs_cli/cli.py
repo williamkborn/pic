@@ -59,6 +59,278 @@ def _length_prefixed(payload: bytes) -> bytes:
     return struct.pack("<I", len(payload)) + payload
 
 
+def _iter_runner_binaries(
+    root: Path,
+    os_filter: str | None,
+    arch_filter: str | None,
+):
+    """Yield bundled runner tuples as (runner_type, arch, runner_path)."""
+    for runner_type_dir in sorted(root.iterdir()):
+        if not runner_type_dir.is_dir():
+            continue
+        if os_filter and runner_type_dir.name != os_filter:
+            continue
+        for arch_dir in sorted(runner_type_dir.iterdir()):
+            if not arch_dir.is_dir():
+                continue
+            if arch_filter and arch_dir.name != arch_filter:
+                continue
+            runner = arch_dir / "runner"
+            if runner.exists():
+                yield runner_type_dir.name, arch_dir.name, runner
+
+
+def _check_allowed_options(
+    blob: BlobType,
+    allowed: set[str],
+    provided: dict[str, bool],
+) -> None:
+    """Fail if unsupported options were supplied for a blob type."""
+    bad = [name for name, supplied in provided.items() if supplied and name not in allowed]
+    if bad:
+        _fail(
+            f"{blob.value}: options {sorted(bad)} are not valid for this "
+            f"blob type (allowed: {sorted(allowed)})"
+        )
+
+
+def _provided_build_options(
+    payload_file: Path | None,
+    address: str | None,
+    port: int | None,
+    fd: int | None,
+    stage_path: str | None,
+    offset: int,
+    size: int | None,
+    pe_file: Path | None,
+    call_dll_main: bool,
+    elf_file: Path | None,
+    argv: tuple[str, ...],
+    envp: tuple[str, ...],
+) -> dict[str, bool]:
+    """Return a normalized map of supplied build options."""
+    return {
+        "payload": payload_file is not None,
+        "address": address is not None,
+        "port": port is not None,
+        "fd": fd is not None,
+        "path": stage_path is not None,
+        "offset": offset != 0,
+        "size": size is not None,
+        "pe": pe_file is not None,
+        "call-dll-main": call_dll_main,
+        "elf": elf_file is not None,
+        "argv": len(argv) > 0,
+        "envp": len(envp) > 0,
+    }
+
+
+def _build_blob_bytes(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    payload_file: Path | None,
+    address: str | None,
+    port: int | None,
+    fd: int | None,
+    stage_path: str | None,
+    offset: int,
+    size: int | None,
+    pe_file: Path | None,
+    call_dll_main: bool,
+    elf_file: Path | None,
+    argv: tuple[str, ...],
+    envp: tuple[str, ...],
+) -> bytes:
+    """Build bytes for one blob type from click CLI options."""
+    build_fn = _BUILDERS.get(blob)
+    if build_fn is None:
+        _fail(f"{blob.value}: not buildable via this CLI")
+    return build_fn(
+        base,
+        blob,
+        provided,
+        payload_file,
+        address,
+        port,
+        fd,
+        stage_path,
+        offset,
+        size,
+        pe_file,
+        call_dll_main,
+        elf_file,
+        argv,
+        envp,
+    )
+
+
+def _build_hello(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, set(), provided)
+    return base.hello().build()
+
+
+def _build_hello_windows(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, set(), provided)
+    return base.hello_windows().build()
+
+
+def _build_alloc_jump(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    payload_file: Path | None,
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, {"payload"}, provided)
+    if payload_file is None:
+        _fail("alloc_jump requires --payload FILE")
+    return base.alloc_jump().payload(payload_file.read_bytes()).build()
+
+
+def _build_stager_tcp(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    _payload_file: Path | None,
+    address: str | None,
+    port: int | None,
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, {"address", "port"}, provided)
+    if address is None or port is None:
+        _fail("stager_tcp requires --address and --port")
+    return base.stager_tcp().address(address).port(port).build()
+
+
+def _build_stager_fd(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    _payload_file: Path | None,
+    _address: str | None,
+    _port: int | None,
+    fd: int | None,
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, {"fd"}, provided)
+    return base.stager_fd().fd(fd if fd is not None else 0).build()
+
+
+def _build_stager_pipe(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    _payload_file: Path | None,
+    _address: str | None,
+    _port: int | None,
+    _fd: int | None,
+    stage_path: str | None,
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, {"path"}, provided)
+    if stage_path is None:
+        _fail("stager_pipe requires --path")
+    return base.stager_pipe().path(stage_path).build()
+
+
+def _build_stager_mmap(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    _payload_file: Path | None,
+    _address: str | None,
+    _port: int | None,
+    _fd: int | None,
+    stage_path: str | None,
+    offset: int,
+    size: int | None,
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, {"path", "offset", "size"}, provided)
+    if stage_path is None or size is None:
+        _fail("stager_mmap requires --path and --size")
+    builder = base.stager_mmap().path(stage_path).size(size)
+    if offset:
+        builder = builder.offset(offset)
+    return builder.build()
+
+
+def _build_reflective_pe(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    _payload_file: Path | None,
+    _address: str | None,
+    _port: int | None,
+    _fd: int | None,
+    _stage_path: str | None,
+    _offset: int,
+    _size: int | None,
+    pe_file: Path | None,
+    call_dll_main: bool,
+    *_args,
+) -> bytes:
+    _check_allowed_options(blob, {"pe", "call-dll-main"}, provided)
+    if pe_file is None:
+        _fail("reflective_pe requires --pe FILE")
+    builder = base.reflective_pe().pe(pe_file.read_bytes())
+    if call_dll_main:
+        builder = builder.call_dll_main(True)
+    return builder.build()
+
+
+def _build_ul_exec(
+    base: Blob,
+    blob: BlobType,
+    provided: dict[str, bool],
+    _payload_file: Path | None,
+    _address: str | None,
+    _port: int | None,
+    _fd: int | None,
+    _stage_path: str | None,
+    _offset: int,
+    _size: int | None,
+    _pe_file: Path | None,
+    _call_dll_main: bool,
+    elf_file: Path | None,
+    argv: tuple[str, ...],
+    envp: tuple[str, ...],
+) -> bytes:
+    _check_allowed_options(blob, {"elf", "argv", "envp"}, provided)
+    if elf_file is None:
+        _fail("ul_exec requires --elf FILE")
+    builder = base.ul_exec().elf(elf_file.read_bytes())
+    if argv:
+        builder = builder.argv(list(argv))
+    if envp:
+        builder = builder.envp(list(envp))
+    return builder.build()
+
+
+_BUILDERS = {
+    BlobType.HELLO: _build_hello,
+    BlobType.HELLO_WINDOWS: _build_hello_windows,
+    BlobType.ALLOC_JUMP: _build_alloc_jump,
+    BlobType.STAGER_TCP: _build_stager_tcp,
+    BlobType.STAGER_FD: _build_stager_fd,
+    BlobType.STAGER_PIPE: _build_stager_pipe,
+    BlobType.STAGER_MMAP: _build_stager_mmap,
+    BlobType.REFLECTIVE_PE: _build_reflective_pe,
+    BlobType.UL_EXEC: _build_ul_exec,
+}
+
+
 # ---------------------------------------------------------------------------
 # Root command
 # ---------------------------------------------------------------------------
@@ -122,23 +394,10 @@ def list_runners(os_filter: str | None, arch_filter: str | None) -> None:
     click.echo(fmt.format("RUNNER", "ARCH", "PATH"))
     click.echo(fmt.format("-" * 10, "-" * 15, "-" * 40))
 
-    found = 0
-    for runner_type_dir in sorted(root.iterdir()):
-        if not runner_type_dir.is_dir():
-            continue
-        if os_filter and runner_type_dir.name != os_filter:
-            continue
-        for arch_dir in sorted(runner_type_dir.iterdir()):
-            if not arch_dir.is_dir():
-                continue
-            if arch_filter and arch_dir.name != arch_filter:
-                continue
-            runner = arch_dir / "runner"
-            if runner.exists():
-                found += 1
-                click.echo(
-                    fmt.format(runner_type_dir.name, arch_dir.name, str(runner))
-                )
+    found = False
+    for runner_type, arch, runner in _iter_runner_binaries(root, os_filter, arch_filter):
+        found = True
+        click.echo(fmt.format(runner_type, arch, str(runner)))
 
     if not found:
         _fail("no runners found (check --os / --arch filters)")
@@ -197,88 +456,39 @@ def build(
     except ValidationError as e:
         _fail(str(e))
 
-    def _check_allowed(allowed: set[str], provided: dict[str, bool]) -> None:
-        bad = [name for name, supplied in provided.items()
-               if supplied and name not in allowed]
-        if bad:
-            _fail(
-                f"{blob.value}: options {sorted(bad)} are not valid for this "
-                f"blob type (allowed: {sorted(allowed)})"
-            )
-
-    provided = {
-        "payload": payload_file is not None,
-        "address": address is not None,
-        "port": port is not None,
-        "fd": fd is not None,
-        "path": stage_path is not None,
-        "offset": offset != 0,
-        "size": size is not None,
-        "pe": pe_file is not None,
-        "call-dll-main": call_dll_main,
-        "elf": elf_file is not None,
-        "argv": len(argv) > 0,
-        "envp": len(envp) > 0,
-    }
+    provided = _provided_build_options(
+        payload_file,
+        address,
+        port,
+        fd,
+        stage_path,
+        offset,
+        size,
+        pe_file,
+        call_dll_main,
+        elf_file,
+        argv,
+        envp,
+    )
 
     try:
-        base = Blob(os_name, arch)
-
-        if blob is BlobType.HELLO:
-            _check_allowed(set(), provided)
-            out = base.hello().build()
-        elif blob is BlobType.HELLO_WINDOWS:
-            _check_allowed(set(), provided)
-            out = base.hello_windows().build()
-        elif blob is BlobType.ALLOC_JUMP:
-            _check_allowed({"payload"}, provided)
-            if payload_file is None:
-                _fail("alloc_jump requires --payload FILE")
-            out = base.alloc_jump().payload(payload_file.read_bytes()).build()
-        elif blob is BlobType.STAGER_TCP:
-            _check_allowed({"address", "port"}, provided)
-            if address is None or port is None:
-                _fail("stager_tcp requires --address and --port")
-            out = (
-                base.stager_tcp().address(address).port(port).build()
-            )
-        elif blob is BlobType.STAGER_FD:
-            _check_allowed({"fd"}, provided)
-            fd_val = fd if fd is not None else 0
-            out = base.stager_fd().fd(fd_val).build()
-        elif blob is BlobType.STAGER_PIPE:
-            _check_allowed({"path"}, provided)
-            if stage_path is None:
-                _fail("stager_pipe requires --path")
-            out = base.stager_pipe().path(stage_path).build()
-        elif blob is BlobType.STAGER_MMAP:
-            _check_allowed({"path", "offset", "size"}, provided)
-            if stage_path is None or size is None:
-                _fail("stager_mmap requires --path and --size")
-            b = base.stager_mmap().path(stage_path).size(size)
-            if offset:
-                b = b.offset(offset)
-            out = b.build()
-        elif blob is BlobType.REFLECTIVE_PE:
-            _check_allowed({"pe", "call-dll-main"}, provided)
-            if pe_file is None:
-                _fail("reflective_pe requires --pe FILE")
-            b = base.reflective_pe().pe(pe_file.read_bytes())
-            if call_dll_main:
-                b = b.call_dll_main(True)
-            out = b.build()
-        elif blob is BlobType.UL_EXEC:
-            _check_allowed({"elf", "argv", "envp"}, provided)
-            if elf_file is None:
-                _fail("ul_exec requires --elf FILE")
-            b = base.ul_exec().elf(elf_file.read_bytes())
-            if argv:
-                b = b.argv(list(argv))
-            if envp:
-                b = b.envp(list(envp))
-            out = b.build()
-        else:
-            _fail(f"{blob.value}: not buildable via this CLI")
+        out = _build_blob_bytes(
+            Blob(os_name, arch),
+            blob,
+            provided,
+            payload_file,
+            address,
+            port,
+            fd,
+            stage_path,
+            offset,
+            size,
+            pe_file,
+            call_dll_main,
+            elf_file,
+            argv,
+            envp,
+        )
     except ValidationError as e:
         _fail(str(e))
 
@@ -336,6 +546,81 @@ def _run_file(
     sys.exit(result.returncode)
 
 
+def _parse_run_mode(
+    positional: tuple[str, ...],
+    blob_file: Path | None,
+) -> tuple[str | None, str]:
+    """Return (blob_type, target) for file or registry run mode."""
+    if blob_file is not None:
+        if len(positional) != 1:
+            _fail(
+                "with --file, supply exactly one positional: TARGET "
+                "(got: " + " ".join(repr(p) for p in positional) + ")"
+            )
+        return None, positional[0]
+    if len(positional) != 2:
+        _fail(
+            "registry mode expects two positionals: "
+            "picblobs-cli run <blob_type> <target>"
+        )
+    return positional[0], positional[1]
+
+
+def _registry_run_config(
+    config_hex: str | None,
+    payload_file: Path | None,
+) -> bytes:
+    """Return registry-mode config bytes."""
+    if config_hex:
+        try:
+            return bytes.fromhex(config_hex)
+        except ValueError as e:
+            _fail(f"invalid --config-hex: {e}")
+    if payload_file:
+        return payload_file.read_bytes()
+    return b""
+
+
+def _emit_run_result(stdout: bytes, stderr: bytes, exit_code: int) -> None:
+    """Write subprocess output to stdio and exit with the given code."""
+    sys.stdout.buffer.write(stdout)
+    sys.stderr.buffer.write(stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(exit_code)
+
+
+def _run_registry_blob(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    config: bytes,
+    timeout: float,
+    debug: bool,
+    stdin_data: bytes,
+) -> None:
+    """Run a staged blob looked up from the package registry."""
+    try:
+        blob_data = picblobs.get_blob(blob_type, os_name, arch)
+    except FileNotFoundError as e:
+        _fail(str(e))
+
+    try:
+        result = run_blob(
+            blob_data,
+            config=config,
+            timeout=timeout,
+            debug=debug,
+            stdin_data=stdin_data,
+        )
+    except FileNotFoundError as e:
+        _fail(str(e))
+    except subprocess.TimeoutExpired:
+        _fail(f"blob timed out after {timeout}s")
+
+    _emit_run_result(result.stdout, result.stderr, result.exit_code)
+
+
 @main.command()
 @click.argument("positional", nargs=-1, required=True)
 @click.option("-f", "--file", "blob_file",
@@ -373,29 +658,10 @@ def run(
     File mode is what you want after ``picblobs-cli build ... -o out.bin``
     or any other flow that produces a complete (code+config) blob.
     """
-    # Split positionals based on mode so we can use a uniform click
-    # argument spec even though file mode needs only <target> while
-    # registry mode needs both <blob_type> and <target>.
-    if blob_file is not None:
-        if len(positional) != 1:
-            _fail(
-                "with --file, supply exactly one positional: TARGET "
-                "(got: " + " ".join(repr(p) for p in positional) + ")"
-            )
-        blob_type = None
-        target = positional[0]
-    else:
-        if len(positional) != 2:
-            _fail(
-                "registry mode expects two positionals: "
-                "picblobs-cli run <blob_type> <target>"
-            )
-        blob_type, target = positional
-
+    blob_type, target = _parse_run_mode(positional, blob_file)
     os_name, arch = _parse_target(target)
     stdin_data = stdin_file.read_bytes() if stdin_file else b""
 
-    # --- File mode: bypass extraction, hand the bytes straight to the runner.
     if blob_file is not None:
         if config_hex or payload_file:
             _fail(
@@ -405,41 +671,16 @@ def run(
         _run_file(blob_file, os_name, arch, stdin_data, timeout, debug)
         return
 
-    # --- Registry mode: look the blob up by type and run via run_blob().
-    assert blob_type is not None  # satisfied by the positional-count check
-
-    try:
-        blob_data = picblobs.get_blob(blob_type, os_name, arch)
-    except FileNotFoundError as e:
-        _fail(str(e))
-
-    config = b""
-    if config_hex:
-        try:
-            config = bytes.fromhex(config_hex)
-        except ValueError as e:
-            _fail(f"invalid --config-hex: {e}")
-    elif payload_file:
-        config = payload_file.read_bytes()
-
-    try:
-        result = run_blob(
-            blob_data,
-            config=config,
-            timeout=timeout,
-            debug=debug,
-            stdin_data=stdin_data,
-        )
-    except FileNotFoundError as e:
-        _fail(str(e))
-    except subprocess.TimeoutExpired:
-        _fail(f"blob timed out after {timeout}s")
-
-    sys.stdout.buffer.write(result.stdout)
-    sys.stderr.buffer.write(result.stderr)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    sys.exit(result.exit_code)
+    assert blob_type is not None
+    _run_registry_blob(
+        blob_type,
+        os_name,
+        arch,
+        _registry_run_config(config_hex, payload_file),
+        timeout,
+        debug,
+        stdin_data,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +708,147 @@ def _verify_one(blob_type: str, os_name: str, arch: str, timeout: float):
         return _verify_ul_exec(os_name, arch, timeout)
 
     return run_blob(blob, runner_type=os_name, timeout=timeout)
+
+
+class _VerifySummary:
+    """Mutable counters and output helpers for the click verify command."""
+
+    def __init__(self) -> None:
+        self.passed = 0
+        self.failed = 0
+        self.skipped = 0
+        self.errors: list[str] = []
+
+    def ok(self, label: str, detail: str) -> None:
+        click.echo(f"  {label:<20}  OK   {detail}")
+        self.passed += 1
+
+    def skip(self, label: str, reason: str) -> None:
+        click.echo(f"  {label:<20}  SKIP ({reason})")
+        self.skipped += 1
+
+    def fail(self, blob_type: str, label: str, detail: str) -> None:
+        click.echo(f"  {label:<20}  {detail}", err=True)
+        self.failed += 1
+        self.errors.append(f"{blob_type}/{label}")
+
+    def emit(self) -> None:
+        total = self.passed + self.failed + self.skipped
+        click.echo("")
+        parts = [f"{self.passed}/{total} passed"]
+        if self.skipped:
+            parts.append(f"{self.skipped} skipped")
+        if self.errors:
+            parts.append(f"failed: {', '.join(self.errors)}")
+        click.echo("  ".join(parts))
+
+
+def _filter_verify_combos(
+    combos: list[tuple[str, str, str]],
+    os_filter: tuple[str, ...],
+    arch_filter: tuple[str, ...],
+    type_filter: tuple[str, ...],
+) -> list[tuple[str, str, str]]:
+    """Apply click verify filters to staged blob triples."""
+    filters = (
+        (set(os_filter) if os_filter else None, 1),
+        (set(arch_filter) if arch_filter else None, 2),
+        (set(type_filter) if type_filter else None, 0),
+    )
+    for allowed, index in filters:
+        if allowed:
+            combos = [entry for entry in combos if entry[index] in allowed]
+    return combos
+
+
+def _group_verify_combos(
+    combos: list[tuple[str, str, str]],
+) -> dict[tuple[str, str], list[str]]:
+    """Group verify triples by (os, blob_type)."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    for bt, os_name, arch in combos:
+        groups.setdefault((os_name, bt), []).append(arch)
+    return groups
+
+
+def _nacl_pair_arches(
+    groups: dict[tuple[str, str], list[str]],
+) -> dict[str, list[str]]:
+    """Return arches where both NaCl pair blobs are staged."""
+    pairs: dict[str, list[str]] = {}
+    for (os_name, blob_type), arches in groups.items():
+        if blob_type != "nacl_client":
+            continue
+        server = set(groups.get((os_name, "nacl_server"), []))
+        common = sorted(set(arches) & server)
+        if common:
+            pairs[os_name] = common
+    return pairs
+
+
+def _skip_verify_blob(blob_type: str) -> bool:
+    """Return True for non-standalone verify blobs."""
+    return blob_type in {
+        "nacl_client",
+        "nacl_server",
+        "nacl_client_hosted",
+        "nacl_server_hosted",
+    }
+
+
+def _record_verify_result(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    result,
+    summary: _VerifySummary,
+) -> None:
+    """Record one single-blob verify result."""
+    label = f"{os_name}:{arch}"
+    out = result.stdout.decode(errors="replace").strip()
+    if result.exit_code == 0:
+        summary.ok(label, repr(out))
+        return
+    summary.fail(blob_type, label, f"FAIL exit={result.exit_code:<4d} {out!r}")
+
+
+def _run_verify_group(
+    os_name: str,
+    blob_type: str,
+    arches: list[str],
+    timeout: float,
+    summary: _VerifySummary,
+) -> None:
+    """Run one grouped verify section for a single blob type."""
+    click.echo(f"[{os_name}] {blob_type}")
+    for arch in sorted(arches):
+        label = f"{os_name}:{arch}"
+        try:
+            result = _verify_one(blob_type, os_name, arch, timeout)
+            _record_verify_result(blob_type, os_name, arch, result, summary)
+        except _Skip as e:
+            summary.skip(label, str(e))
+        except Exception as e:  # noqa: BLE001
+            summary.fail(blob_type, label, f"ERROR {e}")
+
+
+def _run_nacl_verify_group(
+    os_name: str,
+    arches: list[str],
+    timeout: float,
+    summary: _VerifySummary,
+) -> None:
+    """Run one grouped NaCl pair verify section."""
+    click.echo(f"[{os_name}] nacl e2e")
+    for arch in arches:
+        label = f"{os_name}:{arch}"
+        try:
+            detail = _verify_nacl_e2e(os_name, arch, timeout)
+            summary.ok(label, detail)
+        except _Skip as e:
+            summary.skip(label, str(e))
+        except Exception as e:  # noqa: BLE001
+            summary.fail("nacl_e2e", label, f"FAIL {e}")
 
 
 def _verify_stager_tcp(os_name: str, arch: str, timeout: float):
@@ -661,94 +1043,35 @@ def verify(
     timeout: float,
 ) -> None:
     """Run every staged blob end-to-end (mirrors legacy ``picblobs verify``)."""
-    # Paired/hosted blobs aren't runnable standalone.
-    paired = {"nacl_client", "nacl_server"}
-    skip_set = {"nacl_client_hosted", "nacl_server_hosted"}
-
-    combos = picblobs.list_blobs()
-    if os_filter:
-        combos = [(t, o, a) for t, o, a in combos if o in set(os_filter)]
-    if arch_filter:
-        combos = [(t, o, a) for t, o, a in combos if a in set(arch_filter)]
-    if type_filter:
-        combos = [(t, o, a) for t, o, a in combos if t in set(type_filter)]
+    combos = _filter_verify_combos(
+        picblobs.list_blobs(),
+        os_filter,
+        arch_filter,
+        type_filter,
+    )
 
     if not combos:
         _fail("no blobs match the given filters")
 
-    passed = failed = skipped = 0
-    errors: list[str] = []
-
-    groups: dict[tuple[str, str], list[str]] = {}
-    for bt, os_name, arch in combos:
-        groups.setdefault((os_name, bt), []).append(arch)
-
-    # Pre-compute (os, arch) pairs where both nacl_client and nacl_server
-    # are staged so we can run the e2e handshake once per pair instead of
-    # standalone.
-    nacl_pair_arches: dict[str, list[str]] = {}
-    for (os_name, blob_type), arches in groups.items():
-        if blob_type == "nacl_client":
-            server = set(groups.get((os_name, "nacl_server"), []))
-            common = sorted(set(arches) & server)
-            if common:
-                nacl_pair_arches[os_name] = common
+    summary = _VerifySummary()
+    groups = _group_verify_combos(combos)
+    nacl_pair_arches = _nacl_pair_arches(groups)
 
     for (os_name, blob_type), arches in sorted(groups.items()):
-        if blob_type in paired or blob_type in skip_set:
+        if _skip_verify_blob(blob_type):
             continue
-        click.echo(f"[{os_name}] {blob_type}")
-        for arch in sorted(arches):
-            label = f"{os_name}:{arch}"
-            try:
-                result = _verify_one(blob_type, os_name, arch, timeout)
-                out = result.stdout.decode(errors="replace").strip()
-                if result.exit_code == 0:
-                    click.echo(f"  {label:<20}  OK   {out!r}")
-                    passed += 1
-                else:
-                    click.echo(
-                        f"  {label:<20}  FAIL exit={result.exit_code:<4d} {out!r}",
-                        err=True,
-                    )
-                    failed += 1
-                    errors.append(f"{blob_type}/{label}")
-            except _Skip as e:
-                click.echo(f"  {label:<20}  SKIP ({e})")
-                skipped += 1
-            except Exception as e:  # noqa: BLE001
-                click.echo(f"  {label:<20}  ERROR {e}", err=True)
-                failed += 1
-                errors.append(f"{blob_type}/{label}")
+        _run_verify_group(os_name, blob_type, arches, timeout, summary)
 
     # NaCl e2e handshake runs.
-    if not type_filter or "nacl_e2e" in set(type_filter) or "nacl_client" in set(type_filter) or "nacl_server" in set(type_filter):
+    type_set = set(type_filter)
+    if (
+        not type_filter
+        or "nacl_e2e" in type_set
+        or "nacl_client" in type_set
+        or "nacl_server" in type_set
+    ):
         for os_name, arches in sorted(nacl_pair_arches.items()):
-            if os_filter and os_name not in set(os_filter):
-                continue
-            click.echo(f"[{os_name}] nacl e2e")
-            for arch in arches:
-                if arch_filter and arch not in set(arch_filter):
-                    continue
-                label = f"{os_name}:{arch}"
-                try:
-                    detail = _verify_nacl_e2e(os_name, arch, timeout)
-                    click.echo(f"  {label:<20}  OK   {detail}")
-                    passed += 1
-                except _Skip as e:
-                    click.echo(f"  {label:<20}  SKIP ({e})")
-                    skipped += 1
-                except Exception as e:  # noqa: BLE001
-                    click.echo(f"  {label:<20}  FAIL {e}", err=True)
-                    failed += 1
-                    errors.append(f"nacl_e2e/{label}")
+            _run_nacl_verify_group(os_name, arches, timeout, summary)
 
-    total = passed + failed + skipped
-    click.echo("")
-    parts = [f"{passed}/{total} passed"]
-    if skipped:
-        parts.append(f"{skipped} skipped")
-    if errors:
-        parts.append(f"failed: {', '.join(errors)}")
-    click.echo("  ".join(parts))
-    sys.exit(1 if failed else 0)
+    summary.emit()
+    sys.exit(1 if summary.failed else 0)

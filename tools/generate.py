@@ -311,149 +311,163 @@ def _gen_syscall_header(sdef: SyscallDef) -> str:
     lines.append(f"#ifndef {guard}\n#define {guard}\n\n")
     lines.append(f'#include "picblobs/types.h"\n\n')
 
-    # Hosted-mode path: delegate to pic_platform vtable.
-    if sdef.hosted_call:
-        lines.append("#ifdef PIC_PLATFORM_HOSTED\n")
-        lines.append('#include "picblobs/platform.h"\n')
-        attrs = ""
-        if sdef.noreturn:
-            attrs = "__attribute__((noreturn))\n"
-        lines.append(
-            f"{attrs}static inline {sdef.return_type} {sdef.wrapper}({sdef.params}) {{\n"
-        )
-        if sdef.return_type == "void":
-            lines.append(f"\t{sdef.hosted_call};\n")
-            if sdef.noreturn:
-                lines.append("\t__builtin_unreachable();\n")
-        else:
-            lines.append(f"\treturn {sdef.hosted_call};\n")
-        lines.append("}\n")
-        lines.append("#else /* !PIC_PLATFORM_HOSTED */\n\n")
+    lines.extend(_hosted_syscall_lines(sdef))
 
     lines.append(f'#include "picblobs/arch.h"\n')
     lines.append(f'#include "picblobs/syscall.h"\n\n')
 
-    # --- OS dispatch + per-arch numbers ---
-    # Collect all __NR_ names this syscall needs (for open: open + openat).
-    nr_names_needed: set[str] = set()
-    for os_name, arch_nrs in os_support.items():
-        for key in arch_nrs:
-            if key == "_all_":
-                nr_names_needed.add(sdef.name)
-            else:
-                # The key in the table might differ from sdef.name
-                # (e.g., open has "openat" on aarch64).
-                # Look up what's actually in the table.
-                pass
-        # Collect actual nr names from the OS tables.
-        if "_all_" in arch_nrs:
-            nr_names_needed.add(sdef.name)
-        else:
-            for gcc_define, _ in arch_nrs.items():
-                # Check if this arch defines this syscall under a different name.
-                os_table = SYSCALL_NUMBERS[os_name]
-                for name in os_table.get(gcc_define, {}):
-                    if name == sdef.name or name in _related_nr_names(sdef.name):
-                        nr_names_needed.add(name)
-
-    lines.append("/* --- Syscall numbers --- */\n\n")
-
-    related = _related_nr_names(sdef.name)
-    all_oses = sorted(OPERATING_SYSTEMS.keys())
-    first_os = True
-    for os_name in all_oses:
-        os_macro = f"PICBLOBS_OS_{os_name.upper()}"
-        prefix = "#if" if first_os else "#elif"
-        lines.append(f"{prefix} defined({os_macro})\n\n")
-
-        if os_name not in os_support:
-            lines.append(f'#error "{sdef.wrapper}() is not available on {os_name}"\n\n')
-        else:
-            arch_nrs = os_support[os_name]
-            if "_all_" in arch_nrs:
-                nr = arch_nrs["_all_"]
-                lines.append(f"#define __NR_{sdef.name:<16s} {nr}\n\n")
-            else:
-                # Per-architecture: emit all __NR_ defines this arch needs.
-                defines = _sorted_gcc_defines()
-                os_tables = SYSCALL_NUMBERS.get(os_name, {})
-                first_arch = True
-                for gcc_define in defines:
-                    arch_table = os_tables.get(gcc_define, {})
-                    # Collect all related __NR_ defines for this arch.
-                    nr_defs: list[tuple[str, int]] = []
-                    for name in sorted(related):
-                        if name in arch_table:
-                            nr_defs.append((name, arch_table[name]))
-                    if nr_defs:
-                        aprefix = "#if" if first_arch else "#elif"
-                        lines.append(f"{aprefix} defined({gcc_define})\n")
-                        for name, nr in nr_defs:
-                            lines.append(f"#define __NR_{name:<16s} {nr}\n")
-                        first_arch = False
-                if not first_arch:
-                    lines.append("#else\n")
-                    lines.append(
-                        f'#error "Unsupported architecture for {sdef.wrapper}()"\n'
-                    )
-                    lines.append("#endif\n\n")
-
-        first_os = False
-
-    lines.append("#else\n")
-    lines.append(
-        f'#error "No target OS defined — #include picblobs/os/{{os}}.h before sys/{sdef.name}.h"\n'
-    )
-    lines.append("#endif\n\n")
-
-    # --- Constants ---
-    if sdef.constants:
-        lines.append("/* --- Constants --- */\n")
-        lines.append(sdef.constants + "\n\n")
-
-    # Special: mmap flags are arch+OS-specific.
-    if sdef.name == "mmap":
-        lines.append("/* mmap flags */\n")
-        lines.append("#if defined(PICBLOBS_OS_LINUX) && defined(__mips__)\n")
-        for flag in ("MAP_SHARED", "MAP_PRIVATE", "MAP_FIXED", "MAP_ANONYMOUS"):
-            val = MMAP_FLAGS[flag].get("__mips__", MMAP_FLAGS[flag]["_default_"])
-            lines.append(f"#define PIC_{flag:<16s} {val:#05x}\n")
-        lines.append("#elif defined(PICBLOBS_OS_FREEBSD)\n")
-        for flag in ("MAP_SHARED", "MAP_PRIVATE", "MAP_FIXED", "MAP_ANONYMOUS"):
-            val = MMAP_FLAGS[flag].get("freebsd", MMAP_FLAGS[flag]["_default_"])
-            lines.append(f"#define PIC_{flag:<16s} {val:#06x}\n")
-        lines.append("#else\n")
-        for flag in ("MAP_SHARED", "MAP_PRIVATE", "MAP_FIXED", "MAP_ANONYMOUS"):
-            val = MMAP_FLAGS[flag]["_default_"]
-            lines.append(f"#define PIC_{flag:<16s} {val:#04x}\n")
-        lines.append("#endif\n\n")
-
-    # --- Wrapper function ---
-    lines.append("/* --- Wrapper --- */\n")
-    if sdef.custom_body:
-        lines.append(sdef.custom_body + "\n")
-    else:
-        attrs = ""
-        if sdef.noreturn:
-            attrs = "__attribute__((noreturn))\n"
-        lines.append(
-            f"{attrs}static inline {sdef.return_type} {sdef.wrapper}({sdef.params}) {{\n"
-        )
-        call = f"pic_syscall{sdef.arg_count}(__NR_{sdef.name}, {sdef.call_args})"
-        if sdef.return_type == "void":
-            lines.append(f"    {call};\n")
-            if sdef.noreturn:
-                lines.append("    __builtin_unreachable();\n")
-        elif sdef.return_type == "void *":
-            lines.append(f"    return (void *){call};\n")
-        else:
-            lines.append(f"    return {call};\n")
-        lines.append("}\n")
+    lines.extend(_syscall_number_lines(sdef, os_support))
+    lines.extend(_syscall_constant_lines(sdef))
+    lines.extend(_syscall_wrapper_lines(sdef))
 
     if sdef.hosted_call:
         lines.append("\n#endif /* !PIC_PLATFORM_HOSTED */\n")
     lines.append(f"#endif /* {guard} */\n")
     return "".join(lines)
+
+
+def _hosted_syscall_lines(sdef: SyscallDef) -> list[str]:
+    """Return hosted-mode wrapper lines for a syscall."""
+    if not sdef.hosted_call:
+        return []
+    attrs = "__attribute__((noreturn))\n" if sdef.noreturn else ""
+    lines = [
+        "#ifdef PIC_PLATFORM_HOSTED\n",
+        '#include "picblobs/platform.h"\n',
+        f"{attrs}static inline {sdef.return_type} {sdef.wrapper}({sdef.params}) {{\n",
+    ]
+    if sdef.return_type == "void":
+        lines.append(f"\t{sdef.hosted_call};\n")
+        if sdef.noreturn:
+            lines.append("\t__builtin_unreachable();\n")
+    else:
+        lines.append(f"\treturn {sdef.hosted_call};\n")
+    lines.extend(["}\n", "#else /* !PIC_PLATFORM_HOSTED */\n\n"])
+    return lines
+
+
+def _syscall_number_lines(
+    sdef: SyscallDef,
+    os_support: dict[str, dict[str, int]],
+) -> list[str]:
+    """Return preprocessor lines for syscall number dispatch."""
+    lines = ["/* --- Syscall numbers --- */\n\n"]
+    related = _related_nr_names(sdef.name)
+    for index, os_name in enumerate(sorted(OPERATING_SYSTEMS.keys())):
+        os_macro = f"PICBLOBS_OS_{os_name.upper()}"
+        lines.append(f"{'#if' if index == 0 else '#elif'} defined({os_macro})\n\n")
+        if os_name not in os_support:
+            lines.append(f'#error "{sdef.wrapper}() is not available on {os_name}"\n\n')
+            continue
+        lines.extend(
+            _os_syscall_number_lines(sdef, os_name, os_support[os_name], related)
+        )
+    lines.append("#else\n")
+    lines.append(
+        f'#error "No target OS defined — #include picblobs/os/{{os}}.h before sys/{sdef.name}.h"\n'
+    )
+    lines.append("#endif\n\n")
+    return lines
+
+
+def _os_syscall_number_lines(
+    sdef: SyscallDef,
+    os_name: str,
+    arch_nrs: dict[str, int],
+    related: set[str],
+) -> list[str]:
+    """Return syscall-number lines for one OS branch."""
+    if "_all_" in arch_nrs:
+        return [f"#define __NR_{sdef.name:<16s} {arch_nrs['_all_']}\n\n"]
+    return _arch_syscall_number_lines(sdef, os_name, related)
+
+
+def _arch_syscall_number_lines(
+    sdef: SyscallDef,
+    os_name: str,
+    related: set[str],
+) -> list[str]:
+    """Return per-architecture syscall-number lines for one OS branch."""
+    lines: list[str] = []
+    first_arch = True
+    os_tables = SYSCALL_NUMBERS.get(os_name, {})
+    for gcc_define in _sorted_gcc_defines():
+        nr_defs = _arch_nr_defs(os_tables.get(gcc_define, {}), related)
+        if not nr_defs:
+            continue
+        lines.append(f"{'#if' if first_arch else '#elif'} defined({gcc_define})\n")
+        for name, nr in nr_defs:
+            lines.append(f"#define __NR_{name:<16s} {nr}\n")
+        first_arch = False
+    if not first_arch:
+        lines.append("#else\n")
+        lines.append(f'#error "Unsupported architecture for {sdef.wrapper}()"\n')
+        lines.append("#endif\n\n")
+    return lines
+
+
+def _arch_nr_defs(
+    arch_table: dict[str, int],
+    related: set[str],
+) -> list[tuple[str, int]]:
+    """Return __NR_ defines available for one arch table."""
+    return [(name, arch_table[name]) for name in sorted(related) if name in arch_table]
+
+
+def _syscall_constant_lines(sdef: SyscallDef) -> list[str]:
+    """Return constant-definition lines for a syscall header."""
+    lines: list[str] = []
+    if sdef.constants:
+        lines.extend(["/* --- Constants --- */\n", sdef.constants + "\n\n"])
+    if sdef.name == "mmap":
+        lines.extend(_mmap_flag_lines())
+    return lines
+
+
+def _mmap_flag_lines() -> list[str]:
+    """Return PIC_MAP_* constant definitions for mmap wrappers."""
+    lines = ["/* mmap flags */\n"]
+    lines.append("#if defined(PICBLOBS_OS_LINUX) && defined(__mips__)\n")
+    lines.extend(_mmap_flag_defines("__mips__", "#05x"))
+    lines.append("#elif defined(PICBLOBS_OS_FREEBSD)\n")
+    lines.extend(_mmap_flag_defines("freebsd", "#06x"))
+    lines.append("#else\n")
+    lines.extend(_mmap_flag_defines("_default_", "#04x"))
+    lines.append("#endif\n\n")
+    return lines
+
+
+def _mmap_flag_defines(key: str, fmt: str) -> list[str]:
+    """Return mmap flag definitions for one OS/arch key."""
+    lines: list[str] = []
+    for flag in ("MAP_SHARED", "MAP_PRIVATE", "MAP_FIXED", "MAP_ANONYMOUS"):
+        default = MMAP_FLAGS[flag]["_default_"]
+        val = MMAP_FLAGS[flag].get(key, default)
+        lines.append(f"#define PIC_{flag:<16s} {format(val, fmt)}\n")
+    return lines
+
+
+def _syscall_wrapper_lines(sdef: SyscallDef) -> list[str]:
+    """Return the wrapper-function lines for a syscall header."""
+    lines = ["/* --- Wrapper --- */\n"]
+    if sdef.custom_body:
+        lines.append(sdef.custom_body + "\n")
+        return lines
+    attrs = "__attribute__((noreturn))\n" if sdef.noreturn else ""
+    lines.append(
+        f"{attrs}static inline {sdef.return_type} {sdef.wrapper}({sdef.params}) {{\n"
+    )
+    call = f"pic_syscall{sdef.arg_count}(__NR_{sdef.name}, {sdef.call_args})"
+    if sdef.return_type == "void":
+        lines.append(f"    {call};\n")
+        if sdef.noreturn:
+            lines.append("    __builtin_unreachable();\n")
+    elif sdef.return_type == "void *":
+        lines.append(f"    return (void *){call};\n")
+    else:
+        lines.append(f"    return {call};\n")
+    lines.append("}\n")
+    return lines
 
 
 def _related_nr_names(syscall_name: str) -> set[str]:
@@ -603,77 +617,100 @@ def _gen_runner_c(os_name: str) -> str:
 
 def _gen_platforms_build() -> str:
     lines = [_BZL, '\npackage(default_visibility = ["//visibility:public"])\n\n']
+    lines.extend(_platform_target_os_lines())
+    lines.extend(_platform_custom_cpu_lines())
+    lines.extend(_platform_instruction_mode_lines())
+    lines.extend(_platform_definition_lines())
+    lines.extend(_platform_baremetal_lines())
+    return "".join(lines)
 
-    lines.append(
+
+def _platform_target_os_lines() -> list[str]:
+    """Return target OS constraint definitions for platforms/BUILD.bazel."""
+    lines = [
         "# Custom target_os instead of @platforms//os:os — the blob OS is a\n"
         "# cross-compilation target property, not the execution OS. A Linux host\n"
         "# builds FreeBSD and Windows blobs; using @platforms//os would confuse\n"
-        "# Bazel's toolchain resolution. This constraint is for blob target selection.\n"
-    )
-    lines.append('constraint_setting(name = "target_os")\n\n')
-
+        "# Bazel's toolchain resolution. This constraint is for blob target selection.\n",
+        'constraint_setting(name = "target_os")\n\n',
+    ]
     for os_name in OPERATING_SYSTEMS:
         lines.append(
             f'constraint_value(name = "{os_name}", constraint_setting = ":target_os")\n'
         )
     lines.append("\n")
+    return lines
 
+
+def _platform_custom_cpu_lines() -> list[str]:
+    """Return custom CPU constraint definitions."""
+    lines: list[str] = []
     custom_cpus: set[str] = set()
     for arch in ARCHITECTURES.values():
-        if arch.cpu_constraint.startswith("//platforms:"):
-            cpu = arch.cpu_constraint.split(":")[-1]
-            if cpu not in custom_cpus:
-                custom_cpus.add(cpu)
-                lines.append(
-                    f'constraint_value(name = "{cpu}", '
-                    f'constraint_setting = "@platforms//cpu:cpu")\n'
-                )
-    if custom_cpus:
+        if not arch.cpu_constraint.startswith("//platforms:"):
+            continue
+        cpu = arch.cpu_constraint.split(":")[-1]
+        if cpu in custom_cpus:
+            continue
+        custom_cpus.add(cpu)
+        lines.append(
+            f'constraint_value(name = "{cpu}", '
+            f'constraint_setting = "@platforms//cpu:cpu")\n'
+        )
+    if lines:
         lines.append("\n")
+    return lines
 
-    lines.append(
+
+def _platform_instruction_mode_lines() -> list[str]:
+    """Return instruction-mode constraint definitions."""
+    lines = [
         'constraint_setting(\n    name = "instruction_mode",\n'
         '    default_constraint_value = ":mode_default",\n)\n\n'
-    )
+    ]
     for mode in ("mode_default", "mode_arm", "mode_thumb"):
         lines.append(
             f'constraint_value(name = "{mode}", '
             f'constraint_setting = ":instruction_mode")\n'
         )
     lines.append("\n")
+    return lines
 
+
+def _platform_mode(arch_name: str) -> str:
+    """Return the instruction-mode constraint for one arch."""
+    if arch_name == "armv5_arm":
+        return ":mode_arm"
+    if arch_name in ("armv5_thumb", "armv7_thumb"):
+        return ":mode_thumb"
+    return ":mode_default"
+
+
+def _platform_definition_lines() -> list[str]:
+    """Return generated platform() definitions for all OS/arch pairs."""
+    lines: list[str] = []
     for os_name, os_def in OPERATING_SYSTEMS.items():
         lines.append(f"# {os_name.title()} ({len(os_def.architectures)})\n")
         for arch_name in os_def.architectures:
             arch = ARCHITECTURES[arch_name]
-            mode = (
-                ":mode_arm"
-                if arch_name == "armv5_arm"
-                else ":mode_thumb"
-                if arch_name in ("armv5_thumb", "armv7_thumb")
-                else ":mode_default"
-            )
             name = f"{os_name}_{arch_name}"
             lines.append(
                 f'platform(name = "{name}", constraint_values = '
-                f'["{arch.cpu_constraint}", ":{os_name}", "{mode}"])\n'
+                f'["{arch.cpu_constraint}", ":{os_name}", "{_platform_mode(arch_name)}"])\n'
             )
         lines.append("\n")
+    return lines
 
-    # Bare-metal Cortex-M4 (Mbed OS / STM32 hosted-mode blobs).
-    lines.append("# Bare-metal constraints (Cortex-M4 / Mbed OS)\n")
-    lines.append('constraint_setting(name = "float_abi")\n')
-    lines.append(
-        'constraint_value(name = "softfloat", constraint_setting = ":float_abi")\n'
-    )
-    lines.append(
-        'constraint_value(name = "hardfloat", constraint_setting = ":float_abi")\n\n'
-    )
-    lines.append('constraint_setting(name = "runtime")\n')
-    lines.append(
-        'constraint_value(name = "baremetal", constraint_setting = ":runtime")\n\n'
-    )
-    lines.append(
+
+def _platform_baremetal_lines() -> list[str]:
+    """Return the hosted bare-metal Cortex-M4 platform block."""
+    return [
+        "# Bare-metal constraints (Cortex-M4 / Mbed OS)\n",
+        'constraint_setting(name = "float_abi")\n',
+        'constraint_value(name = "softfloat", constraint_setting = ":float_abi")\n',
+        'constraint_value(name = "hardfloat", constraint_setting = ":float_abi")\n\n',
+        'constraint_setting(name = "runtime")\n',
+        'constraint_value(name = "baremetal", constraint_setting = ":runtime")\n\n',
         "platform(\n"
         '    name = "cortexm4_baremetal",\n'
         "    constraint_values = [\n"
@@ -681,10 +718,8 @@ def _gen_platforms_build() -> str:
         '        ":baremetal",\n'
         '        ":softfloat",\n'
         "    ],\n"
-        ")\n\n"
-    )
-
-    return "".join(lines)
+        ")\n\n",
+    ]
 
 
 # ============================================================
@@ -871,35 +906,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    targets: list[tuple[Path, str]] = [
-        # C headers
-        (PROJECT_ROOT / "src/include/picblobs/arch.h", _gen_arch_h()),
-        (PROJECT_ROOT / "src/include/picblobs/syscall.h", _gen_syscall_h()),
-        (PROJECT_ROOT / "src/include/picblobs/picblobs.h", _gen_picblobs_h()),
-        # Bazel
-        (PROJECT_ROOT / "platforms/BUILD.bazel", _gen_platforms_build()),
-        (PROJECT_ROOT / "toolchains/BUILD.bazel", _gen_toolchains_build()),
-        (PROJECT_ROOT / "bazel/platforms.bzl", _gen_platforms_bzl()),
-        # Blob targets
-        (PROJECT_ROOT / "src/payload/BUILD.bazel", _gen_payload_build()),
-    ]
-
-    # Per-syscall sys/{name}.h files.
-    for sdef in SYSCALL_DEFS.values():
-        path = PROJECT_ROOT / f"src/include/picblobs/sys/{sdef.name}.h"
-        targets.append((path, _gen_syscall_header(sdef)))
-
-    # Per-OS runner.c files.
-    # The Windows runner is hand-written (mock TEB/PEB, not a generic loader)
-    # and the FreeBSD runner is hand-written (syscall number translation).
-    # Neither must be overwritten by the generator.
-    for os_name in OPERATING_SYSTEMS:
-        if os_name in ("windows", "freebsd"):
-            continue
-        runner_c = _gen_runner_c(os_name)
-        if runner_c:
-            path = PROJECT_ROOT / f"tests/runners/{os_name}/runner.c"
-            targets.append((path, runner_c))
+    targets = _generated_targets()
 
     any_changed = False
     for path, content in targets:
@@ -908,33 +915,7 @@ def main() -> int:
         if _write(path, content, args.check):
             any_changed = True
 
-    # .bazelrc: inject between markers.
-    bazelrc_path = PROJECT_ROOT / ".bazelrc"
-    bazelrc = bazelrc_path.read_text()
-    block = f"{_MARKER_START}\n{_gen_bazelrc_block()}{_MARKER_END}"
-
-    if _MARKER_START in bazelrc:
-        new_bazelrc = re.sub(
-            rf"{re.escape(_MARKER_START)}.*?{re.escape(_MARKER_END)}",
-            block,
-            bazelrc,
-            flags=re.DOTALL,
-        )
-    else:
-        # First run: find platform config lines and replace them.
-        lines = bazelrc.split("\n")
-        start = end = None
-        for i, line in enumerate(lines):
-            if re.match(r"build:(linux|freebsd|windows)_", line):
-                if start is None:
-                    start = i
-                end = i
-        if start is not None:
-            new_bazelrc = "\n".join(lines[:start] + [block] + lines[end + 1 :])
-        else:
-            new_bazelrc = bazelrc + "\n" + block + "\n"
-
-    if _write(bazelrc_path, new_bazelrc, args.check):
+    if _write_bazelrc(args.check):
         any_changed = True
 
     if args.check and any_changed:
@@ -943,6 +924,74 @@ def main() -> int:
     if not any_changed:
         print("All generated files up to date.")
     return 0
+
+
+def _generated_targets() -> list[tuple[Path, str]]:
+    """Return all generated file targets and contents."""
+    targets: list[tuple[Path, str]] = [
+        (PROJECT_ROOT / "src/include/picblobs/arch.h", _gen_arch_h()),
+        (PROJECT_ROOT / "src/include/picblobs/syscall.h", _gen_syscall_h()),
+        (PROJECT_ROOT / "src/include/picblobs/picblobs.h", _gen_picblobs_h()),
+        (PROJECT_ROOT / "platforms/BUILD.bazel", _gen_platforms_build()),
+        (PROJECT_ROOT / "toolchains/BUILD.bazel", _gen_toolchains_build()),
+        (PROJECT_ROOT / "bazel/platforms.bzl", _gen_platforms_bzl()),
+        (PROJECT_ROOT / "src/payload/BUILD.bazel", _gen_payload_build()),
+    ]
+    targets.extend(_generated_syscall_targets())
+    targets.extend(_generated_runner_targets())
+    return targets
+
+
+def _generated_syscall_targets() -> list[tuple[Path, str]]:
+    """Return per-syscall generated header targets."""
+    return [
+        (
+            PROJECT_ROOT / f"src/include/picblobs/sys/{sdef.name}.h",
+            _gen_syscall_header(sdef),
+        )
+        for sdef in SYSCALL_DEFS.values()
+    ]
+
+
+def _generated_runner_targets() -> list[tuple[Path, str]]:
+    """Return generated runner.c targets for supported OSes."""
+    targets: list[tuple[Path, str]] = []
+    for os_name in OPERATING_SYSTEMS:
+        if os_name in ("windows", "freebsd"):
+            continue
+        runner_c = _gen_runner_c(os_name)
+        if runner_c:
+            path = PROJECT_ROOT / f"tests/runners/{os_name}/runner.c"
+            targets.append((path, runner_c))
+    return targets
+
+
+def _render_bazelrc(existing: str) -> str:
+    """Return .bazelrc with the generated platform block installed."""
+    block = f"{_MARKER_START}\n{_gen_bazelrc_block()}{_MARKER_END}"
+    if _MARKER_START in existing:
+        return re.sub(
+            rf"{re.escape(_MARKER_START)}.*?{re.escape(_MARKER_END)}",
+            block,
+            existing,
+            flags=re.DOTALL,
+        )
+    lines = existing.split("\n")
+    start = end = None
+    for i, line in enumerate(lines):
+        if re.match(r"build:(linux|freebsd|windows)_", line):
+            if start is None:
+                start = i
+            end = i
+    if start is not None:
+        return "\n".join(lines[:start] + [block] + lines[end + 1 :])
+    return existing + "\n" + block + "\n"
+
+
+def _write_bazelrc(check: bool) -> bool:
+    """Regenerate .bazelrc between the managed markers."""
+    bazelrc_path = PROJECT_ROOT / ".bazelrc"
+    return _write(bazelrc_path, _render_bazelrc(bazelrc_path.read_text()), check)
 
 
 if __name__ == "__main__":

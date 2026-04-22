@@ -249,42 +249,47 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # Discover windows blobs.
-    #
-    # Known limitations:
-    # - aarch64: Wine doesn't run ARM64 PEs on x86 hosts.
-    # - i686: the blob's LDR_DATA_TABLE_ENTRY.BaseDllName offset (0x28)
-    #   differs from real Windows (0x24). The mock runner is self-consistent
-    #   but Wine exposes this discrepancy. See peb.h for details.
-    blobs = [
-        (bt, os_, arch)
-        for bt, os_, arch in list_blobs()
-        if os_ == "windows" and arch in ("x86_64", "i686")
-    ]
-    if args.type:
-        blobs = [(bt, os_, arch) for bt, os_, arch in blobs if bt == args.type]
-    if args.arch:
-        blobs = [(bt, os_, arch) for bt, os_, arch in blobs if arch == args.arch]
+    blobs = _matching_windows_blobs(args.type, args.arch)
 
     if not blobs:
         print("No matching windows blobs found.")
         return 1
 
+    passed, failed = _run_wine_validation(blobs)
+    print(f"\n{passed} passed, {failed} failed")
+    return 1 if failed else 0
+
+
+def _matching_windows_blobs(
+    type_filter: str | None,
+    arch_filter: str | None,
+) -> list[tuple[str, str, str]]:
+    """Return the Windows blobs supported by the Wine validator."""
+    blobs = [
+        (bt, os_, arch)
+        for bt, os_, arch in list_blobs()
+        if os_ == "windows" and arch in ("x86_64", "i686")
+    ]
+    if type_filter:
+        blobs = [(bt, os_, arch) for bt, os_, arch in blobs if bt == type_filter]
+    if arch_filter:
+        blobs = [(bt, os_, arch) for bt, os_, arch in blobs if arch == arch_filter]
+    return blobs
+
+
+def _run_wine_validation(blobs: list[tuple[str, str, str]]) -> tuple[int, int]:
+    """Run Wine validation across a list of staged blob triples."""
     passed = 0
     failed = 0
-
     for blob_type, _, arch in blobs:
         tag = f"{blob_type} windows:{arch}"
         ok, msg = validate_blob(blob_type, arch)
-        status = "PASS" if ok else "FAIL"
-        print(f"  {tag:40s} {status}  {msg}")
+        print(f"  {tag:40s} {'PASS' if ok else 'FAIL'}  {msg}")
         if ok:
             passed += 1
         else:
             failed += 1
-
-    print(f"\n{passed} passed, {failed} failed")
-    return 1 if failed else 0
+    return passed, failed
 
 
 if __name__ == "__main__":

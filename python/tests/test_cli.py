@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -182,3 +183,59 @@ class TestArgParsing:
     def test_run_help_exits(self) -> None:
         with pytest.raises(SystemExit):
             main(["run", "--help"])
+
+
+class TestVerifyCommand:
+    """Test the 'verify' subcommand dispatch paths."""
+
+    def test_verify_fallback_runner_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import picblobs.cli as cli
+
+        monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)
+        monkeypatch.setattr(
+            "picblobs.list_blobs", lambda: [("hello", "linux", "x86_64")]
+        )
+        monkeypatch.setattr(
+            "picblobs.get_blob",
+            lambda blob_type, os_name, arch: SimpleNamespace(
+                blob_type=blob_type, target_os=os_name, target_arch=arch
+            ),
+        )
+
+        calls: list[tuple[str, str, str]] = []
+
+        def _run_blob(blob, **kwargs):
+            calls.append((blob.blob_type, blob.target_os, blob.target_arch))
+            return SimpleNamespace(stdout=b"hello", stderr=b"", exit_code=0)
+
+        monkeypatch.setattr("picblobs.runner.run_blob", _run_blob)
+
+        rc = main(["verify", "--type", "hello", "--os", "linux", "--arch", "x86_64"])
+        assert rc == 0
+        assert calls == [("hello", "linux", "x86_64")]
+
+    def test_verify_custom_runner_dispatch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import picblobs.cli as cli
+
+        monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)
+        monkeypatch.setattr(
+            "picblobs.list_blobs", lambda: [("alloc_jump", "linux", "x86_64")]
+        )
+
+        calls: list[tuple[str, str, float]] = []
+
+        def _verify_alloc_jump(os_name: str, arch: str, timeout: float):
+            calls.append((os_name, arch, timeout))
+            return SimpleNamespace(stdout=b"ok", stderr=b"", exit_code=0)
+
+        monkeypatch.setitem(cli._VERIFY_RUNNERS, "alloc_jump", _verify_alloc_jump)
+
+        rc = main(
+            ["verify", "--type", "alloc_jump", "--os", "linux", "--arch", "x86_64"]
+        )
+        assert rc == 0
+        assert calls == [("linux", "x86_64", 30.0)]

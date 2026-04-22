@@ -185,70 +185,77 @@ def pytest_collection_modifyitems(
     items: list[pytest.Item],
 ) -> None:
     """Auto-skip tests based on available infrastructure."""
-    runners_exist = _runners_exist()
-    has_qemu = _has_qemu()
-    can_bind_localhost = _can_bind_localhost()
-    has_cross_compile = _has_any_cross_compiler()
+    _apply_capability_skips(items, _capability_state())
+    _apply_env_filters(items, _collection_filters())
 
-    # Environment-based filters.
-    filter_os = _env_filter("os")
-    filter_arch = _env_filter("arch")
-    filter_type = _env_filter("type")
 
+def _capability_state() -> dict[str, bool]:
+    """Return the environment capabilities relevant to pytest skips."""
+    return {
+        "requires_runners": _runners_exist(),
+        "requires_qemu": _has_qemu(),
+        "requires_local_tcp": _can_bind_localhost(),
+        "requires_cross_compile": _has_any_cross_compiler(),
+    }
+
+
+def _collection_filters() -> dict[str, str]:
+    """Return active env-driven collection filters."""
+    return {
+        "os": _env_filter("os"),
+        "arch": _env_filter("arch"),
+        "type": _env_filter("type"),
+    }
+
+
+def _skip_marker_reason(keyword: str) -> str:
+    """Return the human-facing skip reason for one capability marker."""
+    reasons = {
+        "requires_runners": "Test runners not built. Run: bazel build //tests/runners/...",
+        "requires_qemu": "QEMU user-static not installed.",
+        "requires_local_tcp": "Local TCP sockets are unavailable in this environment.",
+        "requires_cross_compile": "No Bootlin cross-compiler is discoverable.",
+    }
+    return reasons[keyword]
+
+
+def _apply_capability_skips(
+    items: list[pytest.Item],
+    capabilities: dict[str, bool],
+) -> None:
+    """Skip tests whose declared infrastructure requirements are unavailable."""
     for item in items:
-        if "requires_runners" in item.keywords and not runners_exist:
-            item.add_marker(
-                pytest.mark.skip(
-                    reason="Test runners not built. Run: bazel build //tests/runners/...",
-                )
-            )
+        for keyword, available in capabilities.items():
+            if keyword in item.keywords and not available:
+                item.add_marker(pytest.mark.skip(reason=_skip_marker_reason(keyword)))
 
-        if "requires_qemu" in item.keywords and not has_qemu:
-            item.add_marker(
-                pytest.mark.skip(
-                    reason="QEMU user-static not installed.",
-                )
-            )
 
-        if "requires_local_tcp" in item.keywords and not can_bind_localhost:
-            item.add_marker(
-                pytest.mark.skip(
-                    reason="Local TCP sockets are unavailable in this environment.",
-                )
-            )
+def _item_filter_params(item: pytest.Item) -> tuple[str, str, str]:
+    """Extract (type, os, arch) parameters from a collected item."""
+    params = getattr(item, "callspec", None)
+    if not params:
+        return "", "", ""
+    p = params.params
+    param_os = p.get("target_os", "")
+    param_arch = p.get("target_arch", "")
+    param_type = p.get("blob_type", "")
+    combo = p.get("payload_combo")
+    if combo is not None:
+        param_type, param_os, param_arch = combo
+    return param_type, param_os, param_arch
 
-        if "requires_cross_compile" in item.keywords and not has_cross_compile:
-            item.add_marker(
-                pytest.mark.skip(
-                    reason="No Bootlin cross-compiler is discoverable.",
-                )
-            )
 
-        # Apply env-based filters to parametrized tests.
-        if filter_os or filter_arch or filter_type:
-            params = getattr(item, "callspec", None)
-            if params:
-                p = params.params
-
-                # Support both individual params and tuple-based payload_combo.
-                param_os = p.get("target_os", "")
-                param_arch = p.get("target_arch", "")
-                param_type = p.get("blob_type", "")
-
-                # Extract from payload_combo tuple if present.
-                combo = p.get("payload_combo")
-                if combo is not None:
-                    param_type, param_os, param_arch = combo
-
-                if filter_os and param_os and param_os != filter_os:
-                    item.add_marker(
-                        pytest.mark.skip(reason=f"Filtered: os!={filter_os}")
-                    )
-                if filter_arch and param_arch and param_arch != filter_arch:
-                    item.add_marker(
-                        pytest.mark.skip(reason=f"Filtered: arch!={filter_arch}")
-                    )
-                if filter_type and param_type and param_type != filter_type:
-                    item.add_marker(
-                        pytest.mark.skip(reason=f"Filtered: type!={filter_type}")
-                    )
+def _apply_env_filters(items: list[pytest.Item], filters: dict[str, str]) -> None:
+    """Skip parametrized items that do not match env-driven filters."""
+    if not any(filters.values()):
+        return
+    for item in items:
+        param_type, param_os, param_arch = _item_filter_params(item)
+        for key, actual in (
+            ("os", param_os),
+            ("arch", param_arch),
+            ("type", param_type),
+        ):
+            expected = filters[key]
+            if expected and actual and actual != expected:
+                item.add_marker(pytest.mark.skip(reason=f"Filtered: {key}!={expected}"))

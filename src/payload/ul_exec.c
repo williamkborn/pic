@@ -358,16 +358,12 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
  * ---------------------------------------------------------------- */
 
 PIC_TEXT
-static pic_uintptr load_elf_from_memory(const pic_u8 *elf_data,
-	pic_size_t elf_size, const Elf_Ehdr *ehdr, Elf_Addr *out_phdr_addr)
+static int find_load_range(const Elf_Ehdr *ehdr, const Elf_Phdr *phdr,
+	pic_uintptr *out_vaddr_min, pic_uintptr *out_vaddr_max)
 {
-	const Elf_Phdr *phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
-	pic_uintptr base = 0;
-	int is_pie = (ehdr->e_type == ET_DYN);
-
-	/* Find total address range. */
 	pic_uintptr vaddr_min = (pic_uintptr)-1;
 	pic_uintptr vaddr_max = 0;
+
 	for (int i = 0; i < ehdr->e_phnum; i++) {
 		if (phdr[i].p_type != PT_LOAD)
 			continue;
@@ -380,70 +376,100 @@ static pic_uintptr load_elf_from_memory(const pic_u8 *elf_data,
 	}
 
 	if (vaddr_min == (pic_uintptr)-1)
-		return (pic_uintptr)-1;
+		return 0;
 
+	*out_vaddr_min = vaddr_min;
+	*out_vaddr_max = vaddr_max;
+	return 1;
+}
+
+PIC_TEXT
+static pic_uintptr reserve_pie_range(
+	pic_uintptr vaddr_min, pic_uintptr vaddr_max)
+{
 	pic_uintptr total =
 		PAGE_ALIGN_UP(vaddr_max) - PAGE_ALIGN_DOWN(vaddr_min);
+	void *region = pic_mmap(PIC_NULL, total, PIC_PROT_NONE,
+		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
+	if ((long)region == -1)
+		return (pic_uintptr)-1;
+	return (pic_uintptr)region - PAGE_ALIGN_DOWN(vaddr_min);
+}
 
-	if (is_pie) {
-		/*
-		 * Reserve the full vaddr range up-front for PIE. On failure
-		 * in the segment loop below, this reservation leaks — accepted
-		 * because the caller (phase2) calls pic_exit_group on error,
-		 * so the process is about to terminate anyway.
-		 */
-		void *region = pic_mmap(PIC_NULL, total, PIC_PROT_NONE,
-			PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-		if ((long)region == -1)
-			return (pic_uintptr)-1;
-		base = (pic_uintptr)region - PAGE_ALIGN_DOWN(vaddr_min);
+PIC_TEXT
+static int map_load_segment(const pic_u8 *elf_data, pic_size_t elf_size,
+	const Elf_Phdr *segment, pic_uintptr base)
+{
+	pic_uintptr seg_addr = base + segment->p_vaddr;
+	pic_uintptr map_start = PAGE_ALIGN_DOWN(seg_addr);
+	pic_uintptr map_end = PAGE_ALIGN_UP(seg_addr + segment->p_memsz);
+	pic_size_t map_size = map_end - map_start;
+
+	void *p = pic_mmap((void *)map_start, map_size,
+		PIC_PROT_READ | PIC_PROT_WRITE,
+		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS | PIC_MAP_FIXED, -1, 0);
+	if ((long)p == -1)
+		return 0;
+
+	if (segment->p_filesz > 0) {
+		if (segment->p_offset + segment->p_filesz > elf_size)
+			return 0;
+		pic_memcpy((void *)seg_addr, elf_data + segment->p_offset,
+			segment->p_filesz);
 	}
 
-	/* Map each PT_LOAD segment. */
+	if (segment->p_memsz > segment->p_filesz)
+		pic_memset((void *)(seg_addr + segment->p_filesz), 0,
+			segment->p_memsz - segment->p_filesz);
+	if (segment->p_flags & PF_X)
+		pic_sync_icache((void *)seg_addr, segment->p_memsz);
+
+	pic_mprotect((void *)map_start, map_size, pf_to_prot(segment->p_flags));
+	return 1;
+}
+
+PIC_TEXT
+static void set_phdr_addr(const Elf_Ehdr *ehdr, const Elf_Phdr *phdr,
+	pic_uintptr base, pic_uintptr vaddr_min, Elf_Addr *out_phdr_addr)
+{
+	*out_phdr_addr = 0;
+	for (int i = 0; i < ehdr->e_phnum; i++) {
+		if (phdr[i].p_type == PT_PHDR) {
+			*out_phdr_addr = base + phdr[i].p_vaddr;
+			break;
+		}
+	}
+	if (*out_phdr_addr == 0)
+		*out_phdr_addr = base + vaddr_min + ehdr->e_phoff;
+}
+
+PIC_TEXT
+static pic_uintptr load_elf_from_memory(const pic_u8 *elf_data,
+	pic_size_t elf_size, const Elf_Ehdr *ehdr, Elf_Addr *out_phdr_addr)
+{
+	const Elf_Phdr *phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
+	pic_uintptr base = 0;
+	pic_uintptr vaddr_min = 0;
+	pic_uintptr vaddr_max = 0;
+
+	if (!find_load_range(ehdr, phdr, &vaddr_min, &vaddr_max))
+		return (pic_uintptr)-1;
+
+	if (ehdr->e_type == ET_DYN) {
+		base = reserve_pie_range(vaddr_min, vaddr_max);
+		if (base == (pic_uintptr)-1)
+			return (pic_uintptr)-1;
+	}
+
 	for (int i = 0; i < ehdr->e_phnum; i++) {
 		if (phdr[i].p_type != PT_LOAD)
 			continue;
-
-		pic_uintptr seg_addr = base + phdr[i].p_vaddr;
-		pic_uintptr map_start = PAGE_ALIGN_DOWN(seg_addr);
-		pic_uintptr map_end = PAGE_ALIGN_UP(seg_addr + phdr[i].p_memsz);
-		pic_size_t map_size = map_end - map_start;
-
-		void *p = pic_mmap((void *)map_start, map_size,
-			PIC_PROT_READ | PIC_PROT_WRITE,
-			PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS | PIC_MAP_FIXED, -1,
-			0);
-		if ((long)p == -1)
+		if (!map_load_segment(elf_data, elf_size, &phdr[i], base))
 			return (pic_uintptr)-1;
-
-		if (phdr[i].p_filesz > 0) {
-			if (phdr[i].p_offset + phdr[i].p_filesz > elf_size)
-				return (pic_uintptr)-1;
-			pic_memcpy((void *)seg_addr,
-				elf_data + phdr[i].p_offset, phdr[i].p_filesz);
-		}
-
-		if (phdr[i].p_memsz > phdr[i].p_filesz)
-			pic_memset((void *)(seg_addr + phdr[i].p_filesz), 0,
-				phdr[i].p_memsz - phdr[i].p_filesz);
-		if (phdr[i].p_flags & PF_X)
-			pic_sync_icache((void *)seg_addr, phdr[i].p_memsz);
-
-		pic_mprotect((void *)map_start, map_size,
-			pf_to_prot(phdr[i].p_flags));
 	}
 
-	if (out_phdr_addr) {
-		*out_phdr_addr = 0;
-		for (int i = 0; i < ehdr->e_phnum; i++) {
-			if (phdr[i].p_type == PT_PHDR) {
-				*out_phdr_addr = base + phdr[i].p_vaddr;
-				break;
-			}
-		}
-		if (*out_phdr_addr == 0)
-			*out_phdr_addr = base + vaddr_min + ehdr->e_phoff;
-	}
+	if (out_phdr_addr)
+		set_phdr_addr(ehdr, phdr, base, vaddr_min, out_phdr_addr);
 
 	return base;
 }
@@ -709,110 +735,114 @@ __attribute__((noreturn)) static void jump_to_entry(
  * ---------------------------------------------------------------- */
 
 PIC_TEXT
+static const Elf_Phdr *find_interp_phdr(
+	const pic_u8 *elf_data, pic_u32 elf_size, const Elf_Ehdr *ehdr)
+{
+	const Elf_Phdr *phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
+	for (int i = 0; i < ehdr->e_phnum; i++) {
+		if (phdr[i].p_type == PT_INTERP)
+			return &phdr[i];
+	}
+	return PIC_NULL;
+}
+
+PIC_TEXT
+static const char *interp_path_from_phdr(
+	const pic_u8 *elf_data, pic_u32 elf_size, const Elf_Phdr *interp_phdr)
+{
+	if (!interp_phdr)
+		return PIC_NULL;
+	if (interp_phdr->p_offset + interp_phdr->p_filesz > elf_size)
+		return PIC_NULL;
+
+	const char *s = (const char *)(elf_data + interp_phdr->p_offset);
+	for (Elf_Off j = 0; j < interp_phdr->p_filesz; j++) {
+		if (s[j] == '\0')
+			return s;
+	}
+	return PIC_NULL;
+}
+
+PIC_TEXT
+static void maybe_clean_exec_range(const Elf_Ehdr *ehdr, const Elf_Phdr *phdr)
+{
+	if (ehdr->e_type != ET_EXEC)
+		return;
+
+#if defined(__powerpc__) && !defined(__powerpc64__)
+	/*
+	 * MAP_FIXED replaces overlapping mappings on Linux already.
+	 * Under qemu-ppc user mode, eagerly unmapping the target range
+	 * can tear down emulation state before the replacement mapping.
+	 */
+#else
+	pic_uintptr vmin = 0;
+	pic_uintptr vmax = 0;
+	if (find_load_range(ehdr, phdr, &vmin, &vmax)) {
+		vmin = PAGE_ALIGN_DOWN(vmin);
+		vmax = PAGE_ALIGN_UP(vmax);
+		PIC_LOG("ul_exec: cleaning %x - %x\n", (long)vmin, (long)vmax);
+		pic_munmap((void *)vmin, vmax - vmin);
+	}
+#endif
+}
+
+PIC_TEXT
+static void validate_elf_config(
+	const struct ul_exec_config *cfg, const Elf_Ehdr *ehdr)
+{
+	if (cfg->elf_size < sizeof(Elf_Ehdr))
+		pic_exit_group(100);
+	if (*(pic_u32 *)ehdr->e_ident != ELF_MAGIC)
+		pic_exit_group(101);
+	if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN)
+		pic_exit_group(102);
+	if (ehdr->e_phnum > 512)
+		pic_exit_group(100);
+
+	pic_size_t phdr_end = (pic_size_t)ehdr->e_phoff +
+		(pic_size_t)ehdr->e_phnum * (pic_size_t)ehdr->e_phentsize;
+	if (ehdr->e_phoff > cfg->elf_size || phdr_end > cfg->elf_size)
+		pic_exit_group(100);
+}
+
+PIC_TEXT
 __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 {
 	const pic_u8 *elf_data = (const pic_u8 *)(cfg + 1);
 	const char *argv_data = (const char *)(elf_data + cfg->elf_size);
 	const char *envp_data = argv_data + cfg->argv_size;
-
-	if (cfg->elf_size < sizeof(Elf_Ehdr))
-		pic_exit_group(100);
-
 	const Elf_Ehdr *ehdr = (const Elf_Ehdr *)elf_data;
-	if (*(pic_u32 *)ehdr->e_ident != ELF_MAGIC)
-		pic_exit_group(101);
-	if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN)
-		pic_exit_group(102);
+	const Elf_Phdr *phdr;
+	const char *interp_path;
+	Elf_Addr phdr_addr = 0;
+	pic_uintptr elf_base;
+	Elf_Addr entry;
+	pic_uintptr interp_base = 0;
+	pic_uintptr interp_entry = 0;
+	pic_uintptr sp;
+	pic_uintptr target;
 
-	/* Validate program header table fits within the ELF data. */
-	if (ehdr->e_phnum > 512)
-		pic_exit_group(100);
-	pic_size_t phdr_end = (pic_size_t)ehdr->e_phoff +
-		(pic_size_t)ehdr->e_phnum * (pic_size_t)ehdr->e_phentsize;
-	if (ehdr->e_phoff > cfg->elf_size || phdr_end > cfg->elf_size)
-		pic_exit_group(100);
+	validate_elf_config(cfg, ehdr);
 
 	PIC_LOG("ul_exec: elf_size=%d type=%d entry=%x phnum=%d\n",
 		(long)cfg->elf_size, (long)ehdr->e_type, (long)ehdr->e_entry,
 		(long)ehdr->e_phnum);
 
-	/* Find PT_INTERP. */
-	const Elf_Phdr *phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
-	const char *interp_path = PIC_NULL;
-	for (int i = 0; i < ehdr->e_phnum; i++) {
-		if (phdr[i].p_type == PT_INTERP) {
-			if (phdr[i].p_offset + phdr[i].p_filesz > cfg->elf_size)
-				break;
-			/*
-			 * Ensure NUL-termination within the phdr extent.
-			 * Interp paths are short (typically
-			 * /lib/ld-linux*.so*), but we don't trust the ELF —
-			 * scan up to p_filesz.
-			 */
-			const char *s =
-				(const char *)(elf_data + phdr[i].p_offset);
-			int found_nul = 0;
-			for (Elf_Off j = 0; j < phdr[i].p_filesz; j++) {
-				if (s[j] == '\0') {
-					found_nul = 1;
-					break;
-				}
-			}
-			if (found_nul)
-				interp_path = s;
-			break;
-		}
-	}
+	phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
+	interp_path = interp_path_from_phdr(elf_data, cfg->elf_size,
+		find_interp_phdr(elf_data, cfg->elf_size, ehdr));
+	maybe_clean_exec_range(ehdr, phdr);
 
-	/*
-	 * Clean the address space: for ET_EXEC, munmap the target vaddr
-	 * range so MAP_FIXED won't collide with the old process image
-	 * (runner, QEMU structures, etc.)  This is the grugq step 1.
-	 */
-	if (ehdr->e_type == ET_EXEC) {
-#if defined(__powerpc__) && !defined(__powerpc64__)
-		/*
-		 * MAP_FIXED replaces overlapping mappings on Linux already.
-		 * Under qemu-ppc user mode, eagerly unmapping the target range
-		 * can tear down emulation state before the replacement mapping.
-		 */
-#else
-		pic_uintptr vmin = (pic_uintptr)-1;
-		pic_uintptr vmax = 0;
-		for (int i = 0; i < ehdr->e_phnum; i++) {
-			if (phdr[i].p_type != PT_LOAD)
-				continue;
-			pic_uintptr lo = (pic_uintptr)phdr[i].p_vaddr;
-			pic_uintptr hi = lo + phdr[i].p_memsz;
-			if (lo < vmin)
-				vmin = lo;
-			if (hi > vmax)
-				vmax = hi;
-		}
-		if (vmin != (pic_uintptr)-1) {
-			vmin = PAGE_ALIGN_DOWN(vmin);
-			vmax = PAGE_ALIGN_UP(vmax);
-			PIC_LOG("ul_exec: cleaning %x - %x\n", (long)vmin,
-				(long)vmax);
-			pic_munmap((void *)vmin, vmax - vmin);
-		}
-#endif
-	}
-
-	/* Load main ELF. */
-	Elf_Addr phdr_addr = 0;
-	pic_uintptr elf_base =
+	elf_base =
 		load_elf_from_memory(elf_data, cfg->elf_size, ehdr, &phdr_addr);
 	if (elf_base == (pic_uintptr)-1)
 		pic_exit_group(103);
 
-	Elf_Addr entry = elf_base + ehdr->e_entry;
+	entry = elf_base + ehdr->e_entry;
 	PIC_LOG("ul_exec: loaded base=%x entry=%x\n", (long)elf_base,
 		(long)entry);
 
-	/* Load interpreter if needed. */
-	pic_uintptr interp_base = 0;
-	pic_uintptr interp_entry = 0;
 	if (interp_path) {
 		Elf_Addr ie_entry = 0;
 		interp_base = load_interp(interp_path, &ie_entry);
@@ -823,12 +853,11 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 			(long)interp_entry);
 	}
 
-	/* Build stack. */
-	pic_uintptr sp = build_stack(cfg->argc, argv_data, cfg->argv_size,
-		cfg->envp_count, envp_data, cfg->envp_size, entry, phdr_addr,
-		ehdr->e_phnum, ehdr->e_phentsize, interp_base);
+	sp = build_stack(cfg->argc, argv_data, cfg->argv_size, cfg->envp_count,
+		envp_data, cfg->envp_size, entry, phdr_addr, ehdr->e_phnum,
+		ehdr->e_phentsize, interp_base);
 
-	pic_uintptr target = interp_entry ? interp_entry : entry;
+	target = interp_entry ? interp_entry : entry;
 
 	PIC_LOG("ul_exec: jumping to %x (sp=%x)\n", (long)target, (long)sp);
 
