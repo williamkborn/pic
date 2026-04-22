@@ -116,6 +116,8 @@ EXPECTED_PLAINTEXT = b"Hello from NaCl PIC blob!"
 E2E_TIMEOUT = 30.0
 
 _E2E_SKIP_ARCHES: frozenset[str] = frozenset()
+
+
 class TestNaClE2E:
     """Run nacl_server + nacl_client in parallel on each architecture.
 
@@ -127,6 +129,7 @@ class TestNaClE2E:
     """
 
     @pytest.mark.requires_qemu
+    @pytest.mark.requires_local_tcp
     @pytest.mark.parametrize(
         "target_os,target_arch",
         _e2e_combos(),

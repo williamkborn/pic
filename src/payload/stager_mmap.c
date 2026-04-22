@@ -19,8 +19,8 @@
  * 64-bit offset anyway.
  */
 
-#include "picblobs/os/linux.h"
 #include "picblobs/cache.h"
+#include "picblobs/os/linux.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/close.h"

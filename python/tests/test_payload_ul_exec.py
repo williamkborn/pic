@@ -9,16 +9,10 @@ See: spec/verification/TEST-011-payload-pytest-suite.md
 
 from __future__ import annotations
 
-import struct
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from picblobs import get_blob
-from picblobs._cross_compile import find_gcc
+from picblobs._cross_compile import build_ul_exec_config, compile_c_elf, compile_raw_elf
 from picblobs.runner import is_arch_skip_rosetta, run_blob, find_runner
 
 from payload_defs import OPERATING_SYSTEMS
@@ -28,99 +22,6 @@ from payload_defs import OPERATING_SYSTEMS
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Map our arch names to GCC cross-compiler triples used by Bootlin toolchains.
-ARCH_TO_TRIPLE = {
-    "x86_64": "x86_64-buildroot-linux-gnu",
-    "i686": "i686-buildroot-linux-gnu",
-    "aarch64": "aarch64-buildroot-linux-gnu",
-    "armv5_arm": "arm-buildroot-linux-gnueabi",
-    "armv5_thumb": "arm-buildroot-linux-gnueabi",
-    "armv7_thumb": "arm-buildroot-linux-gnueabihf",
-    "mipsel32": "mipsel-buildroot-linux-gnu",
-    "mipsbe32": "mips-buildroot-linux-gnu",
-    "s390x": "s390x-buildroot-linux-gnu",
-    "sparcv8": "sparc-buildroot-linux-uclibc",
-    "powerpc": "powerpc-buildroot-linux-gnu",
-    "ppc64le": "powerpc64le-buildroot-linux-gnu",
-    "riscv64": "riscv64-buildroot-linux-gnu",
-}
-
-# Extra cflags for specific arches.
-ARCH_EXTRA_CFLAGS = {
-    "armv5_thumb": ["-mthumb"],
-    "armv7_thumb": ["-march=armv7-a", "-mthumb"],
-    "powerpc": ["-mcpu=e300c3"],
-    "ppc64le": ["-mcpu=power8"],
-}
-
-# Bazel external toolchain base path.
-BOOTLIN_BASE = Path("bazel-out/../external").resolve()
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _find_sysroot(arch: str) -> str | None:
-    """Find the Bootlin sysroot for an architecture."""
-    triple = ARCH_TO_TRIPLE.get(arch)
-    bootlin_arch_map = {
-        "x86_64": "x86_64",
-        "i686": "i686",
-        "aarch64": "aarch64",
-        "armv5_arm": "armv5",
-        "armv5_thumb": "armv5",
-        "armv7_thumb": "armv7",
-        "mipsel32": "mipsel32",
-        "mipsbe32": "mipsbe32",
-        "s390x": "s390x",
-        "sparcv8": "sparcv8",
-        "powerpc": "powerpc",
-        "ppc64le": "ppc64le",
-        "riscv64": "riscv64",
-    }
-    bootlin_name = bootlin_arch_map.get(arch)
-    if not bootlin_name or not triple:
-        return None
-
-    try:
-        res = subprocess.run(
-            ["bazel", "info", "output_base"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            cwd=str(PROJECT_ROOT),
-        )
-        if res.returncode == 0:
-            output_base = Path(res.stdout.strip())
-            candidates = [
-                output_base
-                / "external"
-                / f"+bootlin+bootlin_{bootlin_name}"
-                / f"{triple}"
-                / "sysroot",
-                PROJECT_ROOT
-                / "bazel-pic"
-                / "external"
-                / f"+bootlin+bootlin_{bootlin_name}"
-                / f"{triple}"
-                / "sysroot",
-            ]
-            for sysroot in candidates:
-                if sysroot.exists():
-                    return str(sysroot)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    fallback = (
-        PROJECT_ROOT
-        / "bazel-pic"
-        / "external"
-        / f"+bootlin+bootlin_{bootlin_name}"
-        / f"{triple}"
-        / "sysroot"
-    )
-    if fallback.exists():
-        return str(fallback)
-    return None
-
 
 def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
     try:
@@ -128,122 +29,6 @@ def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
         return True
     except FileNotFoundError:
         return False
-
-
-def _compile_test_elf(
-    arch: str,
-    source: str,
-    static: bool = True,
-    extra_cflags: list[str] | None = None,
-) -> bytes | None:
-    """Compile a C program to an ELF binary using the Bootlin cross-compiler.
-
-    Returns the ELF binary as bytes, or None if compiler not found.
-    """
-    gcc = find_gcc(arch)
-    if gcc is None:
-        return None
-
-    sysroot = _find_sysroot(arch)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = Path(tmpdir) / "test.c"
-        out_path = Path(tmpdir) / "test.elf"
-        src_path.write_text(source)
-
-        cmd = [gcc]
-        if sysroot:
-            cmd.append(f"--sysroot={sysroot}")
-        cmd.extend([str(src_path), "-o", str(out_path), "-O2"])
-        if static:
-            cmd.append("-static")
-        if extra_cflags:
-            cmd.extend(extra_cflags)
-        arch_flags = ARCH_EXTRA_CFLAGS.get(arch, [])
-        cmd.extend(arch_flags)
-
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
-        if result.returncode != 0:
-            return None
-
-        return out_path.read_bytes()
-
-
-def _compile_raw_elf(arch: str, pie: bool = False) -> bytes | None:
-    """Compile an arch-specific raw syscall asm program (no libc).
-
-    If pie=True, compile as position-independent (ET_DYN).
-    Otherwise compile as static (ET_EXEC) — may conflict with QEMU
-    on some architectures.
-
-    Returns the ELF binary as bytes, or None if not supported.
-    """
-    asm_src = RAW_SYSCALL_SRCS.get(arch)
-    if asm_src is None:
-        return None
-
-    gcc = find_gcc(arch)
-    if gcc is None:
-        return None
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = Path(tmpdir) / "test.S"
-        out_path = Path(tmpdir) / "test.elf"
-        src_path.write_text(asm_src)
-
-        cmd = [gcc, str(src_path), "-o", str(out_path), "-nostdlib", "-nostartfiles"]
-        if pie:
-            # -shared produces ET_DYN without PT_INTERP (no ld-linux needed).
-            cmd.extend(["-shared", "-Wl,-e,_start"])
-        else:
-            cmd.append("-static")
-        arch_flags = ARCH_EXTRA_CFLAGS.get(arch, [])
-        cmd.extend(arch_flags)
-
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
-        if result.returncode != 0:
-            return None
-
-        return out_path.read_bytes()
-
-
-# Architectures that are big-endian.
-_BIG_ENDIAN_ARCHES = {"mipsbe32", "s390x", "sparcv8", "powerpc"}
-
-
-def _build_ul_exec_config(
-    elf_data: bytes,
-    argv: list[str] | None = None,
-    envp: list[str] | None = None,
-    target_arch: str = "x86_64",
-) -> bytes:
-    """Build the config struct for ul_exec."""
-    if argv is None:
-        argv = ["test"]
-    if envp is None:
-        envp = []
-
-    # Null-separated argv strings.
-    argv_data = b""
-    for a in argv:
-        argv_data += a.encode() + b"\x00"
-
-    # Null-separated envp strings.
-    envp_data = b""
-    for e in envp:
-        envp_data += e.encode() + b"\x00"
-
-    # Pack header in target-native byte order.
-    endian = ">" if target_arch in _BIG_ENDIAN_ARCHES else "<"
-    header = struct.pack(
-        f"{endian}IIIII",
-        len(elf_data),
-        len(argv),
-        len(argv_data),
-        len(envp),
-        len(envp_data),
-    )
-    return header + elf_data + argv_data + envp_data
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +207,7 @@ class TestUlExecStatic:
     """
 
     @pytest.mark.requires_qemu
+    @pytest.mark.requires_cross_compile
     @pytest.mark.parametrize("target_arch", _ul_exec_arches())
     def test_static_elf_executes(self, target_arch: str) -> None:
         """Load and execute a static non-PIE (ET_EXEC) raw-syscall ELF.
@@ -438,12 +224,15 @@ class TestUlExecStatic:
         except FileNotFoundError:
             pytest.skip(f"No linux runner for {target_arch}")
 
-        elf_data = _compile_raw_elf(target_arch, pie=False)
+        asm_src = RAW_SYSCALL_SRCS.get(target_arch)
+        if asm_src is None:
+            pytest.skip(f"No raw syscall test source for {target_arch}")
+        elf_data = compile_raw_elf(target_arch, asm_src, pie=False)
         if elf_data is None:
             pytest.skip(f"Cannot compile raw test ELF for {target_arch}")
 
         blob = get_blob("ul_exec", "linux", target_arch)
-        config = _build_ul_exec_config(
+        config = build_ul_exec_config(
             elf_data, argv=["test_static"], target_arch=target_arch
         )
 
@@ -461,6 +250,7 @@ class TestUlExecStatic:
         )
 
     @pytest.mark.requires_qemu
+    @pytest.mark.requires_cross_compile
     def test_static_libc_elf_x86_64(self) -> None:
         """Static glibc binary on x86_64 (non-PIE, ET_EXEC)."""
         if not _blob_exists("ul_exec", "linux", "x86_64"):
@@ -470,12 +260,14 @@ class TestUlExecStatic:
         except FileNotFoundError:
             pytest.skip("No linux runner for x86_64")
 
-        elf_data = _compile_test_elf("x86_64", STATIC_LIBC_SRC, static=True)
+        elf_data = compile_c_elf("x86_64", STATIC_LIBC_SRC, static=True)
         if elf_data is None:
             pytest.skip("Cannot compile static libc ELF for x86_64")
 
         blob = get_blob("ul_exec", "linux", "x86_64")
-        config = _build_ul_exec_config(elf_data, argv=["test_static_libc"])
+        config = build_ul_exec_config(
+            elf_data, target_arch="x86_64", argv=["test_static_libc"]
+        )
         result = run_blob(blob, config=config, timeout=30.0)
 
         assert result.exit_code == 0, (
@@ -493,6 +285,7 @@ class TestUlExecDynamic:
     """Test ul_exec with dynamically linked ELFs (x86_64 only)."""
 
     @pytest.mark.requires_qemu
+    @pytest.mark.requires_cross_compile
     def test_dynamic_elf_executes_x86_64(self) -> None:
         if not _blob_exists("ul_exec", "linux", "x86_64"):
             pytest.skip("ul_exec not staged for linux/x86_64")
@@ -502,13 +295,14 @@ class TestUlExecDynamic:
         except FileNotFoundError:
             pytest.skip("No linux runner for x86_64")
 
-        elf_data = _compile_test_elf("x86_64", DYNAMIC_TEST_SRC, static=False)
+        elf_data = compile_c_elf("x86_64", DYNAMIC_TEST_SRC, static=False)
         if elf_data is None:
             pytest.skip("Cannot compile dynamic test ELF for x86_64")
 
         blob = get_blob("ul_exec", "linux", "x86_64")
-        config = _build_ul_exec_config(
+        config = build_ul_exec_config(
             elf_data,
+            target_arch="x86_64",
             argv=["test_dynamic"],
             envp=["PATH=/usr/bin", "HOME=/tmp"],
         )
@@ -543,7 +337,7 @@ class TestUlExecEdgeCases:
             pytest.skip("No linux runner for x86_64")
 
         blob = get_blob("ul_exec", "linux", "x86_64")
-        config = _build_ul_exec_config(b"\x00" * 64, argv=["bad"])
+        config = build_ul_exec_config(b"\x00" * 64, target_arch="x86_64", argv=["bad"])
 
         result = run_blob(blob, config=config, timeout=10.0)
         # Should exit with error code 101 (bad ELF magic)
@@ -561,7 +355,11 @@ class TestUlExecEdgeCases:
 
         blob = get_blob("ul_exec", "linux", "x86_64")
         # Valid ELF magic but truncated
-        config = _build_ul_exec_config(b"\x7fELF" + b"\x00" * 12, argv=["trunc"])
+        config = build_ul_exec_config(
+            b"\x7fELF" + b"\x00" * 12,
+            target_arch="x86_64",
+            argv=["trunc"],
+        )
 
         result = run_blob(blob, config=config, timeout=10.0)
         assert result.exit_code != 0

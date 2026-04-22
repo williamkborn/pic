@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import tomllib
-from pathlib import Path
 
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+try:
+    from ._test_env import PROJECT_ROOT as REPO_ROOT
+except ImportError:  # pragma: no cover - supports direct module import
+    from _test_env import PROJECT_ROOT as REPO_ROOT
 
 
 def _load_pyproject(package_dir: str) -> dict:

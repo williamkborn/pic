@@ -26,6 +26,11 @@ from pathlib import Path
 
 import pytest
 
+try:
+    from ._test_env import PROJECT_ROOT
+except ImportError:  # pragma: no cover - supports direct module import
+    from _test_env import PROJECT_ROOT
+
 
 PROBE_SOURCE = """
 #include "picblobs/syscall.h"
@@ -37,7 +42,6 @@ long pic_test_call(long n, long a)
 }
 """
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BAZEL_EXT = Path.home() / ".cache/bazel/_bazel_user"
 
 

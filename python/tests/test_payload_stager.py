@@ -148,6 +148,7 @@ class TestStagerTcp:
     """TCP connect-back stager."""
 
     @pytest.mark.requires_qemu
+    @pytest.mark.requires_local_tcp
     @pytest.mark.parametrize(
         "target_os,target_arch",
         _stager_combos("stager_tcp"),

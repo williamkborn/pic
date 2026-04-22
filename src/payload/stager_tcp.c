@@ -13,9 +13,9 @@
  *   Server sends: payload_size (u32 LE) + payload_data
  */
 
+#include "picblobs/cache.h"
 #include "picblobs/net.h"
 #include "picblobs/os/linux.h"
-#include "picblobs/cache.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/close.h"

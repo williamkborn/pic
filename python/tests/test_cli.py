@@ -47,7 +47,9 @@ class TestInfoCommand:
         with pytest.raises(SystemExit):
             main(["info"])
 
-    def test_so_import_error_returns_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_so_import_error_returns_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import picblobs.cli as cli
 
         monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)
@@ -69,7 +71,9 @@ class TestExtractCommand:
         rc = main(["extract", "nonexistent", "linux:x86_64", "-o", "/dev/null"])
         assert rc == 1
 
-    def test_so_import_error_returns_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_so_import_error_returns_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import picblobs.cli as cli
 
         monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)
@@ -106,7 +110,9 @@ class TestRunCommand:
         rc = main(["run", "nonexistent", "linux:x86_64", "--dry-run"])
         assert rc == 1  # blob not found, never reaches dry-run
 
-    def test_so_import_error_returns_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_so_import_error_returns_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         import picblobs.cli as cli
 
         monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)

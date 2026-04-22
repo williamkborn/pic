@@ -31,8 +31,8 @@
 
 #include "picblobs/arch.h"
 #include "picblobs/cache.h"
-#include "picblobs/os/linux.h"
 #include "picblobs/log.h"
+#include "picblobs/os/linux.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/close.h"
@@ -342,8 +342,7 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 	 * now at phase2_addr in the new mapping.
 	 */
 #if defined(__powerpc__) && !defined(__powerpc64__)
-	pic_ul_exec_powerpc_enter(
-		phase2_addr, (pic_uintptr)new_cfg,
+	pic_ul_exec_powerpc_enter(phase2_addr, (pic_uintptr)new_cfg,
 		(pic_uintptr)new_base + got_off + 32768u);
 #else
 	typedef void (*phase2_fn)(const struct ul_exec_config *);

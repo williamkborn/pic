@@ -13,13 +13,16 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-# Ensure tools/ is importable.
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(_PROJECT_ROOT))
+try:
+    from ._test_env import PROJECT_ROOT, prepend_source_paths
+except ImportError:  # pragma: no cover - supports direct module import
+    from _test_env import PROJECT_ROOT, prepend_source_paths
+
+prepend_source_paths()
+
 from tools.registry import (
     ARCHITECTURES,
     LINKER_SYMBOLS,
@@ -36,8 +39,6 @@ from tools.registry import (
     syscall_os_support,
 )
 
-sys.path.pop(0)
-
 
 # ============================================================
 # Helpers
@@ -45,7 +46,7 @@ sys.path.pop(0)
 
 
 def _read_file(rel_path: str) -> str:
-    return (_PROJECT_ROOT / rel_path).read_text()
+    return (PROJECT_ROOT / rel_path).read_text()
 
 
 # ============================================================
@@ -59,10 +60,10 @@ class TestGeneratedFreshness:
     def test_generated_files_up_to_date(self) -> None:
         """tools/generate.py --check must pass."""
         result = subprocess.run(
-            [sys.executable, str(_PROJECT_ROOT / "tools" / "generate.py"), "--check"],
+            [sys.executable, str(PROJECT_ROOT / "tools" / "generate.py"), "--check"],
             capture_output=True,
             text=True,
-            cwd=str(_PROJECT_ROOT),
+            cwd=str(PROJECT_ROOT),
         )
         assert result.returncode == 0, (
             f"Generated files are out of date. Run: python tools/generate.py\n"
@@ -259,7 +260,7 @@ class TestSyscallConsistency:
     def test_per_syscall_headers_exist(self) -> None:
         """Every SyscallDef should have a generated sys/{name}.h."""
         for name in SYSCALL_DEFS:
-            path = _PROJECT_ROOT / f"src/include/picblobs/sys/{name}.h"
+            path = PROJECT_ROOT / f"src/include/picblobs/sys/{name}.h"
             assert path.exists(), (
                 f"Missing sys/{name}.h — run: python tools/generate.py"
             )
@@ -319,7 +320,7 @@ class TestRunnerSync:
 
     def test_runner_types_match_os(self) -> None:
         for os_name, os_def in OPERATING_SYSTEMS.items():
-            runner_dir = _PROJECT_ROOT / "tests" / "runners" / os_def.runner_type
+            runner_dir = PROJECT_ROOT / "tests" / "runners" / os_def.runner_type
             assert runner_dir.exists(), f"Missing runner dir for '{os_name}'"
 
 

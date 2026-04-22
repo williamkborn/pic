@@ -19,7 +19,7 @@ static inline long pic_raw_syscall(
 	__asm__ volatile("ecall"
 		: "+r"(a0_reg)
 		: "r"(a7), "r"(a1_reg), "r"(a2_reg), "r"(a3_reg), "r"(a4_reg),
-		  "r"(a5_reg)
+		"r"(a5_reg)
 		: "memory");
 
 	return a0_reg;

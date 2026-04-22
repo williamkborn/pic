@@ -980,6 +980,11 @@ class BlobType:
     platforms: dict[str, list[str]]  # os -> [arch, ...]
     config_schema: ConfigSchema | None = None
     staged_name: str = ""  # override filename when staging (e.g. "alloc_jump")
+    pytest_enabled: bool = False
+    pytest_stdout: bytes | None = None
+    pytest_stdout_contains: bytes | None = None
+    pytest_exit_code: int = 0
+    pytest_timeout: float = 30.0
 
 
 BLOB_TYPES: dict[str, BlobType] = {}
@@ -994,6 +999,11 @@ def _os_arches(os_name: str) -> list[str]:
     return OPERATING_SYSTEMS[os_name].architectures
 
 
+def blob_public_name(blob: BlobType) -> str:
+    """Return the public staged name for a blob type."""
+    return blob.staged_name or blob.name
+
+
 _register_blob(
     BlobType(
         name="hello",
@@ -1003,6 +1013,9 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"Hello, world!\n",
+        pytest_timeout=10.0,
     )
 )
 
@@ -1014,6 +1027,9 @@ _register_blob(
         platforms={
             "windows": _os_arches("windows"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"Hello, world!\n",
+        pytest_timeout=10.0,
     )
 )
 
@@ -1038,6 +1054,8 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"TCP_OK",
         config_schema=ConfigSchema(
             fixed_size=7,
             fields=[
@@ -1059,6 +1077,9 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"FD_OK",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=4,
             fields=[
@@ -1078,6 +1099,9 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout_contains=b"PIPE_OK",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=2,
             fields=[
@@ -1099,6 +1123,9 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"MMAP_OK",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=2,
             fields=[
@@ -1156,6 +1183,9 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"NaCl OK\n",
+        pytest_timeout=15.0,
     )
 )
 
@@ -1256,6 +1286,9 @@ _register_blob(
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        pytest_enabled=True,
+        pytest_stdout=b"PASS",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=4,
             fields=[
@@ -1277,6 +1310,9 @@ _register_blob(
             "windows": _os_arches("windows"),
         },
         staged_name="stager_fd",
+        pytest_enabled=True,
+        pytest_stdout=b"FD_OK",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=4,
             fields=[
@@ -1296,6 +1332,9 @@ _register_blob(
             "windows": _os_arches("windows"),
         },
         staged_name="stager_pipe",
+        pytest_enabled=True,
+        pytest_stdout_contains=b"PIPE_OK",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=2,
             fields=[
@@ -1317,6 +1356,8 @@ _register_blob(
             "windows": _os_arches("windows"),
         },
         staged_name="stager_tcp",
+        pytest_enabled=True,
+        pytest_stdout=b"TCP_OK",
         config_schema=ConfigSchema(
             fixed_size=7,
             fields=[
@@ -1338,6 +1379,9 @@ _register_blob(
             "windows": _os_arches("windows"),
         },
         staged_name="reflective_pe",
+        pytest_enabled=True,
+        pytest_stdout_contains=b"LOADED",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=9,
             fields=[
@@ -1361,6 +1405,9 @@ _register_blob(
             "windows": _os_arches("windows"),
         },
         staged_name="alloc_jump",
+        pytest_enabled=True,
+        pytest_stdout=b"PASS",
+        pytest_timeout=15.0,
         config_schema=ConfigSchema(
             fixed_size=4,
             fields=[

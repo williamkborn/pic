@@ -1,4 +1,5 @@
-/* _start — PowerPC 64-bit LE: extract argc/argv from kernel stack, call runner_main. */
+/* _start — PowerPC 64-bit LE: extract argc/argv from kernel stack, call
+ * runner_main. */
 __asm__(".section .text._start,\"ax\"\n"
 	".globl _start\n"
 	"_start:\n"

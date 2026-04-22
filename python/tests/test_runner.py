@@ -211,9 +211,7 @@ class TestBuildBlobCommand:
         cmd = build_blob_command(blob, Path("/runner"), Path("/blob.bin"))
         assert cmd == ["/runner", "/blob.bin", "0x20"]
 
-    def test_linux_has_no_freebsd_extra(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_linux_has_no_freebsd_extra(self, monkeypatch: pytest.MonkeyPatch) -> None:
         blob = BlobData(
             code=b"\x00" * 64,
             config_offset=64,

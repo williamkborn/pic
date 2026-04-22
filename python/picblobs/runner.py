@@ -351,8 +351,12 @@ def run_blob_pair(
     server_bin = prepare_blob(server_blob, config=server_config)
     client_bin = prepare_blob(client_blob, config=client_config)
     try:
-        server_cmd = build_blob_command(server_blob, runner_path, server_bin, runner_type)
-        client_cmd = build_blob_command(client_blob, runner_path, client_bin, runner_type)
+        server_cmd = build_blob_command(
+            server_blob, runner_path, server_bin, runner_type
+        )
+        client_cmd = build_blob_command(
+            client_blob, runner_path, client_bin, runner_type
+        )
 
         last_error = "pair did not run"
         for attempt in range(attempts):
@@ -468,7 +472,9 @@ def run_blob(
                 "blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch
             )
             log.debug("code size:  %d bytes", len(blob.code))
-            log.debug("config:     %d bytes at offset %d", len(config), blob.config_offset)
+            log.debug(
+                "config:     %d bytes at offset %d", len(config), blob.config_offset
+            )
             log.debug("runner:     %s", runner_path)
             log.debug("blob file:  %s (dry-run placeholder)", blob_file)
             log.debug("command:    %s", " ".join(cmd))

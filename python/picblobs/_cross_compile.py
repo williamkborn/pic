@@ -254,10 +254,7 @@ def find_gcc(arch: str) -> str | None:
             / f"+bootlin+bootlin_{bootlin_name}"
             / "bin"
             / f"{triple}-gcc",
-            output_base
-            / f"+bootlin+bootlin_{bootlin_name}"
-            / "bin"
-            / f"{triple}-gcc",
+            output_base / f"+bootlin+bootlin_{bootlin_name}" / "bin" / f"{triple}-gcc",
         ]
         for gcc_path in candidates:
             if gcc_path.exists():
@@ -266,10 +263,71 @@ def find_gcc(arch: str) -> str | None:
     return None
 
 
-def compile_raw_elf(arch: str, asm_source: str) -> bytes | None:
-    """Compile an asm source to a static non-PIE ELF (ET_EXEC).
+def find_sysroot(arch: str) -> str | None:
+    """Find the Bootlin sysroot for an architecture."""
+    triple = ARCH_TO_TRIPLE.get(arch)
+    bootlin_name = ARCH_TO_BOOTLIN.get(arch)
+    if not triple or not bootlin_name:
+        return None
 
-    Returns the ELF binary as bytes, or None if compilation fails.
+    output_base = _find_bazel_output_base()
+    if output_base:
+        candidates = [
+            output_base
+            / "external"
+            / f"+bootlin+bootlin_{bootlin_name}"
+            / f"{triple}"
+            / "sysroot",
+            output_base / f"+bootlin+bootlin_{bootlin_name}" / f"{triple}" / "sysroot",
+        ]
+        for sysroot in candidates:
+            if sysroot.exists():
+                return str(sysroot)
+
+    return None
+
+
+def compile_c_elf(
+    arch: str,
+    source: str,
+    *,
+    static: bool = True,
+    extra_cflags: list[str] | None = None,
+) -> bytes | None:
+    """Compile a C source to an ELF binary using the Bootlin cross-compiler."""
+    gcc = find_gcc(arch)
+    if gcc is None:
+        return None
+
+    sysroot = find_sysroot(arch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src_path = Path(tmpdir) / "test.c"
+        out_path = Path(tmpdir) / "test.elf"
+        src_path.write_text(source)
+
+        cmd = [gcc]
+        if sysroot:
+            cmd.append(f"--sysroot={sysroot}")
+        cmd.extend([str(src_path), "-o", str(out_path), "-O2"])
+        if static:
+            cmd.append("-static")
+        if extra_cflags:
+            cmd.extend(extra_cflags)
+        cmd.extend(ARCH_EXTRA_CFLAGS.get(arch, []))
+
+        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        if result.returncode != 0:
+            return None
+
+        return out_path.read_bytes()
+
+
+def compile_raw_elf(arch: str, asm_source: str, *, pie: bool = False) -> bytes | None:
+    """Compile an asm source to an ELF binary without libc.
+
+    If ``pie`` is True, emits an ET_DYN binary via ``-shared``.
+    Otherwise emits a static non-PIE ET_EXEC binary.
     """
     gcc = find_gcc(arch)
     if gcc is None:
@@ -287,8 +345,11 @@ def compile_raw_elf(arch: str, asm_source: str) -> bytes | None:
             str(out_path),
             "-nostdlib",
             "-nostartfiles",
-            "-static",
         ]
+        if pie:
+            cmd.extend(["-shared", "-Wl,-e,_start"])
+        else:
+            cmd.append("-static")
         cmd.extend(ARCH_EXTRA_CFLAGS.get(arch, []))
 
         result = subprocess.run(cmd, capture_output=True, timeout=30)
