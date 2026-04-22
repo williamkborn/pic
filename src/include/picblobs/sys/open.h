@@ -30,6 +30,8 @@
 #define __NR_open 4005
 #elif defined(__s390x__)
 #define __NR_open 5
+#elif defined(__sparc__)
+#define __NR_open 5
 #else
 #error "Unsupported architecture for pic_open()"
 #endif

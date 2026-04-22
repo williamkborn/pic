@@ -24,6 +24,8 @@
 #define __NR_llseek 140
 #elif defined(__mips__)
 #define __NR_llseek 4140
+#elif defined(__sparc__)
+#define __NR_llseek 236
 #else
 #error "Unsupported architecture for pic_llseek()"
 #endif

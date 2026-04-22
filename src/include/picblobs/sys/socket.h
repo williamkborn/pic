@@ -38,6 +38,8 @@ static inline long pic_socket(int domain, int type, int protocol)
 #define __NR_socket 4183
 #elif defined(__s390x__)
 #define __NR_socket 359
+#elif defined(__sparc__)
+#define __NR_socket 97
 #else
 #error "Unsupported architecture for pic_socket()"
 #endif

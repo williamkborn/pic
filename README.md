@@ -31,12 +31,13 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 | s390x (z13) | big | 64 | uses_old_mmap |
 | mipsel32 | little | 32 | uses_mmap2, needs_got_reloc |
 | mipsbe32 | big | 32 | uses_mmap2, needs_got_reloc |
+| sparcv8 | big | 32 | uses_mmap2 |
 
 ### Operating systems
 
 | OS | Architectures | Blob types | Runner |
 |---|---|---|---|
-| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Direct execution via QEMU user-static |
+| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32, sparcv8 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Direct execution via QEMU user-static |
 | FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Translating loader: patches FreeBSD syscall numbers to Linux equivalents at load time |
 | Windows | x86_64, i686, aarch64 | hello_windows, alloc_jump | Mock TEB/PEB on Linux |
 

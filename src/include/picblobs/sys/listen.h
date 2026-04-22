@@ -38,6 +38,8 @@ static inline long pic_listen(int sockfd, int backlog)
 #define __NR_listen 4174
 #elif defined(__s390x__)
 #define __NR_listen 363
+#elif defined(__sparc__)
+#define __NR_listen 354
 #else
 #error "Unsupported architecture for pic_listen()"
 #endif

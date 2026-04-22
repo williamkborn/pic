@@ -38,6 +38,8 @@ static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
 #define __NR_connect 4170
 #elif defined(__s390x__)
 #define __NR_connect 362
+#elif defined(__sparc__)
+#define __NR_connect 98
 #else
 #error "Unsupported architecture for pic_connect()"
 #endif

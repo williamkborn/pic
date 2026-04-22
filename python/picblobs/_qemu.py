@@ -28,6 +28,8 @@ else:
         "armv5_arm": "qemu-arm-static",
         "armv5_thumb": "qemu-arm-static",
         "armv7_thumb": "qemu-arm-static",
+        "s390x": "qemu-s390x-static",
         "mipsel32": "qemu-mipsel-static",
         "mipsbe32": "qemu-mips-static",
+        "sparcv8": "qemu-sparc-static",
     }

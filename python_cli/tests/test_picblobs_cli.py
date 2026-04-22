@@ -233,6 +233,16 @@ class TestBuildCommand:
         expected = picblobs.Blob("windows", "x86_64").reflective_pe().pe(dummy).build()
         assert out.read_bytes() == expected
 
+    def test_hello_windows(self, runner: CliRunner, tmp_path: Path) -> None:
+        out = tmp_path / "hello_windows.bin"
+        r = runner.invoke(main, [
+            "build", "hello_windows", "windows:x86_64",
+            "-o", str(out),
+        ])
+        assert r.exit_code == 0, r.output
+        expected = picblobs.Blob("windows", "x86_64").hello_windows().build()
+        assert out.read_bytes() == expected
+
     # --- Negative / validation ---
 
     def test_hello_rejects_unrelated_option(

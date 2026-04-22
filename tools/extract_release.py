@@ -274,6 +274,7 @@ def extract_release(
         return 0, 0
 
     extracted_triples: list[tuple[str, str, str]] = []
+    expected_basenames: set[str] = set()
     errors = 0
 
     for so_path in so_files:
@@ -289,6 +290,7 @@ def extract_release(
             continue
 
         basename = f"{blob_type}.{os_name}.{arch}"
+        expected_basenames.add(basename)
         bin_path = blobs_dir / f"{basename}.bin"
         json_path = blobs_dir / f"{basename}.json"
 
@@ -311,6 +313,13 @@ def extract_release(
             print(
                 f"  {basename}  {extracted['size']} bytes  sha256={extracted['sha256'][:16]}..."
             )
+
+    # Remove release artifacts for blobs that are no longer staged.
+    for path in list(blobs_dir.glob("*.bin")) + list(blobs_dir.glob("*.json")):
+        if path.stem not in expected_basenames:
+            path.unlink()
+            if verbose:
+                print(f"  removed stale artifact {path.name}")
 
     # Write manifest.json.
     version = _get_version()

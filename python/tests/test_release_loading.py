@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+import picblobs
+from picblobs import BlobType, ConfigLayout
 from picblobs._extractor import BlobData, load_from_sidecar
 
 
@@ -268,6 +270,89 @@ class TestGetBlobFallback:
             assert blob.blob_type == "hello"
         finally:
             picblobs.clear_cache()
+
+
+class TestConfigLayoutSidecarFallback:
+    def test_uses_shipped_sidecar_when_registry_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        blobs_dir = tmp_path / "blobs"
+        blobs_dir.mkdir()
+        sidecar = blobs_dir / "alloc_jump.linux.x86_64.json"
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "type": "alloc_jump",
+                    "os": "linux",
+                    "arch": "x86_64",
+                    "config": {
+                        "endian": "little",
+                        "fixed_size": 4,
+                        "fields": [
+                            {"name": "payload_size", "type": "u32", "offset": 0}
+                        ],
+                        "trailing_data": [
+                            {"name": "payload_data", "length_field": "payload_size"}
+                        ],
+                    },
+                }
+            )
+        )
+
+        monkeypatch.setattr("picblobs._introspect._BLOBS_DIR", blobs_dir)
+        monkeypatch.setattr("picblobs._introspect._registry_blob_types", lambda: None)
+        monkeypatch.setattr(
+            picblobs,
+            "list_blobs",
+            lambda: [("alloc_jump", "linux", "x86_64")],
+        )
+
+        layout = picblobs.config_layout("linux", "x86_64", "alloc_jump")
+        assert isinstance(layout, ConfigLayout)
+        assert layout.blob_type is BlobType.ALLOC_JUMP
+        assert layout.total_fixed_size == 4
+        assert layout["payload_size"].offset == 0
+        assert layout["payload_data"].variable is True
+
+
+class TestExtractReleaseCleanup:
+    def test_removes_stale_release_artifacts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tools.extract_release import extract_release
+
+        so_dir = tmp_path / "_blobs"
+        current_so = so_dir / "linux" / "x86_64" / "hello.so"
+        current_so.parent.mkdir(parents=True)
+        current_so.write_bytes(b"fake elf")
+
+        out_dir = tmp_path / "out"
+        blobs_dir = out_dir / "blobs"
+        blobs_dir.mkdir(parents=True)
+        stale_bin = blobs_dir / "old.linux.x86_64.bin"
+        stale_json = blobs_dir / "old.linux.x86_64.json"
+        stale_bin.write_bytes(b"old")
+        stale_json.write_text("{}")
+
+        monkeypatch.setattr(
+            "tools.extract_release._extract_so",
+            lambda path: {
+                "code": b"\x90",
+                "size": 1,
+                "config_offset": 1,
+                "entry_offset": 0,
+                "sha256": hashlib.sha256(b"\x90").hexdigest(),
+                "sections": {},
+            },
+        )
+        monkeypatch.setattr("tools.extract_release._get_version", lambda: "0.1.0")
+
+        extracted, errors = extract_release(so_dir, out_dir)
+        assert (extracted, errors) == (1, 0)
+        assert not stale_bin.exists()
+        assert not stale_json.exists()
+        assert (blobs_dir / "hello.linux.x86_64.bin").exists()
+        assert (blobs_dir / "hello.linux.x86_64.json").exists()
 
     def test_not_found_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

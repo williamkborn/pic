@@ -39,6 +39,8 @@ __attribute__((noreturn)) static inline void pic_exit_group(int code)
 #define __NR_exit_group 4246
 #elif defined(__s390x__)
 #define __NR_exit_group 248
+#elif defined(__sparc__)
+#define __NR_exit_group 188
 #else
 #error "Unsupported architecture for pic_exit_group()"
 #endif

@@ -35,6 +35,8 @@ static inline long pic_close(int fd) { return __pic_plat->close(fd); }
 #define __NR_close 4006
 #elif defined(__s390x__)
 #define __NR_close 6
+#elif defined(__sparc__)
+#define __NR_close 6
 #else
 #error "Unsupported architecture for pic_close()"
 #endif

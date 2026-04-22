@@ -38,6 +38,8 @@ static inline long pic_read(int fd, void *buf, pic_size_t count)
 #define __NR_read 4003
 #elif defined(__s390x__)
 #define __NR_read 3
+#elif defined(__sparc__)
+#define __NR_read 3
 #else
 #error "Unsupported architecture for pic_read()"
 #endif

@@ -49,6 +49,9 @@ class Architecture:
     # GCC target triple (e.g., "x86_64-buildroot-linux-gnu").
     gcc_triple: str
 
+    # Bootlin libc variant ("glibc", "musl", "uclibc").
+    bootlin_libc: str = "glibc"
+
     # Extra compiler flags for this architecture.
     extra_cflags: list[str] = field(default_factory=list)
 
@@ -230,6 +233,23 @@ _register_arch(
     )
 )
 
+_register_arch(
+    Architecture(
+        name="sparcv8",
+        gcc_define="__sparc__",
+        qemu_binary="qemu-sparc-static",
+        bootlin_arch="sparcv8",
+        bootlin_libc="uclibc",
+        gcc_triple="sparc-buildroot-linux-uclibc",
+        extra_cflags=["-mcpu=v8"],
+        cpu_constraint="//platforms:sparcv8",
+        uses_mmap2=True,
+        is_32bit=True,
+        is_big_endian=True,
+        bootlin_sha256="8ec2c84b84a13b854a13802537f0b04848056ebc65f6212202f6d8c8a78d4bc3",
+    )
+)
+
 
 # ============================================================
 # OS definitions
@@ -255,6 +275,7 @@ _register_os(
             "s390x",
             "mipsel32",
             "mipsbe32",
+            "sparcv8",
         ],
     )
 )
@@ -396,6 +417,28 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "pipe": 42,
             "exit": 1,
             "exit_group": 248,
+        },
+        "__sparc__": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "fstat": 62,
+            "lseek": 19,
+            "llseek": 236,
+            "mmap": 56,
+            "mprotect": 74,
+            "munmap": 73,
+            "socket": 97,
+            "connect": 98,
+            "accept": 99,
+            "bind": 353,
+            "listen": 354,
+            "setsockopt": 355,
+            "dup2": 90,
+            "pipe": 42,
+            "exit": 1,
+            "exit_group": 188,
         },
         "__mips__": {
             "read": 4003,
@@ -1012,11 +1055,18 @@ _register_blob(
     BlobType(
         name="nacl_client",
         description="NaCl encrypted TCP client (raw syscalls)",
-        has_config=False,
+        has_config=True,
         platforms={
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="port", type="u16", offset=0),
+            ],
+            trailing_data=[],
+        ),
     )
 )
 
@@ -1024,11 +1074,18 @@ _register_blob(
     BlobType(
         name="nacl_server",
         description="NaCl encrypted TCP server (raw syscalls)",
-        has_config=False,
+        has_config=True,
         platforms={
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="port", type="u16", offset=0),
+            ],
+            trailing_data=[],
+        ),
     )
 )
 
@@ -1036,11 +1093,18 @@ _register_blob(
     BlobType(
         name="nacl_client_hosted",
         description="NaCl encrypted TCP client (hosted platform vtable)",
-        has_config=False,
+        has_config=True,
         platforms={
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="port", type="u16", offset=0),
+            ],
+            trailing_data=[],
+        ),
     )
 )
 
@@ -1048,11 +1112,18 @@ _register_blob(
     BlobType(
         name="nacl_server_hosted",
         description="NaCl encrypted TCP server (hosted platform vtable)",
-        has_config=False,
+        has_config=True,
         platforms={
             "linux": _os_arches("linux"),
             "freebsd": _os_arches("freebsd"),
         },
+        config_schema=ConfigSchema(
+            fixed_size=2,
+            fields=[
+                ConfigField(name="port", type="u16", offset=0),
+            ],
+            trailing_data=[],
+        ),
     )
 )
 

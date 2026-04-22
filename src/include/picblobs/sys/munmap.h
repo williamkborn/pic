@@ -30,6 +30,8 @@
 #define __NR_munmap 4091
 #elif defined(__s390x__)
 #define __NR_munmap 91
+#elif defined(__sparc__)
+#define __NR_munmap 73
 #else
 #error "Unsupported architecture for pic_munmap()"
 #endif

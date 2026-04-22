@@ -8,20 +8,17 @@ See: spec/verification/TEST-011-payload-pytest-suite.md
 
 from __future__ import annotations
 
-import subprocess
-import time
+import struct
 
 import pytest
 
 from picblobs import get_blob
 from picblobs.runner import (
-    find_qemu,
     find_runner,
     is_arch_skip_rosetta,
-    prepare_blob,
+    reserve_tcp_port,
     run_blob,
-    _build_command,
-    _cleanup_blob_file,
+    run_blob_pair,
 )
 
 from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUNNER_TYPE
@@ -117,12 +114,8 @@ class TestNaClPayload:
 
 EXPECTED_PLAINTEXT = b"Hello from NaCl PIC blob!"
 E2E_TIMEOUT = 30.0
-NACL_PORT = 9999
 
 _E2E_SKIP_ARCHES: frozenset[str] = frozenset()
-_SERVER_STARTUP = 0.5
-
-
 class TestNaClE2E:
     """Run nacl_server + nacl_client in parallel on each architecture.
 
@@ -152,13 +145,6 @@ class TestNaClE2E:
         if is_arch_skip_rosetta(target_arch):
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
-        # Port 9999 is hardcoded in the NaCl C sources. Skip if already bound.
-        import socket
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("127.0.0.1", NACL_PORT)) == 0:
-                pytest.skip(f"Port {NACL_PORT} in use (another NaCl test running?)")
-
         runner_type = RUNNER_TYPE[target_os]
         try:
             runner_path = find_runner(runner_type, target_arch)
@@ -174,75 +160,43 @@ class TestNaClE2E:
                 f"(crypto proven by nacl_hello)"
             )
 
-        server_bin = prepare_blob(server_blob)
-        client_bin = prepare_blob(client_blob)
-
+        port = reserve_tcp_port()
+        config = struct.pack("<H", port)
         try:
-            server_cmd = _build_command(runner_path, server_bin, target_arch)
-            client_cmd = _build_command(runner_path, client_bin, target_arch)
-
-            # Launch server first.
-            server_proc = subprocess.Popen(
-                server_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+            result = run_blob_pair(
+                server_blob,
+                client_blob,
+                runner_path,
+                runner_type,
+                server_config=config,
+                client_config=config,
+                timeout=E2E_TIMEOUT,
             )
-
-            # Give server time to bind.
-            time.sleep(_SERVER_STARTUP)
-
-            # Launch client.
-            client_proc = subprocess.Popen(
-                client_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
-            # Wait for client to finish (it drives the protocol).
-            client_stdout, client_stderr = client_proc.communicate(timeout=E2E_TIMEOUT)
-            client_exit = client_proc.returncode
-
-            # Server should exit shortly after client disconnects.
-            server_stdout, server_stderr = server_proc.communicate(timeout=E2E_TIMEOUT)
-            server_exit = server_proc.returncode
-
-        except subprocess.TimeoutExpired:
-            server_proc.kill()
-            client_proc.kill()
-            server_proc.wait()
-            client_proc.wait()
-            pytest.fail(
-                f"NaCl e2e timed out on {target_os}:{target_arch} "
-                f"(timeout={E2E_TIMEOUT}s)\n"
-                f"  server stderr: {server_proc.stderr.read()!r}\n"
-                f"  client stderr: {client_proc.stderr.read()!r}"
-            )
-        finally:
-            _cleanup_blob_file(server_bin)
-            _cleanup_blob_file(client_bin)
+        except RuntimeError as e:
+            pytest.fail(f"NaCl e2e failed on {target_os}:{target_arch}: {e}")
 
         # Both must exit 0.
-        assert server_exit == 0, (
-            f"server {target_os}:{target_arch}: exit={server_exit}\n"
-            f"  stdout: {server_stdout!r}\n  stderr: {server_stderr!r}"
+        assert result.server_exit == 0, (
+            f"server {target_os}:{target_arch}: exit={result.server_exit}\n"
+            f"  stdout: {result.server_stdout!r}\n  stderr: {result.server_stderr!r}"
         )
-        assert client_exit == 0, (
-            f"client {target_os}:{target_arch}: exit={client_exit}\n"
-            f"  stdout: {client_stdout!r}\n  stderr: {client_stderr!r}"
+        assert result.client_exit == 0, (
+            f"client {target_os}:{target_arch}: exit={result.client_exit}\n"
+            f"  stdout: {result.client_stdout!r}\n  stderr: {result.client_stderr!r}"
         )
 
         # Server must have decrypted the expected plaintext.
-        assert EXPECTED_PLAINTEXT in server_stdout, (
+        assert EXPECTED_PLAINTEXT in result.server_stdout, (
             f"server {target_os}:{target_arch}: plaintext not found in output\n"
-            f"  stdout: {server_stdout!r}"
+            f"  stdout: {result.server_stdout!r}"
         )
 
         # Both must confirm secure channel.
-        assert b"secure channel OK" in server_stdout, (
+        assert b"secure channel OK" in result.server_stdout, (
             f"server {target_os}:{target_arch}: no channel confirmation\n"
-            f"  stdout: {server_stdout!r}"
+            f"  stdout: {result.server_stdout!r}"
         )
-        assert b"secure channel OK" in client_stdout, (
+        assert b"secure channel OK" in result.client_stdout, (
             f"client {target_os}:{target_arch}: no channel confirmation\n"
-            f"  stdout: {client_stdout!r}"
+            f"  stdout: {result.client_stdout!r}"
         )

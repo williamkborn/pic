@@ -26,6 +26,8 @@
 #define __NR_pipe 42
 #elif defined(__s390x__)
 #define __NR_pipe 42
+#elif defined(__sparc__)
+#define __NR_pipe 42
 #else
 #error "Unsupported architecture for pic_pipe()"
 #endif

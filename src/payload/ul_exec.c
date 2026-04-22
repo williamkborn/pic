@@ -638,6 +638,17 @@ __attribute__((noreturn)) static void jump_to_entry(
 		: "r"(_e), "r"(_s)
 		: "memory");
 
+#elif defined(__sparc__)
+	register pic_uintptr _e __asm__("o1") = entry;
+	register pic_uintptr _s __asm__("o2") = sp;
+	__asm__ volatile("mov %%o2, %%sp\n"
+			 "clr %%o0\n"
+			 "jmp %%o1\n"
+			 " nop\n"
+		:
+		: "r"(_e), "r"(_s)
+		: "memory");
+
 #else
 #error "unsupported architecture"
 #endif

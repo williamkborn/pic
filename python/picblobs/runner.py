@@ -13,7 +13,9 @@ import dataclasses
 import functools
 import logging
 import platform
+import selectors
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -62,6 +64,18 @@ class RunResult:
     duration_s: float
     command: list[str]
     blob_file: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
+class PairRunResult:
+    """Result of running a server/client blob pair."""
+
+    server_stdout: bytes
+    server_stderr: bytes
+    server_exit: int
+    client_stdout: bytes
+    client_stderr: bytes
+    client_exit: int
 
 
 def find_qemu(arch: str) -> Path:
@@ -151,7 +165,7 @@ def prepare_blob(
         output_dir = Path(tempfile.mkdtemp(prefix="picblobs_"))
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    blob_file = output_dir / f"{blob.blob_type}_{blob.target_os}_{blob.target_arch}.bin"
+    blob_file = output_dir / _blob_filename(blob)
 
     data = bytearray(blob.code)
 
@@ -163,6 +177,11 @@ def prepare_blob(
 
     blob_file.write_bytes(bytes(data))
     return blob_file
+
+
+def _blob_filename(blob: BlobData) -> str:
+    """Return the standard on-disk filename for a prepared blob."""
+    return f"{blob.blob_type}_{blob.target_os}_{blob.target_arch}.bin"
 
 
 # Architectures whose PIC blobs write to the GOT at runtime.
@@ -227,6 +246,30 @@ def _build_command(
         return [str(qemu), str(runner_path), *args]
 
 
+def build_blob_command(
+    blob: BlobData,
+    runner_path: Path,
+    blob_file: Path,
+    runner_type: str = "",
+) -> list[str]:
+    """Build the full execution command for a prepared blob file.
+
+    This centralizes runner-specific command shaping, including the
+    FreeBSD runner's optional ``text_end`` bound used to keep syscall
+    patching scoped to executable code.
+    """
+    if not runner_type:
+        runner_type = blob.target_os
+
+    extra: list[str] = []
+    if runner_type == "freebsd":
+        t_end = _text_end(blob)
+        if t_end > 0:
+            extra = [f"{t_end:#x}"]
+
+    return _build_command(runner_path, blob_file, blob.target_arch, extra)
+
+
 def _text_end(blob: BlobData) -> int:
     """Return the largest offset covered by a .text* section, or 0 if none."""
     end = 0
@@ -243,6 +286,140 @@ def _cleanup_blob_file(blob_file: Path) -> None:
         blob_file.parent.rmdir()
     except OSError:
         pass
+
+
+def wait_for_stdout_marker(
+    proc: subprocess.Popen[bytes],
+    marker: bytes,
+    timeout: float,
+) -> bytes:
+    """Read from ``proc.stdout`` until ``marker`` appears or timeout expires.
+
+    Returns all bytes consumed while waiting. Callers should prepend this to
+    the eventual ``communicate()`` stdout if they need the full output.
+    """
+    if proc.stdout is None:
+        return b""
+
+    chunks: list[bytes] = []
+    deadline = time.monotonic() + timeout
+    with selectors.DefaultSelector() as sel:
+        sel.register(proc.stdout, selectors.EVENT_READ)
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            events = sel.select(remaining)
+            if not events:
+                break
+            chunk = proc.stdout.read1(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            data = b"".join(chunks)
+            if marker in data:
+                return data
+            if proc.poll() is not None:
+                break
+    return b"".join(chunks)
+
+
+def reserve_tcp_port(host: str = "127.0.0.1") -> int:
+    """Reserve an ephemeral TCP port number for a short-lived local test."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1])
+
+
+def run_blob_pair(
+    server_blob: BlobData,
+    client_blob: BlobData,
+    runner_path: Path,
+    runner_type: str = "",
+    *,
+    server_config: bytes = b"",
+    client_config: bytes = b"",
+    timeout: float = 30.0,
+    ready_marker: bytes = b"[server] listening\n",
+    startup_timeout: float = 5.0,
+    attempts: int = 3,
+    retry_delay: float = 0.25,
+) -> PairRunResult:
+    """Run a server/client blob pair with bounded retries for startup flakiness."""
+    if not runner_type:
+        runner_type = server_blob.target_os
+
+    server_bin = prepare_blob(server_blob, config=server_config)
+    client_bin = prepare_blob(client_blob, config=client_config)
+    try:
+        server_cmd = build_blob_command(server_blob, runner_path, server_bin, runner_type)
+        client_cmd = build_blob_command(client_blob, runner_path, client_bin, runner_type)
+
+        last_error = "pair did not run"
+        for attempt in range(attempts):
+            server_proc = subprocess.Popen(
+                server_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            client_proc: subprocess.Popen[bytes] | None = None
+            try:
+                server_prefix = wait_for_stdout_marker(
+                    server_proc, ready_marker, startup_timeout
+                )
+                if ready_marker not in server_prefix:
+                    server_proc.kill()
+                    server_stdout, server_stderr = server_proc.communicate()
+                    last_error = (
+                        "server did not reach listening state: "
+                        f"stdout={(server_prefix + server_stdout)!r} "
+                        f"stderr={server_stderr!r}"
+                    )
+                    continue
+
+                client_proc = subprocess.Popen(
+                    client_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
+                server_stdout, server_stderr = server_proc.communicate(timeout=timeout)
+                server_stdout = server_prefix + server_stdout
+
+                result = PairRunResult(
+                    server_stdout=server_stdout,
+                    server_stderr=server_stderr,
+                    server_exit=server_proc.returncode,
+                    client_stdout=client_stdout,
+                    client_stderr=client_stderr,
+                    client_exit=client_proc.returncode,
+                )
+                if result.server_exit == 0 and result.client_exit == 0:
+                    return result
+
+                last_error = (
+                    f"server exit={result.server_exit} stderr={result.server_stderr!r}; "
+                    f"client exit={result.client_exit} stderr={result.client_stderr!r}"
+                )
+            except subprocess.TimeoutExpired:
+                last_error = "pair timed out"
+                server_proc.kill()
+                if client_proc is not None:
+                    client_proc.kill()
+                    client_proc.wait()
+                server_proc.wait()
+            finally:
+                if server_proc.poll() is None:
+                    server_proc.kill()
+                    server_proc.wait()
+                if client_proc is not None and client_proc.poll() is None:
+                    client_proc.kill()
+                    client_proc.wait()
+            if attempt + 1 < attempts:
+                time.sleep(retry_delay)
+        raise RuntimeError(last_error)
+    finally:
+        _cleanup_blob_file(server_bin)
+        _cleanup_blob_file(client_bin)
 
 
 def run_blob(
@@ -283,6 +460,28 @@ def run_blob(
     if runner_path is None:
         runner_path = find_runner(runner_type, blob.target_arch)
 
+    if dry_run:
+        blob_file = Path(_blob_filename(blob))
+        cmd = build_blob_command(blob, runner_path, blob_file, runner_type)
+        if debug:
+            log.debug(
+                "blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch
+            )
+            log.debug("code size:  %d bytes", len(blob.code))
+            log.debug("config:     %d bytes at offset %d", len(config), blob.config_offset)
+            log.debug("runner:     %s", runner_path)
+            log.debug("blob file:  %s (dry-run placeholder)", blob_file)
+            log.debug("command:    %s", " ".join(cmd))
+            log.debug("dry run — not executing")
+        return RunResult(
+            stdout=b"",
+            stderr=b"",
+            exit_code=0,
+            duration_s=0.0,
+            command=cmd,
+            blob_file=str(blob_file),
+        )
+
     # Prepare the blob binary.
     blob_file = prepare_blob(blob, config)
 
@@ -295,29 +494,10 @@ def run_blob(
         log.debug("runner:     %s", runner_path)
         log.debug("blob file:  %s", blob_file)
 
-    # Build the command. FreeBSD runner accepts an optional text_end
-    # bound (hex) to scope syscall-number patching to the code region.
-    extra: list[str] = []
-    if runner_type == "freebsd":
-        t_end = _text_end(blob)
-        if t_end > 0:
-            extra = [f"{t_end:#x}"]
-    cmd = _build_command(runner_path, blob_file, blob.target_arch, extra)
+    cmd = build_blob_command(blob, runner_path, blob_file, runner_type)
 
     if debug:
         log.debug("command:    %s", " ".join(cmd))
-
-    if dry_run:
-        if debug:
-            log.debug("dry run — not executing")
-        return RunResult(
-            stdout=b"",
-            stderr=b"",
-            exit_code=0,
-            duration_s=0.0,
-            command=cmd,
-            blob_file=str(blob_file),
-        )
 
     try:
         start = time.monotonic()

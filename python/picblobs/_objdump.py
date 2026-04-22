@@ -27,6 +27,7 @@ OBJDUMP_BINARIES: dict[str, list[str]] = {
     "mipsel32": ["mipsel-buildroot-linux-gnu-objdump", "mipsel-linux-gnu-objdump"],
     "mipsbe32": ["mips-buildroot-linux-gnu-objdump", "mips-linux-gnu-objdump"],
     "s390x": ["s390x-buildroot-linux-gnu-objdump", "s390x-linux-gnu-objdump"],
+    "sparcv8": ["sparc-buildroot-linux-uclibc-objdump", "sparc-linux-gnu-objdump"],
 }
 
 # Try to import the registry for Bootlin gcc_triple names.

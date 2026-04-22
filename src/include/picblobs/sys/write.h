@@ -38,6 +38,8 @@ static inline long pic_write(int fd, const void *buf, pic_size_t count)
 #define __NR_write 4004
 #elif defined(__s390x__)
 #define __NR_write 4
+#elif defined(__sparc__)
+#define __NR_write 4
 #else
 #error "Unsupported architecture for pic_write()"
 #endif

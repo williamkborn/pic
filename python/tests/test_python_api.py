@@ -93,6 +93,7 @@ class TestSupportMatrix:
         # Linux has the widest coverage.
         assert ("linux", "x86_64") in ts
         assert ("linux", "aarch64") in ts
+        assert ("linux", "sparcv8") in ts
         assert ("linux", "s390x") in ts
         assert ("freebsd", "x86_64") in ts
         assert ("windows", "x86_64") in ts

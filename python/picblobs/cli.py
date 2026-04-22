@@ -83,7 +83,7 @@ def cmd_info(args: argparse.Namespace) -> int:
             blob = extract(args.so)
         else:
             blob = get_blob(args.type, target_os, target_arch)
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ImportError, ValueError) as e:
         log.error("%s", e)
         return 1
 
@@ -117,7 +117,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
             blob = extract(args.so)
         else:
             blob = get_blob(args.type, target_os, target_arch)
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ImportError, ValueError) as e:
         log.error("%s", e)
         return 1
 
@@ -157,7 +157,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     try:
         if args.so:
-            blob = extract(args.so, target_os=target_os, target_arch=target_arch)
+            blob = extract(args.so)
         else:
             blob = get_blob(args.type, target_os, target_arch)
 
@@ -170,7 +170,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             debug=args.debug,
             dry_run=args.dry_run,
         )
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ImportError, ValueError) as e:
         log.error("%s", e)
         return 1
 
@@ -644,15 +644,14 @@ def _verify_nacl_e2e(
     Returns a summary string on success.
     Raises _VerifySkip or Exception on failure.
     """
+    import struct
     import subprocess
-    import time
 
     from picblobs import get_blob
     from picblobs.runner import (
-        _build_command,
-        _cleanup_blob_file,
         find_runner,
-        prepare_blob,
+        reserve_tcp_port,
+        run_blob_pair,
     )
 
     if arch in _NACL_E2E_SLOW_ARCHES and not force_slow:
@@ -670,40 +669,23 @@ def _verify_nacl_e2e(
     runner_path = find_runner(os_name, arch)
     server_blob = get_blob("nacl_server", os_name, arch)
     client_blob = get_blob("nacl_client", os_name, arch)
-    server_bin = prepare_blob(server_blob)
-    client_bin = prepare_blob(client_blob)
-
-    try:
-        server_cmd = _build_command(runner_path, server_bin, arch)
-        client_cmd = _build_command(runner_path, client_bin, arch)
-
-        server_proc = subprocess.Popen(
-            server_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        time.sleep(0.5)
-
-        client_proc = subprocess.Popen(
-            client_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
-        client_exit = client_proc.returncode
-
-        server_stdout, server_stderr = server_proc.communicate(timeout=timeout)
-        server_exit = server_proc.returncode
-    except subprocess.TimeoutExpired:
-        server_proc.kill()
-        client_proc.kill()
-        server_proc.wait()
-        client_proc.wait()
-        raise RuntimeError("handshake timed out")
-    finally:
-        _cleanup_blob_file(server_bin)
-        _cleanup_blob_file(client_bin)
+    port = reserve_tcp_port()
+    config = struct.pack("<H", port)
+    result = run_blob_pair(
+        server_blob,
+        client_blob,
+        runner_path,
+        os_name,
+        server_config=config,
+        client_config=config,
+        timeout=timeout,
+    )
+    server_stdout = result.server_stdout
+    server_stderr = result.server_stderr
+    server_exit = result.server_exit
+    client_stdout = result.client_stdout
+    client_stderr = result.client_stderr
+    client_exit = result.client_exit
 
     # Validate both exited cleanly.
     if server_exit != 0:

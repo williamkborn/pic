@@ -11,9 +11,11 @@ from picblobs.runner import (
     QEMU_BINARIES,
     RunResult,
     _text_end,
+    build_blob_command,
     find_qemu,
     find_runner,
     prepare_blob,
+    run_blob,
 )
 
 
@@ -147,3 +149,90 @@ class TestRunResult:
         assert r.stdout == b"PASS"
         assert r.exit_code == 0
         assert r.duration_s == pytest.approx(0.1)
+
+
+class TestRunBlobDryRun:
+    def test_dry_run_does_not_prepare_temp_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        blob = BlobData(
+            code=b"\x90",
+            config_offset=1,
+            entry_offset=0,
+            blob_type="test",
+            target_os="linux",
+            target_arch="x86_64",
+            sha256="",
+            sections={},
+        )
+
+        monkeypatch.setattr("picblobs.runner.find_runner", lambda *_: Path("/runner"))
+        monkeypatch.setattr(
+            "picblobs.runner._build_command",
+            lambda runner_path, blob_file, arch, extra=None: [
+                str(runner_path),
+                str(blob_file),
+            ],
+        )
+
+        def _boom(*args, **kwargs):
+            raise AssertionError("prepare_blob should not be called in dry_run")
+
+        monkeypatch.setattr("picblobs.runner.prepare_blob", _boom)
+
+        result = run_blob(blob, dry_run=True)
+        assert result.exit_code == 0
+        assert result.command == ["/runner", "test_linux_x86_64.bin"]
+        assert result.blob_file == "test_linux_x86_64.bin"
+
+
+class TestBuildBlobCommand:
+    def test_freebsd_includes_text_end(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        blob = BlobData(
+            code=b"\x00" * 64,
+            config_offset=64,
+            entry_offset=0,
+            blob_type="test",
+            target_os="freebsd",
+            target_arch="x86_64",
+            sha256="",
+            sections={".text": (0, 0x20), ".rodata": (0x20, 0x10)},
+        )
+
+        monkeypatch.setattr(
+            "picblobs.runner._build_command",
+            lambda runner_path, blob_file, arch, extra=None: [
+                str(runner_path),
+                str(blob_file),
+                *(extra or []),
+            ],
+        )
+
+        cmd = build_blob_command(blob, Path("/runner"), Path("/blob.bin"))
+        assert cmd == ["/runner", "/blob.bin", "0x20"]
+
+    def test_linux_has_no_freebsd_extra(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        blob = BlobData(
+            code=b"\x00" * 64,
+            config_offset=64,
+            entry_offset=0,
+            blob_type="test",
+            target_os="linux",
+            target_arch="x86_64",
+            sha256="",
+            sections={".text": (0, 0x20)},
+        )
+
+        monkeypatch.setattr(
+            "picblobs.runner._build_command",
+            lambda runner_path, blob_file, arch, extra=None: [
+                str(runner_path),
+                str(blob_file),
+                *(extra or []),
+            ],
+        )
+
+        cmd = build_blob_command(blob, Path("/runner"), Path("/blob.bin"))
+        assert cmd == ["/runner", "/blob.bin"]

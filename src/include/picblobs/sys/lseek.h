@@ -33,6 +33,9 @@
 #define __NR_lseek 4019
 #elif defined(__s390x__)
 #define __NR_lseek 19
+#elif defined(__sparc__)
+#define __NR_llseek 236
+#define __NR_lseek 19
 #else
 #error "Unsupported architecture for pic_lseek()"
 #endif

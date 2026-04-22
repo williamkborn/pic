@@ -23,6 +23,7 @@ ARCH_TO_TRIPLE: dict[str, str] = {
     "mipsel32": "mipsel-buildroot-linux-gnu",
     "mipsbe32": "mips-buildroot-linux-gnu",
     "s390x": "s390x-buildroot-linux-gnu",
+    "sparcv8": "sparc-buildroot-linux-uclibc",
 }
 
 # Map picblobs arch names to Bootlin toolchain directory names.
@@ -36,6 +37,7 @@ ARCH_TO_BOOTLIN: dict[str, str] = {
     "mipsel32": "mipsel32",
     "mipsbe32": "mipsbe32",
     "s390x": "s390x",
+    "sparcv8": "sparcv8",
 }
 
 # Extra compiler flags for specific arches.
@@ -46,6 +48,7 @@ ARCH_EXTRA_CFLAGS: dict[str, list[str]] = {
 
 # Big-endian architectures.
 BIG_ENDIAN_ARCHES: set[str] = {"mipsbe32", "s390x"}
+BIG_ENDIAN_ARCHES.add("sparcv8")
 
 # Per-arch raw-syscall _start that writes "Hello, ul_exec!\n" and exits.
 # Each uses PC-relative data access so it works as both ET_EXEC and ET_DYN.
@@ -133,15 +136,30 @@ HELLO_ET_EXEC_ASM: dict[str, str] = {
         f"  svc 0\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
+    "sparcv8": (
+        f".text\n.globl _start\n_start:\n"
+        f"  mov 4, %g1\n"
+        f"  mov 1, %o0\n"
+        f"  sethi %hi(msg), %o1\n"
+        f"  or %o1, %lo(msg), %o1\n"
+        f"  mov 16, %o2\n"
+        f"  ta 0x10\n"
+        f"  nop\n"
+        f"  mov 188, %g1\n"
+        f"  clr %o0\n"
+        f"  ta 0x10\n"
+        f"  nop\n"
+        f'msg: .ascii "{_MSG}"\n'
+    ),
 }
 
 
 def _find_bazel_output_base() -> Path | None:
     """Find Bazel's output_base directory."""
+    project_root: Path | None = None
     try:
         # Find project root (look for MODULE.bazel).
         p = Path(__file__).resolve()
-        project_root = None
         for parent in [p] + list(p.parents):
             if (parent / "MODULE.bazel").exists():
                 project_root = parent
@@ -160,6 +178,21 @@ def _find_bazel_output_base() -> Path | None:
             return Path(res.stdout.strip())
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
+
+    # Fallback: derive the output_base from the workspace's bazel-bin symlink.
+    # This works in environments where `bazel info` cannot run but the Bazel
+    # output tree has already been created locally.
+    if project_root is not None:
+        bazel_bin = project_root / "bazel-bin"
+        try:
+            resolved = bazel_bin.resolve(strict=True)
+        except OSError:
+            resolved = None
+        if resolved is not None:
+            parts = resolved.parts
+            if "execroot" in parts:
+                idx = parts.index("execroot")
+                return Path(*parts[:idx])
     return None
 
 
@@ -172,15 +205,20 @@ def find_gcc(arch: str) -> str | None:
 
     output_base = _find_bazel_output_base()
     if output_base:
-        gcc_path = (
+        candidates = [
             output_base
             / "external"
             / f"+bootlin+bootlin_{bootlin_name}"
             / "bin"
-            / f"{triple}-gcc"
-        )
-        if gcc_path.exists():
-            return str(gcc_path)
+            / f"{triple}-gcc",
+            output_base
+            / f"+bootlin+bootlin_{bootlin_name}"
+            / "bin"
+            / f"{triple}-gcc",
+        ]
+        for gcc_path in candidates:
+            if gcc_path.exists():
+                return str(gcc_path)
 
     return None
 

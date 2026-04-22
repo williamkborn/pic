@@ -224,9 +224,12 @@ def build(
     try:
         base = Blob(os_name, arch)
 
-        if blob is BlobType.HELLO or blob is BlobType.HELLO_WINDOWS:
+        if blob is BlobType.HELLO:
             _check_allowed(set(), provided)
             out = base.hello().build()
+        elif blob is BlobType.HELLO_WINDOWS:
+            _check_allowed(set(), provided)
+            out = base.hello_windows().build()
         elif blob is BlobType.ALLOC_JUMP:
             _check_allowed({"payload"}, provided)
             if payload_file is None:
@@ -594,52 +597,32 @@ def _verify_ul_exec(os_name: str, arch: str, timeout: float):
 
 def _verify_nacl_e2e(os_name: str, arch: str, timeout: float) -> str:
     """Run nacl_server + nacl_client as a paired handshake, return summary."""
-    import time
-
     from picblobs.runner import (
-        _build_command,
-        _cleanup_blob_file,
-        prepare_blob,
+        run_blob_pair,
     )
 
     runner_path = find_runner(os_name, arch)
     server_blob = picblobs.get_blob("nacl_server", os_name, arch)
     client_blob = picblobs.get_blob("nacl_client", os_name, arch)
-    server_bin = prepare_blob(server_blob)
-    client_bin = prepare_blob(client_blob)
+    result = run_blob_pair(
+        server_blob,
+        client_blob,
+        runner_path,
+        os_name,
+        timeout=timeout,
+    )
+    server_out = result.server_stdout
+    server_err = result.server_stderr
+    client_out = result.client_stdout
+    client_err = result.client_stderr
 
-    try:
-        server_cmd = _build_command(runner_path, server_bin, arch)
-        client_cmd = _build_command(runner_path, client_bin, arch)
-
-        server_proc = subprocess.Popen(
-            server_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        time.sleep(0.5)
-        client_proc = subprocess.Popen(
-            client_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-
-        try:
-            client_out, client_err = client_proc.communicate(timeout=timeout)
-            server_out, server_err = server_proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            server_proc.kill()
-            client_proc.kill()
-            server_proc.wait()
-            client_proc.wait()
-            raise RuntimeError("handshake timed out")
-    finally:
-        _cleanup_blob_file(server_bin)
-        _cleanup_blob_file(client_bin)
-
-    if server_proc.returncode != 0:
+    if result.server_exit != 0:
         raise RuntimeError(
-            f"server exit={server_proc.returncode} stderr={server_err!r}"
+            f"server exit={result.server_exit} stderr={server_err!r}"
         )
-    if client_proc.returncode != 0:
+    if result.client_exit != 0:
         raise RuntimeError(
-            f"client exit={client_proc.returncode} stderr={client_err!r}"
+            f"client exit={result.client_exit} stderr={client_err!r}"
         )
 
     if b"Hello from NaCl PIC blob!" not in server_out:

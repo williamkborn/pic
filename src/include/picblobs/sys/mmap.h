@@ -30,6 +30,8 @@
 #define __NR_mmap 4210
 #elif defined(__s390x__)
 #define __NR_mmap 90
+#elif defined(__sparc__)
+#define __NR_mmap 56
 #else
 #error "Unsupported architecture for pic_mmap()"
 #endif

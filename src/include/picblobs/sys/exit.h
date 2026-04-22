@@ -30,6 +30,8 @@
 #define __NR_exit 4001
 #elif defined(__s390x__)
 #define __NR_exit 1
+#elif defined(__sparc__)
+#define __NR_exit 1
 #else
 #error "Unsupported architecture for pic_exit()"
 #endif

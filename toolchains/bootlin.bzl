@@ -7,7 +7,7 @@ generated inside each external repo so tool_path references are repo-relative.
 
 _BOOTLIN_URL_TEMPLATE = (
     "https://toolchains.bootlin.com/downloads/releases/toolchains/" +
-    "{arch}/tarballs/{arch}--glibc--stable-{version}.tar.xz"
+    "{arch}/tarballs/{arch}--{libc}--stable-{version}.tar.xz"
 )
 
 # The config rule definition goes in a .bzl file inside the external repo.
@@ -116,10 +116,10 @@ def _config_impl(ctx):
         host_system_name = "x86_64-linux-gnu",
         target_system_name = "{triple}",
         target_cpu = "{target_cpu}",
-        target_libc = "glibc",
+        target_libc = "{target_libc}",
         compiler = "gcc",
         abi_version = "gcc",
-        abi_libc_version = "glibc",
+        abi_libc_version = "{target_libc}",
         tool_paths = tool_paths,
         features = features,
     )
@@ -217,17 +217,19 @@ def _bootlin_toolchain_repo_impl(ctx):
     arch = ctx.attr.arch
     version = ctx.attr.version
     triple = ctx.attr.triple
+    libc = ctx.attr.libc
     sha256 = ctx.attr.sha256
     extra_cflags = ctx.attr.extra_cflags
     target_cpu = ctx.attr.target_cpu
     toolchain_id = ctx.attr.toolchain_id
 
-    url = _BOOTLIN_URL_TEMPLATE.format(arch = arch, version = version)
+    url = _BOOTLIN_URL_TEMPLATE.format(arch = arch, libc = libc, version = version)
 
     download_kwargs = {
         "url": [url],
-        "stripPrefix": "{arch}--glibc--stable-{version}".format(
+        "stripPrefix": "{arch}--{libc}--stable-{version}".format(
             arch = arch,
+            libc = libc,
             version = version,
         ),
     }
@@ -258,6 +260,7 @@ def _bootlin_toolchain_repo_impl(ctx):
         extra_cflags = repr(extra_cflags),
         target_cpu = target_cpu,
         toolchain_id = toolchain_id,
+        target_libc = libc,
     )
     ctx.file("config.bzl", config_bzl)
 
@@ -269,6 +272,7 @@ bootlin_toolchain_repo = repository_rule(
     implementation = _bootlin_toolchain_repo_impl,
     attrs = {
         "arch": attr.string(mandatory = True),
+        "libc": attr.string(default = "glibc"),
         "version": attr.string(mandatory = True),
         "triple": attr.string(mandatory = True),
         "sha256": attr.string(default = ""),
@@ -286,6 +290,7 @@ _TOOLCHAIN_TAG = tag_class(
         "name": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
         "triple": attr.string(mandatory = True),
+        "libc": attr.string(default = "glibc"),
         "version": attr.string(mandatory = True),
         "sha256": attr.string(default = ""),
         "extra_cflags": attr.string_list(default = []),
@@ -303,6 +308,7 @@ def _bootlin_impl(module_ctx):
                 arch = toolchain.arch,
                 version = toolchain.version,
                 triple = toolchain.triple,
+                libc = toolchain.libc,
                 sha256 = toolchain.sha256,
                 extra_cflags = toolchain.extra_cflags,
                 target_cpu = toolchain.target_cpu if toolchain.target_cpu else toolchain.name,

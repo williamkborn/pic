@@ -26,6 +26,8 @@
 #define __NR_dup2 63
 #elif defined(__s390x__)
 #define __NR_dup2 63
+#elif defined(__sparc__)
+#define __NR_dup2 90
 #else
 #error "Unsupported architecture for pic_dup2()"
 #endif

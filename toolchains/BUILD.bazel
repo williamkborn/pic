@@ -68,3 +68,10 @@ toolchain(
     target_compatible_with = ["//platforms:mipsbe32"],
 )
 
+toolchain(
+    name = "bootlin_sparcv8",
+    toolchain = "@bootlin_sparcv8//:cc_toolchain",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+    target_compatible_with = ["//platforms:sparcv8"],
+)
+

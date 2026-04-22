@@ -4,7 +4,7 @@
  * Uses crypto_secretbox (XSalsa20-Poly1305) with a pre-shared key.
  *
  * Protocol:
- *   1. Server binds to 0.0.0.0:9999, accepts one connection.
+ *   1. Server binds to 0.0.0.0:<configured port>, accepts one connection.
  *   2. Receives: nonce (24B) + length (4B LE) + ciphertext.
  *   3. Decrypts with crypto_secretbox_open, prints plaintext.
  *   4. Sends encrypted ACK: nonce (24B) + length (4B LE) + ciphertext.
@@ -31,8 +31,17 @@
 #include "picblobs/sys/socket.h"
 #include "picblobs/sys/write.h"
 
-#define LISTEN_PORT 9999
 #define MAX_CT 4096
+
+struct __attribute__((packed)) nacl_server_config {
+	pic_u16 port; /* little-endian */
+};
+
+__asm__(".section .config,\"aw\"\n"
+	".globl nacl_server_config\n"
+	"nacl_server_config:\n"
+	".byte 0x0f, 0x27\n"
+	".previous\n");
 
 /*
  * Pre-shared 32-byte key. Both server and client use the same key.
@@ -74,7 +83,7 @@ static const unsigned char PSK[32] = {
 	0x00,
 };
 
-PIC_RODATA static const char tag_listen[] = "[server] listening on :9999\n";
+PIC_RODATA static const char tag_listen[] = "[server] listening\n";
 PIC_RODATA static const char tag_conn[] = "[server] accepted connection\n";
 PIC_RODATA static const char tag_recv[] = "[server] decrypted: ";
 PIC_RODATA static const char tag_ok[] = "[server] secure channel OK\n";
@@ -108,6 +117,14 @@ static int write_all(int fd, const void *buf, pic_size_t n)
 		done += (pic_size_t)r;
 	}
 	return 0;
+}
+
+PIC_TEXT
+static pic_u16 config_port(void)
+{
+	extern char nacl_server_config[] __attribute__((visibility("hidden")));
+	const pic_u8 *cfg = (const pic_u8 *)(void *)nacl_server_config;
+	return (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
 }
 
 /* Read a framed message: nonce(24) + len(4 LE) + ciphertext(len).
@@ -200,6 +217,7 @@ void _start(
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
 	int sock, conn;
 	long pt_len;
+	pic_u16 port;
 
 	/* Create listening socket. */
 	sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);
@@ -213,7 +231,8 @@ void _start(
 	struct pic_sockaddr_in addr;
 	pic_memset(&addr, 0, sizeof(addr));
 	addr.sin_family = PIC_AF_INET;
-	addr.sin_port = pic_htons(LISTEN_PORT);
+	port = config_port();
+	addr.sin_port = pic_htons(port);
 	addr.sin_addr = PIC_INADDR_ANY;
 
 	if (pic_bind(sock, &addr, sizeof(addr)) < 0)

@@ -39,6 +39,8 @@ static inline long pic_setsockopt(int sockfd, int level, int optname,
 #define __NR_setsockopt 4181
 #elif defined(__s390x__)
 #define __NR_setsockopt 366
+#elif defined(__sparc__)
+#define __NR_setsockopt 355
 #else
 #error "Unsupported architecture for pic_setsockopt()"
 #endif

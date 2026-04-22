@@ -35,6 +35,9 @@
 #elif defined(__s390x__)
 #include "picblobs/syscall/s390x.h"
 
+#elif defined(__sparc__)
+#include "picblobs/syscall/sparc.h"
+
 #else
 #error "Unsupported architecture for pic_raw_syscall — add picblobs/syscall/{arch}.h"
 #endif

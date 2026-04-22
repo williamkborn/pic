@@ -96,6 +96,7 @@ _ELF_MACHINES = {
     "s390x": "S/390",
     "mipsel32": "MIPS",
     "mipsbe32": "MIPS",
+    "sparcv8": "SPARC",
 }
 
 

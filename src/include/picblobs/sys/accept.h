@@ -38,6 +38,8 @@ static inline long pic_accept(int sockfd, void *addr, void *addrlen)
 #define __NR_accept 4168
 #elif defined(__s390x__)
 #define __NR_accept 364
+#elif defined(__sparc__)
+#define __NR_accept 99
 #else
 #error "Unsupported architecture for pic_accept()"
 #endif

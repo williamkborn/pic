@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import hashlib
+import json
 from pathlib import Path
 
 from picblobs._enums import OS, Arch, BlobType, ValidationError
@@ -82,6 +83,7 @@ class ConfigLayout:
 
 _PKG_DIR = Path(__file__).parent
 _PROJECT_ROOT = _PKG_DIR.parent.parent
+_BLOBS_DIR = _PKG_DIR / "blobs"
 
 
 @functools.cache
@@ -121,6 +123,19 @@ def _type_size(type_str: str) -> int:
         count = int(rest[:-1])
         return base.get(stem, 1) * count
     return 0
+
+
+def _load_sidecar_config(os_name: str, arch_name: str, blob_type: str) -> dict | None:
+    """Load config metadata from a shipped sidecar JSON, if present."""
+    sidecar = _BLOBS_DIR / f"{blob_type}.{os_name}.{arch_name}.json"
+    if not sidecar.exists():
+        return None
+    try:
+        data = json.loads(sidecar.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    config = data.get("config")
+    return config if isinstance(config, dict) else None
 
 
 # ---------------------------------------------------------------------------
@@ -229,10 +244,39 @@ def config_layout(os, arch, blob_type) -> ConfigLayout:
 
     registry = _registry_blob_types()
     if registry is None:
-        raise ValidationError(
-            "Config layout introspection requires the tools/registry module; "
-            "not bundled in installed wheels. Call config_layout() from a "
-            "source checkout."
+        config = _load_sidecar_config(os_e.value, arch_e.value, blob_e.value)
+        if config is None:
+            raise ValidationError(
+                "Config layout metadata is unavailable for "
+                f"{blob_e.value}/{os_e.value}/{arch_e.value}"
+            )
+        fields: list[ConfigField] = []
+        for field in config.get("fields", []):
+            fields.append(
+                ConfigField(
+                    name=field["name"],
+                    type=field["type"],
+                    offset=field["offset"],
+                    size=_type_size(field["type"]),
+                    variable=False,
+                )
+            )
+        for trailing in config.get("trailing_data", []):
+            fields.append(
+                ConfigField(
+                    name=trailing["name"],
+                    type="u8[]",
+                    offset=config.get("fixed_size", 0),
+                    size=0,
+                    variable=True,
+                )
+            )
+        if not fields:
+            raise ValidationError(f"{blob_e.value} has no config struct")
+        return ConfigLayout(
+            blob_type=blob_e,
+            fields=tuple(fields),
+            total_fixed_size=config.get("fixed_size", 0),
         )
 
     # Lookup handles the staged_name indirection (e.g. alloc_jump -> alloc_jump_windows).

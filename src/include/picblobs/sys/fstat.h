@@ -26,6 +26,8 @@
 #define __NR_fstat 108
 #elif defined(__s390x__)
 #define __NR_fstat 108
+#elif defined(__sparc__)
+#define __NR_fstat 62
 #else
 #error "Unsupported architecture for pic_fstat()"
 #endif

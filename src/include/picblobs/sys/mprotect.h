@@ -30,6 +30,8 @@
 #define __NR_mprotect 4125
 #elif defined(__s390x__)
 #define __NR_mprotect 125
+#elif defined(__sparc__)
+#define __NR_mprotect 74
 #else
 #error "Unsupported architecture for pic_mprotect()"
 #endif

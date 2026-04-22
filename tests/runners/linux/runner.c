@@ -65,6 +65,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 #elif defined(__s390x__)
 #include "start/s390x.h"
 
+#elif defined(__sparc__)
+#include "start/sparc.h"
+
 #else
 #error "Unsupported architecture for _start — add start/{arch}.h"
 #endif

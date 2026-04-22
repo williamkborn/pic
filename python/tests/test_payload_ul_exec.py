@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from picblobs import get_blob
+from picblobs._cross_compile import find_gcc
 from picblobs.runner import is_arch_skip_rosetta, run_blob, find_runner
 
 from payload_defs import OPERATING_SYSTEMS
@@ -38,6 +39,7 @@ ARCH_TO_TRIPLE = {
     "mipsel32": "mipsel-buildroot-linux-gnu",
     "mipsbe32": "mips-buildroot-linux-gnu",
     "s390x": "s390x-buildroot-linux-gnu",
+    "sparcv8": "sparc-buildroot-linux-uclibc",
 }
 
 # Extra cflags for specific arches.
@@ -50,57 +52,6 @@ ARCH_EXTRA_CFLAGS = {
 BOOTLIN_BASE = Path("bazel-out/../external").resolve()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _find_gcc(arch: str) -> str | None:
-    """Find a GCC that can compile for the given architecture.
-
-    For native x86_64: uses system gcc.
-    For cross-arch: tries Bootlin toolchains via bazel output base,
-    then falls back to system cross-compilers (e.g. aarch64-linux-gnu-gcc).
-    """
-    triple = ARCH_TO_TRIPLE.get(arch)
-    if not triple:
-        return None
-
-    bootlin_arch_map = {
-        "x86_64": "x86_64",
-        "i686": "i686",
-        "aarch64": "aarch64",
-        "armv5_arm": "armv5",
-        "armv5_thumb": "armv5",
-        "armv7_thumb": "armv7",
-        "mipsel32": "mipsel32",
-        "mipsbe32": "mipsbe32",
-        "s390x": "s390x",
-    }
-    bootlin_name = bootlin_arch_map.get(arch)
-
-    # Try bazel output base (Bootlin toolchains).
-    if bootlin_name:
-        try:
-            res = subprocess.run(
-                ["bazel", "info", "output_base"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                cwd=str(PROJECT_ROOT),
-            )
-            if res.returncode == 0:
-                output_base = Path(res.stdout.strip())
-                gcc_path = (
-                    output_base
-                    / "external"
-                    / f"+bootlin+bootlin_{bootlin_name}"
-                    / "bin"
-                    / f"{triple}-gcc"
-                )
-                if gcc_path.exists():
-                    return str(gcc_path)
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-    return None
 
 
 def _find_sysroot(arch: str) -> str | None:
@@ -116,6 +67,7 @@ def _find_sysroot(arch: str) -> str | None:
         "mipsel32": "mipsel32",
         "mipsbe32": "mipsbe32",
         "s390x": "s390x",
+        "sparcv8": "sparcv8",
     }
     bootlin_name = bootlin_arch_map.get(arch)
     if not bootlin_name or not triple:
@@ -131,17 +83,34 @@ def _find_sysroot(arch: str) -> str | None:
         )
         if res.returncode == 0:
             output_base = Path(res.stdout.strip())
-            sysroot = (
+            candidates = [
                 output_base
                 / "external"
                 / f"+bootlin+bootlin_{bootlin_name}"
                 / f"{triple}"
-                / "sysroot"
-            )
-            if sysroot.exists():
-                return str(sysroot)
+                / "sysroot",
+                PROJECT_ROOT
+                / "bazel-pic"
+                / "external"
+                / f"+bootlin+bootlin_{bootlin_name}"
+                / f"{triple}"
+                / "sysroot",
+            ]
+            for sysroot in candidates:
+                if sysroot.exists():
+                    return str(sysroot)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
+    fallback = (
+        PROJECT_ROOT
+        / "bazel-pic"
+        / "external"
+        / f"+bootlin+bootlin_{bootlin_name}"
+        / f"{triple}"
+        / "sysroot"
+    )
+    if fallback.exists():
+        return str(fallback)
     return None
 
 
@@ -163,7 +132,7 @@ def _compile_test_elf(
 
     Returns the ELF binary as bytes, or None if compiler not found.
     """
-    gcc = _find_gcc(arch)
+    gcc = find_gcc(arch)
     if gcc is None:
         return None
 
@@ -205,7 +174,7 @@ def _compile_raw_elf(arch: str, pie: bool = False) -> bytes | None:
     if asm_src is None:
         return None
 
-    gcc = _find_gcc(arch)
+    gcc = find_gcc(arch)
     if gcc is None:
         return None
 
@@ -231,7 +200,7 @@ def _compile_raw_elf(arch: str, pie: bool = False) -> bytes | None:
 
 
 # Architectures that are big-endian.
-_BIG_ENDIAN_ARCHES = {"mipsbe32", "s390x"}
+_BIG_ENDIAN_ARCHES = {"mipsbe32", "s390x", "sparcv8"}
 
 
 def _build_ul_exec_config(
@@ -361,6 +330,21 @@ RAW_SYSCALL_SRCS = {
         "  lghi %r1, 4\n  lghi %r2, 1\n  larl %r3, msg\n"
         "  lghi %r4, 11\n  svc 0\n"
         "  lghi %r1, 248\n  lghi %r2, 0\n  svc 0\n"
+        'msg: .ascii "UL_EXEC_OK\\n"\n'
+    ),
+    "sparcv8": (
+        ".text\n.globl _start\n_start:\n"
+        "  mov 4, %g1\n"
+        "  mov 1, %o0\n"
+        "  sethi %hi(msg), %o1\n"
+        "  or %o1, %lo(msg), %o1\n"
+        "  mov 11, %o2\n"
+        "  ta 0x10\n"
+        "  nop\n"
+        "  mov 188, %g1\n"
+        "  clr %o0\n"
+        "  ta 0x10\n"
+        "  nop\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
 }

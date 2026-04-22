@@ -4,7 +4,7 @@
  * Uses crypto_secretbox (XSalsa20-Poly1305) with a pre-shared key.
  *
  * Protocol:
- *   1. Connects to server at 127.0.0.1:9999.
+ *   1. Connects to 127.0.0.1:<configured port>.
  *   2. Sends: nonce (24B) + length (4B LE) + ciphertext.
  *   3. Receives encrypted ACK, decrypts and verifies.
  *   4. Exits 0 on success, 1 on failure.
@@ -27,8 +27,17 @@
 #include "picblobs/sys/socket.h"
 #include "picblobs/sys/write.h"
 
-#define SERVER_PORT 9999
 #define MAX_CT 4096
+
+struct __attribute__((packed)) nacl_client_config {
+	pic_u16 port; /* little-endian */
+};
+
+__asm__(".section .config,\"aw\"\n"
+	".globl nacl_client_config\n"
+	"nacl_client_config:\n"
+	".byte 0x0f, 0x27\n"
+	".previous\n");
 
 /* Same pre-shared key as server. */
 PIC_RODATA
@@ -198,6 +207,14 @@ static int encrypt_send(
 	return 0;
 }
 
+PIC_TEXT
+static pic_u16 config_port(void)
+{
+	extern char nacl_client_config[] __attribute__((visibility("hidden")));
+	const pic_u8 *cfg = (const pic_u8 *)(void *)nacl_client_config;
+	return (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
+}
+
 PIC_ENTRY
 void _start(
 #ifdef PIC_PLATFORM_HOSTED
@@ -223,7 +240,7 @@ void _start(
 	struct pic_sockaddr_in addr;
 	pic_memset(&addr, 0, sizeof(addr));
 	addr.sin_family = PIC_AF_INET;
-	addr.sin_port = pic_htons(SERVER_PORT);
+	addr.sin_port = pic_htons(config_port());
 	addr.sin_addr = parse_ipv4(server_ip);
 
 	/* Retry connect — server may need time to start. */

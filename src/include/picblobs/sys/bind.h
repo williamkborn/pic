@@ -38,6 +38,8 @@ static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen)
 #define __NR_bind 4169
 #elif defined(__s390x__)
 #define __NR_bind 361
+#elif defined(__sparc__)
+#define __NR_bind 353
 #else
 #error "Unsupported architecture for pic_bind()"
 #endif

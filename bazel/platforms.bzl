@@ -15,6 +15,7 @@ BLOB_TARGETS = {
     "linux:s390x": "//platforms:linux_s390x",
     "linux:mipsel32": "//platforms:linux_mipsel32",
     "linux:mipsbe32": "//platforms:linux_mipsbe32",
+    "linux:sparcv8": "//platforms:linux_sparcv8",
     "freebsd:x86_64": "//platforms:freebsd_x86_64",
     "freebsd:i686": "//platforms:freebsd_i686",
     "freebsd:aarch64": "//platforms:freebsd_aarch64",

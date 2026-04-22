@@ -46,6 +46,12 @@
 #define PIC_ARCH_BITS 64
 #define PIC_ARCH_USES_OLD_MMAP 1
 
+#elif defined(__sparc__)
+#define PIC_ARCH_NAME "sparcv8"
+#define PIC_ARCH_BITS 32
+#define PIC_ARCH_USES_MMAP2 1
+#define PIC_ARCH_IS_32BIT 1
+
 #else
 #error "Unsupported architecture — add to tools/registry.py and run generate.py"
 #endif

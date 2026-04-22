@@ -90,6 +90,17 @@ class HelloBuilder(_BaseTypedBuilder):
 
 
 @dataclasses.dataclass(frozen=True)
+class HelloWindowsBuilder(_BaseTypedBuilder):
+    """Windows hello world — no config."""
+
+    _blob: BlobType = BlobType.HELLO_WINDOWS
+
+    def build(self) -> bytes:
+        _check_supported(self._blob, self._os, self._arch)
+        return _assemble(self._blob, self._os, self._arch, b"")
+
+
+@dataclasses.dataclass(frozen=True)
 class AllocJumpBuilder(_BaseTypedBuilder):
     """alloc_jump — allocate RWX, copy payload, jump.
 
@@ -368,6 +379,13 @@ class Blob:
 
     def hello(self) -> HelloBuilder:
         return self._typed(HelloBuilder)
+
+    def hello_windows(self) -> HelloWindowsBuilder:
+        if self.os is not OS.WINDOWS:
+            raise ValidationError(
+                f"hello_windows is Windows-only; got os={self.os.value}"
+            )
+        return self._typed(HelloWindowsBuilder)
 
     def alloc_jump(self) -> AllocJumpBuilder:
         return self._typed(AllocJumpBuilder)

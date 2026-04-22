@@ -49,6 +49,7 @@ class Arch(str, enum.Enum):
     MIPSEL32 = "mipsel32"
     MIPSBE32 = "mipsbe32"
     S390X = "s390x"
+    SPARCV8 = "sparcv8"
 
     @classmethod
     def parse(cls, value: "Arch | str") -> "Arch":
