@@ -24,6 +24,9 @@ ARCH_TO_TRIPLE: dict[str, str] = {
     "mipsbe32": "mips-buildroot-linux-gnu",
     "s390x": "s390x-buildroot-linux-gnu",
     "sparcv8": "sparc-buildroot-linux-uclibc",
+    "powerpc": "powerpc-buildroot-linux-gnu",
+    "ppc64le": "powerpc64le-buildroot-linux-gnu",
+    "riscv64": "riscv64-buildroot-linux-gnu",
 }
 
 # Map picblobs arch names to Bootlin toolchain directory names.
@@ -38,17 +41,23 @@ ARCH_TO_BOOTLIN: dict[str, str] = {
     "mipsbe32": "mipsbe32",
     "s390x": "s390x",
     "sparcv8": "sparcv8",
+    "powerpc": "powerpc",
+    "ppc64le": "ppc64le",
+    "riscv64": "riscv64",
 }
 
 # Extra compiler flags for specific arches.
 ARCH_EXTRA_CFLAGS: dict[str, list[str]] = {
     "armv5_thumb": ["-mthumb"],
     "armv7_thumb": ["-march=armv7-a", "-mthumb"],
+    "powerpc": ["-mcpu=e300c3"],
+    "ppc64le": ["-mcpu=power8"],
 }
 
 # Big-endian architectures.
 BIG_ENDIAN_ARCHES: set[str] = {"mipsbe32", "s390x"}
 BIG_ENDIAN_ARCHES.add("sparcv8")
+BIG_ENDIAN_ARCHES.add("powerpc")
 
 # Per-arch raw-syscall _start that writes "Hello, ul_exec!\n" and exits.
 # Each uses PC-relative data access so it works as both ET_EXEC and ET_DYN.
@@ -149,6 +158,40 @@ HELLO_ET_EXEC_ASM: dict[str, str] = {
         f"  clr %o0\n"
         f"  ta 0x10\n"
         f"  nop\n"
+        f'msg: .ascii "{_MSG}"\n'
+    ),
+    "powerpc": (
+        f".text\n.globl _start\n_start:\n"
+        f"  li 0, 4\n"
+        f"  li 3, 1\n"
+        f"  lis 4, msg@ha\n"
+        f"  addi 4, 4, msg@l\n"
+        f"  li 5, 16\n"
+        f"  sc\n"
+        f"  li 0, 234\n"
+        f"  li 3, 0\n"
+        f"  sc\n"
+        f'msg: .ascii "{_MSG}"\n'
+    ),
+    "ppc64le": (
+        f".text\n.globl _start\n_start:\n"
+        f"  li 0, 4\n"
+        f"  li 3, 1\n"
+        f"  bl 1f\n"
+        f"1: mflr 4\n"
+        f"  addi 4, 4, msg-1b\n"
+        f"  li 5, 16\n"
+        f"  sc\n"
+        f"  li 0, 234\n"
+        f"  li 3, 0\n"
+        f"  sc\n"
+        f'msg: .ascii "{_MSG}"\n'
+    ),
+    "riscv64": (
+        f".text\n.globl _start\n_start:\n"
+        f"  li a7, 64\n  li a0, 1\n  la a1, msg\n"
+        f"  li a2, 16\n  ecall\n"
+        f"  li a7, 94\n  li a0, 0\n  ecall\n"
         f'msg: .ascii "{_MSG}"\n'
     ),
 }

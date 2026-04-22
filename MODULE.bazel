@@ -110,6 +110,33 @@ bootlin.toolchain(
     version = "2024.05-1",
 )
 
+bootlin.toolchain(
+    name = "powerpc",
+    arch = "powerpc-e300c3",
+    extra_cflags = ["-mcpu=e300c3"],
+    sha256 = "6c975a7293fde77a52f348124049645ee2ceee19e75ab6e0b2364043090a2dff",
+    triple = "powerpc-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "ppc64le",
+    arch = "powerpc64le-power8",
+    extra_cflags = ["-mcpu=power8"],
+    sha256 = "8133b74614f880eb8b76730efee77b8fd281c982bfa2791b72c5f836a529530d",
+    triple = "powerpc64le-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
+bootlin.toolchain(
+    name = "riscv64",
+    arch = "riscv64-lp64d",
+    extra_cflags = [],
+    sha256 = "78e16f3def8b2ff3da09c16155f993ac7e4dc1791d0904ada03fcb2e04910aab",
+    triple = "riscv64-buildroot-linux-gnu",
+    version = "2024.05-1",
+)
+
 # Register all Bootlin toolchains.
 use_repo(
     bootlin,
@@ -119,8 +146,11 @@ use_repo(
     "bootlin_i686",
     "bootlin_mipsbe32",
     "bootlin_mipsel32",
+    "bootlin_ppc64le",
     "bootlin_s390x",
     "bootlin_sparcv8",
+    "bootlin_powerpc",
+    "bootlin_riscv64",
     "bootlin_x86_64",
 )
 

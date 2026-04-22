@@ -97,6 +97,9 @@ _ELF_MACHINES = {
     "mipsel32": "MIPS",
     "mipsbe32": "MIPS",
     "sparcv8": "SPARC",
+    "powerpc": "PowerPC",
+    "ppc64le": "64-bit PowerPC",
+    "riscv64": "RISC-V",
 }
 
 

@@ -18,24 +18,31 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_lseek 8
-#elif defined(__i386__)
-#define __NR_llseek 140
+#if defined(__powerpc64__)
 #define __NR_lseek 19
 #elif defined(__aarch64__)
 #define __NR_lseek 62
-#elif defined(__arm__)
+#elif defined(__powerpc__)
 #define __NR_llseek 140
 #define __NR_lseek 19
-#elif defined(__mips__)
-#define __NR_llseek 4140
-#define __NR_lseek 4019
+#elif defined(__x86_64__)
+#define __NR_lseek 8
 #elif defined(__s390x__)
 #define __NR_lseek 19
 #elif defined(__sparc__)
 #define __NR_llseek 236
 #define __NR_lseek 19
+#elif defined(__i386__)
+#define __NR_llseek 140
+#define __NR_lseek 19
+#elif defined(__mips__)
+#define __NR_llseek 4140
+#define __NR_lseek 4019
+#elif defined(__arm__)
+#define __NR_llseek 140
+#define __NR_lseek 19
+#elif defined(__riscv)
+#define __NR_lseek 62
 #else
 #error "Unsupported architecture for pic_lseek()"
 #endif

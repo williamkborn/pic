@@ -27,20 +27,26 @@ static inline long pic_setsockopt(int sockfd, int level, int optname,
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_setsockopt 54
-#elif defined(__i386__)
-#define __NR_setsockopt 366
+#if defined(__powerpc64__)
+#define __NR_setsockopt 339
 #elif defined(__aarch64__)
 #define __NR_setsockopt 208
-#elif defined(__arm__)
-#define __NR_setsockopt 294
-#elif defined(__mips__)
-#define __NR_setsockopt 4181
+#elif defined(__powerpc__)
+#define __NR_setsockopt 339
+#elif defined(__x86_64__)
+#define __NR_setsockopt 54
 #elif defined(__s390x__)
 #define __NR_setsockopt 366
 #elif defined(__sparc__)
 #define __NR_setsockopt 355
+#elif defined(__i386__)
+#define __NR_setsockopt 366
+#elif defined(__mips__)
+#define __NR_setsockopt 4181
+#elif defined(__arm__)
+#define __NR_setsockopt 294
+#elif defined(__riscv)
+#define __NR_setsockopt 208
 #else
 #error "Unsupported architecture for pic_setsockopt()"
 #endif

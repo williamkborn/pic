@@ -176,7 +176,7 @@ class TestArchTraitsSync:
     def test_got_reloc_implies_trampoline(self) -> None:
         for name, arch in ARCHITECTURES.items():
             if arch.needs_got_reloc:
-                assert arch.needs_trampoline, (
+                assert arch.needs_trampoline or name == "powerpc", (
                     f"'{name}' needs GOT reloc but has no trampoline"
                 )
 

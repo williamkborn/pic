@@ -40,12 +40,17 @@ ARCH_TO_TRIPLE = {
     "mipsbe32": "mips-buildroot-linux-gnu",
     "s390x": "s390x-buildroot-linux-gnu",
     "sparcv8": "sparc-buildroot-linux-uclibc",
+    "powerpc": "powerpc-buildroot-linux-gnu",
+    "ppc64le": "powerpc64le-buildroot-linux-gnu",
+    "riscv64": "riscv64-buildroot-linux-gnu",
 }
 
 # Extra cflags for specific arches.
 ARCH_EXTRA_CFLAGS = {
     "armv5_thumb": ["-mthumb"],
     "armv7_thumb": ["-march=armv7-a", "-mthumb"],
+    "powerpc": ["-mcpu=e300c3"],
+    "ppc64le": ["-mcpu=power8"],
 }
 
 # Bazel external toolchain base path.
@@ -68,6 +73,9 @@ def _find_sysroot(arch: str) -> str | None:
         "mipsbe32": "mipsbe32",
         "s390x": "s390x",
         "sparcv8": "sparcv8",
+        "powerpc": "powerpc",
+        "ppc64le": "ppc64le",
+        "riscv64": "riscv64",
     }
     bootlin_name = bootlin_arch_map.get(arch)
     if not bootlin_name or not triple:
@@ -200,7 +208,7 @@ def _compile_raw_elf(arch: str, pie: bool = False) -> bytes | None:
 
 
 # Architectures that are big-endian.
-_BIG_ENDIAN_ARCHES = {"mipsbe32", "s390x", "sparcv8"}
+_BIG_ENDIAN_ARCHES = {"mipsbe32", "s390x", "sparcv8", "powerpc"}
 
 
 def _build_ul_exec_config(
@@ -345,6 +353,45 @@ RAW_SYSCALL_SRCS = {
         "  clr %o0\n"
         "  ta 0x10\n"
         "  nop\n"
+        'msg: .ascii "UL_EXEC_OK\\n"\n'
+    ),
+    "powerpc": (
+        ".text\n.globl _start\n_start:\n"
+        "  li 0, 4\n"
+        "  li 3, 1\n"
+        "  lis 4, msg@ha\n"
+        "  addi 4, 4, msg@l\n"
+        "  li 5, 11\n"
+        "  sc\n"
+        "  li 0, 234\n"
+        "  li 3, 0\n"
+        "  sc\n"
+        'msg: .ascii "UL_EXEC_OK\\n"\n'
+    ),
+    "ppc64le": (
+        ".text\n.globl _start\n_start:\n"
+        "  li 0, 4\n"
+        "  li 3, 1\n"
+        "  bl 1f\n"
+        "1: mflr 4\n"
+        "  addi 4, 4, msg-1b\n"
+        "  li 5, 11\n"
+        "  sc\n"
+        "  li 0, 234\n"
+        "  li 3, 0\n"
+        "  sc\n"
+        'msg: .ascii "UL_EXEC_OK\\n"\n'
+    ),
+    "riscv64": (
+        ".text\n.globl _start\n_start:\n"
+        "  li a7, 64\n"
+        "  li a0, 1\n"
+        "  la a1, msg\n"
+        "  li a2, 11\n"
+        "  ecall\n"
+        "  li a7, 94\n"
+        "  li a0, 0\n"
+        "  ecall\n"
         'msg: .ascii "UL_EXEC_OK\\n"\n'
     ),
 }

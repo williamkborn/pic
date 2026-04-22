@@ -32,4 +32,7 @@ else:
         "mipsel32": "qemu-mipsel-static",
         "mipsbe32": "qemu-mips-static",
         "sparcv8": "qemu-sparc-static",
+        "powerpc": "qemu-ppc-static",
+        "ppc64le": "qemu-ppc64le-static",
+        "riscv64": "qemu-riscv64-static",
     }

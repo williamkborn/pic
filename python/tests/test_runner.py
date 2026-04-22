@@ -36,7 +36,7 @@ class TestQemuBinaryMap:
 
     def test_unknown_arch_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown architecture"):
-            find_qemu("riscv64")
+            find_qemu("not-a-real-arch")
 
     @pytest.mark.requires_qemu
     def test_find_qemu_x86_64(self) -> None:

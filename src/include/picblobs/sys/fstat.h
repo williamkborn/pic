@@ -18,16 +18,22 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
+#if defined(__powerpc64__)
+#define __NR_fstat 108
+#elif defined(__powerpc__)
+#define __NR_fstat 108
+#elif defined(__x86_64__)
 #define __NR_fstat 5
-#elif defined(__i386__)
-#define __NR_fstat 108
-#elif defined(__arm__)
-#define __NR_fstat 108
 #elif defined(__s390x__)
 #define __NR_fstat 108
 #elif defined(__sparc__)
 #define __NR_fstat 62
+#elif defined(__i386__)
+#define __NR_fstat 108
+#elif defined(__arm__)
+#define __NR_fstat 108
+#elif defined(__riscv)
+#define __NR_fstat 80
 #else
 #error "Unsupported architecture for pic_fstat()"
 #endif

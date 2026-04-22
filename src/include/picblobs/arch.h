@@ -12,23 +12,39 @@
 
 #ifndef PICBLOBS_ARCH_H
 #define PICBLOBS_ARCH_H
-#if defined(__x86_64__)
-#define PIC_ARCH_NAME "x86"
+#if defined(__powerpc64__)
+#define PIC_ARCH_NAME "ppc64le"
 #define PIC_ARCH_BITS 64
-
-#elif defined(__i386__)
-#define PIC_ARCH_NAME "i686"
-#define PIC_ARCH_BITS 32
-#define PIC_ARCH_USES_MMAP2 1
-#define PIC_ARCH_IS_32BIT 1
 
 #elif defined(__aarch64__)
 #define PIC_ARCH_NAME "aarch64"
 #define PIC_ARCH_BITS 64
 #define PIC_ARCH_OPENAT_ONLY 1
 
-#elif defined(__arm__)
-#define PIC_ARCH_NAME "armv5"
+#elif defined(__powerpc__)
+#define PIC_ARCH_NAME "powerpc"
+#define PIC_ARCH_BITS 32
+#define PIC_ARCH_USES_MMAP2 1
+#define PIC_ARCH_NEEDS_GOT_RELOC 1
+#define PIC_ARCH_IS_32BIT 1
+
+#elif defined(__x86_64__)
+#define PIC_ARCH_NAME "x86"
+#define PIC_ARCH_BITS 64
+
+#elif defined(__s390x__)
+#define PIC_ARCH_NAME "s390x"
+#define PIC_ARCH_BITS 64
+#define PIC_ARCH_USES_OLD_MMAP 1
+
+#elif defined(__sparc__)
+#define PIC_ARCH_NAME "sparcv8"
+#define PIC_ARCH_BITS 32
+#define PIC_ARCH_USES_MMAP2 1
+#define PIC_ARCH_IS_32BIT 1
+
+#elif defined(__i386__)
+#define PIC_ARCH_NAME "i686"
 #define PIC_ARCH_BITS 32
 #define PIC_ARCH_USES_MMAP2 1
 #define PIC_ARCH_IS_32BIT 1
@@ -41,16 +57,16 @@
 #define PIC_ARCH_NEEDS_TRAMPOLINE 1
 #define PIC_ARCH_IS_32BIT 1
 
-#elif defined(__s390x__)
-#define PIC_ARCH_NAME "s390x"
-#define PIC_ARCH_BITS 64
-#define PIC_ARCH_USES_OLD_MMAP 1
-
-#elif defined(__sparc__)
-#define PIC_ARCH_NAME "sparcv8"
+#elif defined(__arm__)
+#define PIC_ARCH_NAME "armv5"
 #define PIC_ARCH_BITS 32
 #define PIC_ARCH_USES_MMAP2 1
 #define PIC_ARCH_IS_32BIT 1
+
+#elif defined(__riscv)
+#define PIC_ARCH_NAME "riscv64"
+#define PIC_ARCH_BITS 64
+#define PIC_ARCH_OPENAT_ONLY 1
 
 #else
 #error "Unsupported architecture — add to tools/registry.py and run generate.py"

@@ -16,6 +16,7 @@
  */
 
 #include "picblobs/os/linux.h"
+#include "picblobs/cache.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/close.h"
@@ -101,6 +102,7 @@ void _start(void)
 		pic_exit_group(1);
 	}
 	pic_close(fd);
+	pic_sync_icache(mem, (pic_size_t)size);
 
 #if defined(__thumb__)
 	((void (*)(void))((pic_uintptr)mem | 1))();

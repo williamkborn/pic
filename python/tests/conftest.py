@@ -27,6 +27,12 @@ _BAZEL_RUNNER_PATHS = (
     BAZEL_BIN / "tests" / "runners" / "linux" / "runner",
 )
 
+# Force tests to import the in-repo packages rather than an installed wheel
+# from the venv. Several integration tests rely on freshly-built staged blobs
+# and source-tree helpers that may not match the installed package version.
+sys.path.insert(0, str(PROJECT_ROOT / "python"))
+sys.path.insert(0, str(PROJECT_ROOT / "python_cli"))
+
 # Import the registry for cross-arch parametrization.
 sys.path.insert(0, str(PROJECT_ROOT))
 from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms

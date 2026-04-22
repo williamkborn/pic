@@ -94,6 +94,7 @@ class TestSupportMatrix:
         assert ("linux", "x86_64") in ts
         assert ("linux", "aarch64") in ts
         assert ("linux", "sparcv8") in ts
+        assert ("linux", "powerpc") in ts
         assert ("linux", "s390x") in ts
         assert ("freebsd", "x86_64") in ts
         assert ("windows", "x86_64") in ts
@@ -291,7 +292,7 @@ class TestBuilderValidation:
 
     def test_unsupported_arch(self) -> None:
         with pytest.raises(ValidationError, match="Unsupported arch"):
-            Blob("linux", "riscv64")
+            Blob("linux", "not-a-real-arch")
 
     def test_bad_ip(self) -> None:
         with pytest.raises(ValidationError, match="IPv4"):

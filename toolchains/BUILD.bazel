@@ -75,3 +75,24 @@ toolchain(
     target_compatible_with = ["//platforms:sparcv8"],
 )
 
+toolchain(
+    name = "bootlin_powerpc",
+    toolchain = "@bootlin_powerpc//:cc_toolchain",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+    target_compatible_with = ["//platforms:powerpc"],
+)
+
+toolchain(
+    name = "bootlin_ppc64le",
+    toolchain = "@bootlin_ppc64le//:cc_toolchain",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+    target_compatible_with = ["//platforms:ppc64le"],
+)
+
+toolchain(
+    name = "bootlin_riscv64",
+    toolchain = "@bootlin_riscv64//:cc_toolchain",
+    toolchain_type = "@rules_cc//cc:toolchain_type",
+    target_compatible_with = ["//platforms:riscv64"],
+)
+

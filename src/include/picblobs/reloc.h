@@ -1,16 +1,11 @@
 /*
  * picblobs/reloc.h — self-relocation for PIC blobs.
  *
- * On MIPS32, PIC code uses $t9 to set up $gp, and $gp to access
- * the GOT. When jumping to a blob at an arbitrary address, $t9
- * is not set. PIC_SELF_RELOCATE() fixes $t9 using bal (the only
- * way to discover PC on MIPS without caller cooperation).
+ * On MIPS32 and PowerPC32, PIC code needs architecture-specific startup relocation
+ * before any global data access works correctly.
  *
- * Additionally, GOT entries contain link-time absolute addresses.
- * After fixing $gp, we patch every GOT entry by adding the load
- * offset (runtime_base - link_time_base).
- *
- * On x86_64, aarch64, ARM, i686: no-op (PC-relative addressing).
+ * On x86_64, aarch64, ARM, i686, s390x, SPARC: no-op
+ * (PC-relative addressing or no runtime relocations in the blob format).
  */
 
 #ifndef PICBLOBS_RELOC_H
@@ -21,52 +16,10 @@
 #if PIC_ARCH_NEEDS_GOT_RELOC
 
 /*
- * MIPS self-relocation. Must be called BEFORE any global data access,
- * ideally as the very first thing in _start(). The compiler-generated
- * .cpload $t9 prologue runs before our C code, so we need to fix $t9
- * before .cpload. We do this by putting the $t9 fixup into a
- * constructor-like section that the linker places before .text.pic_entry.
- *
- * Actually, we can't run code before .cpload in the same function.
- * So instead: we write _start in assembly ourselves, set $t9 via bal,
- * then call the user's C entry point.
- *
- * The user writes:
- *   PIC_ENTRY void pic_main(void) { ... }
- *
- * On MIPS, PIC_ENTRY emits the function into .text.pic_entry but the
- * actual _start is an asm stub in .text.pic_entry_trampoline that:
- *   1. Uses bal to discover runtime PC
- *   2. Computes runtime _start address
- *   3. Sets $t9 = runtime _start (well, runtime pic_main)
- *   4. Calls pic_main — GCC's .cpload $t9 now works correctly
- *   5. After .cpload, $gp is correct, GOT accesses work
- *
- * BUT: GOT entries still contain link-time absolute addresses!
- * After $gp is set, GOT[msg] = link-time msg address (e.g., 0x60).
- * We need GOT[msg] = runtime msg address = runtime_base + 0x60.
- *
- * So we ALSO need to patch GOT entries. We do this in pic_main
- * before accessing any global data, using $gp (now correct) to
- * find __got_start/__got_end in the GOT, then patching.
+ * MIPS self-relocation. Called from the user's entry function after the
+ * MIPS trampoline established $gp and saved the runtime blob base in $s0.
  */
-
-/*
- * Step 1: PIC_SELF_RELOCATE() patches GOT entries.
- *         Called from the user's entry function after .cpload ran.
- *         At this point $gp is correct (pointing into the GOT at runtime).
- *         GOT values are link-time absolutes. We add delta to each.
- *
- *         delta = runtime_blob_start - link_time_blob_start
- *               = runtime_blob_start - 0 (our linker script bases at 0)
- *               = runtime_blob_start
- *
- *         We get runtime_blob_start from $t9 minus the offset of the
- *         current function from __blob_start. For _start, that's 0.
- *         But after patching, the GOT entries we used to find
- *         __got_start/__got_end are now double-patched on second call.
- *         Since PIC_SELF_RELOCATE is called once at startup, this is fine.
- */
+#if defined(__mips__)
 #define PIC_SELF_RELOCATE()                                                    \
 	do {                                                                   \
 		unsigned long _got_s, _got_e, _delta;                          \
@@ -90,6 +43,43 @@
 		}                                                              \
 	} while (0)
 
+#elif defined(__powerpc__)
+
+/*
+ * PowerPC32 self-relocation. GCC materializes the PIC base in r30 and
+ * addresses globals through the GOT using link-time blob-relative
+ * pointers. We patch each non-zero GOT slot by adding the runtime base.
+ */
+#define PIC_SELF_RELOCATE()                                                    \
+	do {                                                                   \
+		unsigned long _r30;                                             \
+		unsigned long _got_s_link;                                      \
+		unsigned long _got_e_link;                                      \
+		__asm__ volatile("mr %0, 30" : "=r"(_r30));                    \
+		__asm__ volatile("lis %0, __got_start@ha\n\t"                  \
+				 "addi %0, %0, __got_start@l\n\t"               \
+				 "lis %1, __got_end@ha\n\t"                    \
+				 "addi %1, %1, __got_end@l"                    \
+			: "=&r"(_got_s_link), "=&r"(_got_e_link));             \
+		unsigned long _delta = (_r30 - 32768ul) - _got_s_link;         \
+		if (_delta != 0) {                                             \
+			unsigned long *p =                                     \
+				(unsigned long *)(_delta + _got_s_link);       \
+			unsigned long *e =                                     \
+				(unsigned long *)(_delta + _got_e_link);       \
+			while (p < e) {                                        \
+				if (*p)                                         \
+					*p += _delta;                           \
+				p++;                                           \
+			}                                                      \
+		}                                                              \
+	} while (0)
+
+#else
+
+#define PIC_SELF_RELOCATE() ((void)0)
+
+#endif
 #else
 
 #define PIC_SELF_RELOCATE() ((void)0)

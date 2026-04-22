@@ -250,6 +250,49 @@ _register_arch(
     )
 )
 
+_register_arch(
+    Architecture(
+        name="powerpc",
+        gcc_define="__powerpc__",
+        qemu_binary="qemu-ppc-static",
+        bootlin_arch="powerpc-e300c3",
+        gcc_triple="powerpc-buildroot-linux-gnu",
+        extra_cflags=["-mcpu=e300c3"],
+        cpu_constraint="//platforms:powerpc",
+        uses_mmap2=True,
+        needs_got_reloc=True,
+        is_32bit=True,
+        is_big_endian=True,
+        bootlin_sha256="6c975a7293fde77a52f348124049645ee2ceee19e75ab6e0b2364043090a2dff",
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="ppc64le",
+        gcc_define="__powerpc64__",
+        qemu_binary="qemu-ppc64le-static",
+        bootlin_arch="powerpc64le-power8",
+        gcc_triple="powerpc64le-buildroot-linux-gnu",
+        extra_cflags=["-mcpu=power8"],
+        cpu_constraint="//platforms:ppc64le",
+        bootlin_sha256="8133b74614f880eb8b76730efee77b8fd281c982bfa2791b72c5f836a529530d",
+    )
+)
+
+_register_arch(
+    Architecture(
+        name="riscv64",
+        gcc_define="__riscv",
+        qemu_binary="qemu-riscv64-static",
+        bootlin_arch="riscv64-lp64d",
+        gcc_triple="riscv64-buildroot-linux-gnu",
+        cpu_constraint="//platforms:riscv64",
+        openat_only=True,
+        bootlin_sha256="78e16f3def8b2ff3da09c16155f993ac7e4dc1791d0904ada03fcb2e04910aab",
+    )
+)
+
 
 # ============================================================
 # OS definitions
@@ -276,6 +319,9 @@ _register_os(
             "mipsel32",
             "mipsbe32",
             "sparcv8",
+            "powerpc",
+            "ppc64le",
+            "riscv64",
         ],
     )
 )
@@ -439,6 +485,68 @@ SYSCALL_NUMBERS: dict[str, dict[str, dict[str, int]]] = {
             "pipe": 42,
             "exit": 1,
             "exit_group": 188,
+        },
+        "__powerpc__": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "fstat": 108,
+            "lseek": 19,
+            "llseek": 140,
+            "mmap": 192,
+            "mprotect": 125,
+            "munmap": 91,
+            "socket": 326,
+            "connect": 328,
+            "accept": 330,
+            "bind": 327,
+            "listen": 329,
+            "setsockopt": 339,
+            "dup2": 63,
+            "pipe": 42,
+            "exit": 1,
+            "exit_group": 234,
+        },
+        "__powerpc64__": {
+            "read": 3,
+            "write": 4,
+            "open": 5,
+            "close": 6,
+            "fstat": 108,
+            "lseek": 19,
+            "mmap": 90,
+            "mprotect": 125,
+            "munmap": 91,
+            "socket": 326,
+            "connect": 328,
+            "accept": 330,
+            "bind": 327,
+            "listen": 329,
+            "setsockopt": 339,
+            "dup2": 63,
+            "pipe": 42,
+            "exit": 1,
+            "exit_group": 234,
+        },
+        "__riscv": {
+            "read": 63,
+            "write": 64,
+            "openat": 56,
+            "close": 57,
+            "fstat": 80,
+            "lseek": 62,
+            "mmap": 222,
+            "mprotect": 226,
+            "munmap": 215,
+            "socket": 198,
+            "connect": 203,
+            "accept": 202,
+            "bind": 200,
+            "listen": 201,
+            "setsockopt": 208,
+            "exit": 93,
+            "exit_group": 94,
         },
         "__mips__": {
             "read": 4003,

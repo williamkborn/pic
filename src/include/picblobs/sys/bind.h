@@ -26,20 +26,26 @@ static inline long pic_bind(int sockfd, const void *addr, pic_size_t addrlen)
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_bind 49
-#elif defined(__i386__)
-#define __NR_bind 361
+#if defined(__powerpc64__)
+#define __NR_bind 327
 #elif defined(__aarch64__)
 #define __NR_bind 200
-#elif defined(__arm__)
-#define __NR_bind 282
-#elif defined(__mips__)
-#define __NR_bind 4169
+#elif defined(__powerpc__)
+#define __NR_bind 327
+#elif defined(__x86_64__)
+#define __NR_bind 49
 #elif defined(__s390x__)
 #define __NR_bind 361
 #elif defined(__sparc__)
 #define __NR_bind 353
+#elif defined(__i386__)
+#define __NR_bind 361
+#elif defined(__mips__)
+#define __NR_bind 4169
+#elif defined(__arm__)
+#define __NR_bind 282
+#elif defined(__riscv)
+#define __NR_bind 200
 #else
 #error "Unsupported architecture for pic_bind()"
 #endif

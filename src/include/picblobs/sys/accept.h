@@ -26,20 +26,26 @@ static inline long pic_accept(int sockfd, void *addr, void *addrlen)
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_accept 43
-#elif defined(__i386__)
-#define __NR_accept 364
+#if defined(__powerpc64__)
+#define __NR_accept 330
 #elif defined(__aarch64__)
 #define __NR_accept 202
-#elif defined(__arm__)
-#define __NR_accept 285
-#elif defined(__mips__)
-#define __NR_accept 4168
+#elif defined(__powerpc__)
+#define __NR_accept 330
+#elif defined(__x86_64__)
+#define __NR_accept 43
 #elif defined(__s390x__)
 #define __NR_accept 364
 #elif defined(__sparc__)
 #define __NR_accept 99
+#elif defined(__i386__)
+#define __NR_accept 364
+#elif defined(__mips__)
+#define __NR_accept 4168
+#elif defined(__arm__)
+#define __NR_accept 285
+#elif defined(__riscv)
+#define __NR_accept 202
 #else
 #error "Unsupported architecture for pic_accept()"
 #endif

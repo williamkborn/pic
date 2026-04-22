@@ -46,16 +46,24 @@ SECTIONS
         KEEP(*(.plt .plt.*))
     }
 
-    .rodata : ALIGN(16) {
-        KEEP(*(.rodata .rodata.* .rodata.pic))
-    }
+	.rodata : ALIGN(16) {
+		KEEP(*(.rodata .rodata.* .rodata.pic))
+	}
 
-    .got : ALIGN(16) {
-        __got_start = .;
-        KEEP(*(.got))
-        KEEP(*(.got.plt))
-        __got_end = .;
-    }
+	.rela.dyn : ALIGN(16) {
+		__rela_dyn_start = .;
+		KEEP(*(.rela.dyn))
+		KEEP(*(.rel.dyn))
+		__rela_dyn_end = .;
+	}
+
+	.got : ALIGN(16) {
+		__got_start = .;
+		KEEP(*(.got))
+		KEEP(*(.got.plt))
+		KEEP(*(.got2))
+		__got_end = .;
+	}
 
     .data : ALIGN(16) {
         KEEP(*(.data .data.* .data.pic))
@@ -78,27 +86,24 @@ SECTIONS
     }
 
     /*
-     * Discarded sections — including all relocations (.rela.*, .rel.*).
-     *
-     * Relocations are discarded because blobs must be fully position-
-     * independent with no absolute references. If a blob ever contains
-     * a global pointer init or constructor pattern that emits relocations,
-     * the linker will silently produce wrong addresses at runtime.
-     * The QEMU test runner validates correct execution; add an explicit
-     * relocation-table-empty check if this becomes a concern.
-     */
-    /DISCARD/ : {
-        *(.comment)
+	 * Discarded sections.
+	 *
+	 * .rela.dyn / .rel.dyn are kept in the blob because some 32-bit PIC
+	 * ABIs (notably PowerPC) materialize local addresses via relative
+	 * dynamic relocations instead of pre-filled GOT entries.
+	 */
+	/DISCARD/ : {
+		*(.comment)
         *(.note.*)
         *(.eh_frame)
         *(.eh_frame_hdr)
         *(.hash)
         *(.gnu.hash)
-        *(.dynsym)
-        *(.dynstr)
-        *(.dynamic)
-        *(.rela.*)
-        *(.rel.*)
-        *(.interp)
-    }
+		*(.dynsym)
+		*(.dynstr)
+		*(.dynamic)
+		*(.rela.*)
+		*(.rel.*)
+		*(.interp)
+	}
 }

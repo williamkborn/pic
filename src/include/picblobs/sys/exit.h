@@ -18,20 +18,26 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_exit 60
-#elif defined(__i386__)
+#if defined(__powerpc64__)
 #define __NR_exit 1
 #elif defined(__aarch64__)
 #define __NR_exit 93
-#elif defined(__arm__)
+#elif defined(__powerpc__)
 #define __NR_exit 1
-#elif defined(__mips__)
-#define __NR_exit 4001
+#elif defined(__x86_64__)
+#define __NR_exit 60
 #elif defined(__s390x__)
 #define __NR_exit 1
 #elif defined(__sparc__)
 #define __NR_exit 1
+#elif defined(__i386__)
+#define __NR_exit 1
+#elif defined(__mips__)
+#define __NR_exit 4001
+#elif defined(__arm__)
+#define __NR_exit 1
+#elif defined(__riscv)
+#define __NR_exit 93
 #else
 #error "Unsupported architecture for pic_exit()"
 #endif

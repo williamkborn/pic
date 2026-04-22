@@ -13,6 +13,7 @@
  */
 
 #include "picblobs/os/linux.h"
+#include "picblobs/cache.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/close.h"
@@ -72,6 +73,7 @@ void _start(void)
 
 	if (read_all(fd, mem, (pic_size_t)size) < 0)
 		pic_exit_group(1);
+	pic_sync_icache(mem, (pic_size_t)size);
 
 	/* Leave the fd open — the caller may be reusing it (e.g., stdin).
 	 * The kernel will reap it when the process exits. */

@@ -18,14 +18,16 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__i386__)
+#if defined(__powerpc__)
 #define __NR_llseek 140
-#elif defined(__arm__)
+#elif defined(__sparc__)
+#define __NR_llseek 236
+#elif defined(__i386__)
 #define __NR_llseek 140
 #elif defined(__mips__)
 #define __NR_llseek 4140
-#elif defined(__sparc__)
-#define __NR_llseek 236
+#elif defined(__arm__)
+#define __NR_llseek 140
 #else
 #error "Unsupported architecture for pic_llseek()"
 #endif

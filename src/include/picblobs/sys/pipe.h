@@ -18,15 +18,19 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
+#if defined(__powerpc64__)
+#define __NR_pipe 42
+#elif defined(__powerpc__)
+#define __NR_pipe 42
+#elif defined(__x86_64__)
 #define __NR_pipe 22
-#elif defined(__i386__)
-#define __NR_pipe 42
-#elif defined(__arm__)
-#define __NR_pipe 42
 #elif defined(__s390x__)
 #define __NR_pipe 42
 #elif defined(__sparc__)
+#define __NR_pipe 42
+#elif defined(__i386__)
+#define __NR_pipe 42
+#elif defined(__arm__)
 #define __NR_pipe 42
 #else
 #error "Unsupported architecture for pic_pipe()"

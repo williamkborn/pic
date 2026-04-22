@@ -30,8 +30,9 @@
  */
 
 #include "picblobs/arch.h"
-#include "picblobs/log.h"
+#include "picblobs/cache.h"
 #include "picblobs/os/linux.h"
+#include "picblobs/log.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/close.h"
@@ -268,6 +269,22 @@ static long read_all(int fd, void *buf, pic_size_t count)
 PIC_TEXT
 __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg);
 
+#if defined(__powerpc__) && !defined(__powerpc64__)
+__asm__(".section .text.pic_code,\"ax\"\n"
+	".globl pic_ul_exec_powerpc_enter\n"
+	"pic_ul_exec_powerpc_enter:\n"
+	"mr 12, 3\n"
+	"mr 30, 5\n"
+	"mr 3, 4\n"
+	"mtctr 12\n"
+	"bctr\n"
+	".previous\n");
+
+PIC_TEXT
+__attribute__((noreturn)) void pic_ul_exec_powerpc_enter(
+	pic_uintptr entry, pic_uintptr arg, pic_uintptr pic_base);
+#endif
+
 PIC_TEXT
 __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 	pic_size_t total_size, const struct ul_exec_config *cfg)
@@ -283,12 +300,17 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 
 	/* Copy the entire blob + config to the new location. */
 	pic_memcpy(new_base, (const void *)blob_start, total_size);
+	pic_sync_icache((void *)new_base, total_size);
 
 	/* Calculate the delta and relocated pointers. */
 	pic_uintptr delta = (pic_uintptr)new_base - blob_start;
 	const struct ul_exec_config *new_cfg =
 		(const struct ul_exec_config *)((pic_uintptr)cfg + delta);
 	pic_uintptr phase2_addr = (pic_uintptr)&phase2 + delta;
+	extern char __got_start[] __attribute__((visibility("hidden")));
+	extern char __got_end[] __attribute__((visibility("hidden")));
+	pic_uintptr got_off = (pic_uintptr)__got_start - blob_start;
+	pic_uintptr got_end_off = (pic_uintptr)__got_end - blob_start;
 
 	PIC_LOG("ul_exec: remap %x -> %x (delta=%x, size=%x)\n",
 		(long)blob_start, (long)new_base, (long)delta,
@@ -304,10 +326,6 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 	 * GOT. They're available on all arches (empty range if no GOT).
 	 */
 	{
-		extern char __got_start[] __attribute__((visibility("hidden")));
-		extern char __got_end[] __attribute__((visibility("hidden")));
-		pic_uintptr got_off = (pic_uintptr)__got_start - blob_start;
-		pic_uintptr got_end_off = (pic_uintptr)__got_end - blob_start;
 		pic_uintptr *got = (pic_uintptr *)(new_base + got_off);
 		pic_uintptr *got_e = (pic_uintptr *)(new_base + got_end_off);
 		while (got < got_e) {
@@ -323,9 +341,15 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 	 * relocated function. This works because phase2's code is
 	 * now at phase2_addr in the new mapping.
 	 */
+#if defined(__powerpc__) && !defined(__powerpc64__)
+	pic_ul_exec_powerpc_enter(
+		phase2_addr, (pic_uintptr)new_cfg,
+		(pic_uintptr)new_base + got_off + 32768u);
+#else
 	typedef void (*phase2_fn)(const struct ul_exec_config *);
 	phase2_fn fn = (phase2_fn)phase2_addr;
 	fn(new_cfg);
+#endif
 
 	__builtin_unreachable();
 }
@@ -403,6 +427,8 @@ static pic_uintptr load_elf_from_memory(const pic_u8 *elf_data,
 		if (phdr[i].p_memsz > phdr[i].p_filesz)
 			pic_memset((void *)(seg_addr + phdr[i].p_filesz), 0,
 				phdr[i].p_memsz - phdr[i].p_filesz);
+		if (phdr[i].p_flags & PF_X)
+			pic_sync_icache((void *)seg_addr, phdr[i].p_memsz);
 
 		pic_mprotect((void *)map_start, map_size,
 			pf_to_prot(phdr[i].p_flags));
@@ -649,6 +675,27 @@ __attribute__((noreturn)) static void jump_to_entry(
 		: "r"(_e), "r"(_s)
 		: "memory");
 
+#elif defined(__riscv)
+	register pic_uintptr _e __asm__("a1") = entry;
+	register pic_uintptr _s __asm__("a2") = sp;
+	__asm__ volatile("mv sp, %1\n"
+			 "li a0, 0\n"
+			 "jr %0\n"
+		:
+		: "r"(_e), "r"(_s)
+		: "memory");
+
+#elif defined(__powerpc__)
+	register pic_uintptr _e __asm__("r12") = entry;
+	register pic_uintptr _s __asm__("r11") = sp;
+	__asm__ volatile("mr 1, %[s]\n"
+			 "li 3, 0\n"
+			 "mtctr %[e]\n"
+			 "bctr\n"
+		:
+		: [s] "r"(_s), [e] "r"(_e)
+		: "memory");
+
 #else
 #error "unsupported architecture"
 #endif
@@ -724,6 +771,13 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 	 * (runner, QEMU structures, etc.)  This is the grugq step 1.
 	 */
 	if (ehdr->e_type == ET_EXEC) {
+#if defined(__powerpc__) && !defined(__powerpc64__)
+		/*
+		 * MAP_FIXED replaces overlapping mappings on Linux already.
+		 * Under qemu-ppc user mode, eagerly unmapping the target range
+		 * can tear down emulation state before the replacement mapping.
+		 */
+#else
 		pic_uintptr vmin = (pic_uintptr)-1;
 		pic_uintptr vmax = 0;
 		for (int i = 0; i < ehdr->e_phnum; i++) {
@@ -743,6 +797,7 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 				(long)vmax);
 			pic_munmap((void *)vmin, vmax - vmin);
 		}
+#endif
 	}
 
 	/* Load main ELF. */
@@ -809,5 +864,12 @@ void _start(void)
 		cfg->envp_size;
 
 	/* Remap ourselves to a safe high address, then phase2 takes over. */
+#if defined(__powerpc__) && !defined(__powerpc64__)
+	(void)blob_base;
+	(void)cfg_start;
+	(void)total_size;
+	phase2(cfg);
+#else
 	self_remap(blob_base, total_size, cfg);
+#endif
 }

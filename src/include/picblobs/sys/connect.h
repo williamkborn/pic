@@ -26,20 +26,26 @@ static inline long pic_connect(int sockfd, const void *addr, pic_size_t addrlen)
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_connect 42
-#elif defined(__i386__)
-#define __NR_connect 362
+#if defined(__powerpc64__)
+#define __NR_connect 328
 #elif defined(__aarch64__)
 #define __NR_connect 203
-#elif defined(__arm__)
-#define __NR_connect 283
-#elif defined(__mips__)
-#define __NR_connect 4170
+#elif defined(__powerpc__)
+#define __NR_connect 328
+#elif defined(__x86_64__)
+#define __NR_connect 42
 #elif defined(__s390x__)
 #define __NR_connect 362
 #elif defined(__sparc__)
 #define __NR_connect 98
+#elif defined(__i386__)
+#define __NR_connect 362
+#elif defined(__mips__)
+#define __NR_connect 4170
+#elif defined(__arm__)
+#define __NR_connect 283
+#elif defined(__riscv)
+#define __NR_connect 203
 #else
 #error "Unsupported architecture for pic_connect()"
 #endif

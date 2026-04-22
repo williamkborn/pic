@@ -47,26 +47,35 @@ static long read_all(int fd, void *buf, pic_size_t count)
 
 /* Per-architecture _start — dispatched to start/{arch}.h files. */
 
-#if defined(__x86_64__)
-#include "start/x86_64.h"
-
-#elif defined(__i386__)
-#include "start/i386.h"
+#if defined(__powerpc64__)
+#include "start/powerpc64.h"
 
 #elif defined(__aarch64__)
 #include "start/aarch64.h"
 
-#elif defined(__arm__)
-#include "start/arm.h"
+#elif defined(__powerpc__)
+#include "start/powerpc.h"
 
-#elif defined(__mips__)
-#include "start/mips.h"
+#elif defined(__x86_64__)
+#include "start/x86_64.h"
 
 #elif defined(__s390x__)
 #include "start/s390x.h"
 
 #elif defined(__sparc__)
 #include "start/sparc.h"
+
+#elif defined(__i386__)
+#include "start/i386.h"
+
+#elif defined(__mips__)
+#include "start/mips.h"
+
+#elif defined(__arm__)
+#include "start/arm.h"
+
+#elif defined(__riscv)
+#include "start/riscv.h"
 
 #else
 #error "Unsupported architecture for _start — add start/{arch}.h"

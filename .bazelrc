@@ -33,6 +33,9 @@ build:linux_s390x           --platforms=//platforms:linux_s390x
 build:linux_mipsel32        --platforms=//platforms:linux_mipsel32
 build:linux_mipsbe32        --platforms=//platforms:linux_mipsbe32
 build:linux_sparcv8         --platforms=//platforms:linux_sparcv8
+build:linux_powerpc         --platforms=//platforms:linux_powerpc
+build:linux_ppc64le         --platforms=//platforms:linux_ppc64le
+build:linux_riscv64         --platforms=//platforms:linux_riscv64
 
 build:freebsd_x86_64        --platforms=//platforms:freebsd_x86_64
 build:freebsd_i686          --platforms=//platforms:freebsd_i686

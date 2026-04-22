@@ -18,20 +18,26 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_mmap 9
-#elif defined(__i386__)
-#define __NR_mmap 192
+#if defined(__powerpc64__)
+#define __NR_mmap 90
 #elif defined(__aarch64__)
 #define __NR_mmap 222
-#elif defined(__arm__)
+#elif defined(__powerpc__)
 #define __NR_mmap 192
-#elif defined(__mips__)
-#define __NR_mmap 4210
+#elif defined(__x86_64__)
+#define __NR_mmap 9
 #elif defined(__s390x__)
 #define __NR_mmap 90
 #elif defined(__sparc__)
 #define __NR_mmap 56
+#elif defined(__i386__)
+#define __NR_mmap 192
+#elif defined(__mips__)
+#define __NR_mmap 4210
+#elif defined(__arm__)
+#define __NR_mmap 192
+#elif defined(__riscv)
+#define __NR_mmap 222
 #else
 #error "Unsupported architecture for pic_mmap()"
 #endif

@@ -17,26 +17,35 @@
  * Signature: long pic_raw_syscall(long number, long a0..a5)
  */
 
-#if defined(__x86_64__)
-#include "picblobs/syscall/x86_64.h"
-
-#elif defined(__i386__)
-#include "picblobs/syscall/i386.h"
+#if defined(__powerpc64__)
+#include "picblobs/syscall/powerpc64.h"
 
 #elif defined(__aarch64__)
 #include "picblobs/syscall/aarch64.h"
 
-#elif defined(__arm__)
-#include "picblobs/syscall/arm.h"
+#elif defined(__powerpc__)
+#include "picblobs/syscall/powerpc.h"
 
-#elif defined(__mips__)
-#include "picblobs/syscall/mips.h"
+#elif defined(__x86_64__)
+#include "picblobs/syscall/x86_64.h"
 
 #elif defined(__s390x__)
 #include "picblobs/syscall/s390x.h"
 
 #elif defined(__sparc__)
 #include "picblobs/syscall/sparc.h"
+
+#elif defined(__i386__)
+#include "picblobs/syscall/i386.h"
+
+#elif defined(__mips__)
+#include "picblobs/syscall/mips.h"
+
+#elif defined(__arm__)
+#include "picblobs/syscall/arm.h"
+
+#elif defined(__riscv)
+#include "picblobs/syscall/riscv.h"
 
 #else
 #error "Unsupported architecture for pic_raw_syscall — add picblobs/syscall/{arch}.h"

@@ -12,6 +12,7 @@
  */
 
 #include "picblobs/os/linux.h"
+#include "picblobs/cache.h"
 #include "picblobs/reloc.h"
 #include "picblobs/section.h"
 #include "picblobs/sys/exit_group.h"
@@ -70,6 +71,7 @@ void _start(void)
 	pic_u8 *dst = (pic_u8 *)mem;
 	for (pic_u32 i = 0; i < size; i++)
 		dst[i] = src[i];
+	pic_sync_icache(mem, (pic_size_t)size);
 
 	/* Jump to payload; on ARM Thumb, set the LSB. */
 #if defined(__thumb__)

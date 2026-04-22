@@ -18,16 +18,20 @@
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
+#if defined(__powerpc64__)
+#define __NR_dup2 63
+#elif defined(__powerpc__)
+#define __NR_dup2 63
+#elif defined(__x86_64__)
 #define __NR_dup2 33
-#elif defined(__i386__)
-#define __NR_dup2 63
-#elif defined(__arm__)
-#define __NR_dup2 63
 #elif defined(__s390x__)
 #define __NR_dup2 63
 #elif defined(__sparc__)
 #define __NR_dup2 90
+#elif defined(__i386__)
+#define __NR_dup2 63
+#elif defined(__arm__)
+#define __NR_dup2 63
 #else
 #error "Unsupported architecture for pic_dup2()"
 #endif

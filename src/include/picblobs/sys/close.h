@@ -23,20 +23,26 @@ static inline long pic_close(int fd) { return __pic_plat->close(fd); }
 
 #elif defined(PICBLOBS_OS_LINUX)
 
-#if defined(__x86_64__)
-#define __NR_close 3
-#elif defined(__i386__)
+#if defined(__powerpc64__)
 #define __NR_close 6
 #elif defined(__aarch64__)
 #define __NR_close 57
-#elif defined(__arm__)
+#elif defined(__powerpc__)
 #define __NR_close 6
-#elif defined(__mips__)
-#define __NR_close 4006
+#elif defined(__x86_64__)
+#define __NR_close 3
 #elif defined(__s390x__)
 #define __NR_close 6
 #elif defined(__sparc__)
 #define __NR_close 6
+#elif defined(__i386__)
+#define __NR_close 6
+#elif defined(__mips__)
+#define __NR_close 4006
+#elif defined(__arm__)
+#define __NR_close 6
+#elif defined(__riscv)
+#define __NR_close 57
 #else
 #error "Unsupported architecture for pic_close()"
 #endif
