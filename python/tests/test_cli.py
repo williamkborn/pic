@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from picblobs.cli import main, _parse_target
+from picblobs.cli import main, _parse_target, _filter_verify_blobs
 
 
 class TestParseTarget:
@@ -239,3 +239,92 @@ class TestVerifyCommand:
         )
         assert rc == 0
         assert calls == [("linux", "x86_64", 30.0)]
+
+    def test_verify_alloc_jump_uses_freebsd_inner_blob(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import picblobs.cli as cli
+
+        monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)
+        monkeypatch.setattr(
+            "picblobs.list_blobs", lambda: [("alloc_jump", "freebsd", "x86_64")]
+        )
+
+        calls: list[tuple[str, str, str]] = []
+
+        def _get_blob(blob_type: str, os_name: str, arch: str):
+            calls.append((blob_type, os_name, arch))
+            return SimpleNamespace(
+                blob_type=blob_type,
+                target_os=os_name,
+                target_arch=arch,
+                code=b"PASS",
+            )
+
+        monkeypatch.setattr("picblobs.get_blob", _get_blob)
+        monkeypatch.setattr(
+            "picblobs.runner.run_blob",
+            lambda *args, **kwargs: SimpleNamespace(
+                stdout=b"PASS", stderr=b"", exit_code=0
+            ),
+        )
+
+        rc = main(
+            ["verify", "--type", "alloc_jump", "--os", "freebsd", "--arch", "x86_64"]
+        )
+        assert rc == 0
+        assert calls == [
+            ("test_pass", "freebsd", "x86_64"),
+            ("alloc_jump", "freebsd", "x86_64"),
+        ]
+
+    def test_verify_windows_stager_fd_uses_hello_windows_inner_blob(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import picblobs.cli as cli
+
+        monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)
+        monkeypatch.setattr(
+            "picblobs.list_blobs", lambda: [("stager_fd", "windows", "x86_64")]
+        )
+
+        calls: list[tuple[str, str, str]] = []
+
+        def _get_blob(blob_type: str, os_name: str, arch: str):
+            calls.append((blob_type, os_name, arch))
+            return SimpleNamespace(
+                blob_type=blob_type,
+                target_os=os_name,
+                target_arch=arch,
+                code=b"HELLO",
+            )
+
+        monkeypatch.setattr("picblobs.get_blob", _get_blob)
+        monkeypatch.setattr(
+            "picblobs.runner.run_blob",
+            lambda *args, **kwargs: SimpleNamespace(
+                stdout=b"Hello, world!", stderr=b"", exit_code=0
+            ),
+        )
+
+        rc = main(
+            ["verify", "--type", "stager_fd", "--os", "windows", "--arch", "x86_64"]
+        )
+        assert rc == 0
+        assert calls == [
+            ("hello_windows", "windows", "x86_64"),
+            ("stager_fd", "windows", "x86_64"),
+        ]
+
+    def test_verify_filters_freebsd_to_x86_64(self) -> None:
+        args = SimpleNamespace(os=None, arch=None, type=None)
+        blobs = [
+            ("hello", "freebsd", "aarch64"),
+            ("hello", "freebsd", "x86_64"),
+            ("ul_exec", "freebsd", "x86_64"),
+            ("hello", "linux", "x86_64"),
+        ]
+        assert _filter_verify_blobs(blobs, args) == [
+            ("hello", "freebsd", "x86_64"),
+            ("hello", "linux", "x86_64"),
+        ]

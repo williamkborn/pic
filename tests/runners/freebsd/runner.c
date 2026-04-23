@@ -36,6 +36,50 @@
 #include "picblobs/types.h"
 
 #define RUNNER_ERROR 127
+#define SIGTRAP 5
+#define PTRACE_TRACEME 0
+#define PTRACE_CONT 7
+#define PTRACE_GETREGS 12
+#define PTRACE_SETREGS 13
+#define PTRACE_SYSCALL 24
+#define PTRACE_SETOPTIONS 0x4200
+#define PTRACE_O_TRACESYSGOOD 0x00000001
+
+#if defined(__x86_64__)
+#define __NR_fork 57
+#define __NR_wait4 61
+#define __NR_ptrace 101
+
+struct x86_64_regs {
+	unsigned long r15;
+	unsigned long r14;
+	unsigned long r13;
+	unsigned long r12;
+	unsigned long rbp;
+	unsigned long rbx;
+	unsigned long r11;
+	unsigned long r10;
+	unsigned long r9;
+	unsigned long r8;
+	unsigned long rax;
+	unsigned long rcx;
+	unsigned long rdx;
+	unsigned long rsi;
+	unsigned long rdi;
+	unsigned long orig_rax;
+	unsigned long rip;
+	unsigned long cs;
+	unsigned long eflags;
+	unsigned long rsp;
+	unsigned long ss;
+	unsigned long fs_base;
+	unsigned long gs_base;
+	unsigned long ds;
+	unsigned long es;
+	unsigned long fs;
+	unsigned long gs;
+};
+#endif
 
 struct nr_map {
 	pic_u32 freebsd_nr;
@@ -56,7 +100,7 @@ static const struct nr_map syscall_table[] = {
 #ifdef __NR_llseek
 	{478, __NR_llseek},
 #endif
-	{9, __NR_mmap},
+	{477, __NR_mmap},
 	{74, __NR_mprotect},
 	{73, __NR_munmap},
 	{97, __NR_socket},
@@ -112,31 +156,222 @@ static inline void write16_be(pic_u8 *p, pic_u16 v)
 	p[1] = (pic_u8)v;
 }
 
+static pic_u8 *find_prev_mov_eax_imm(pic_u8 *code, pic_size_t start, pic_size_t limit)
+{
+	pic_size_t lo = (start > limit) ? (start - limit) : 0;
+	for (pic_size_t i = start; i >= lo + 4; i--) {
+		if (code[i - 4] == 0xb8)
+			return code + i - 4;
+		if (i == lo + 4)
+			break;
+	}
+	return (pic_u8 *)0;
+}
+
+static pic_u32 translate_mmap_flags(pic_u32 freebsd_flags)
+{
+	pic_u32 linux_flags = 0;
+	if (freebsd_flags & 0x0001)
+		linux_flags |= 0x01;
+	if (freebsd_flags & 0x0002)
+		linux_flags |= 0x02;
+	if (freebsd_flags & 0x0010)
+		linux_flags |= 0x10;
+	if (freebsd_flags & 0x1000)
+		linux_flags |= 0x20;
+	return linux_flags;
+}
+
+static long linux_ptrace(long req, long pid, long addr, long data)
+{
+	return pic_syscall4(__NR_ptrace, req, pid, addr, data);
+}
+
+static long linux_wait4(long pid, int *status)
+{
+	return pic_syscall4(__NR_wait4, pid, (long)status, 0, 0);
+}
+
+static int wait_stopped(int status)
+{
+	return (status & 0xff) == 0x7f;
+}
+
+static int stop_signal(int status)
+{
+	return (status >> 8) & 0xff;
+}
+
+static int exited(int status)
+{
+	return (status & 0x7f) == 0;
+}
+
+static int exit_status(int status)
+{
+	return (status >> 8) & 0xff;
+}
+
+static int signaled(int status)
+{
+	int sig = status & 0x7f;
+	return sig != 0 && sig != 0x7f;
+}
+
+static int term_signal(int status)
+{
+	return status & 0x7f;
+}
+
 #if defined(__x86_64__)
+static void set_freebsd_result(struct x86_64_regs *regs)
+{
+	long ret = (long)regs->rax;
+	if (ret < 0 && ret >= -4095) {
+		regs->rax = (unsigned long)(-ret);
+		regs->eflags |= 1UL;
+	} else {
+		regs->eflags &= ~1UL;
+	}
+}
+
+static void translate_x86_64_entry(struct x86_64_regs *regs)
+{
+	pic_u32 freebsd_nr = (pic_u32)regs->orig_rax;
+	pic_u32 linux_nr = translate_nr(freebsd_nr);
+	if (freebsd_nr == 477)
+		regs->r10 = translate_mmap_flags((pic_u32)regs->r10);
+	regs->rax = linux_nr;
+	regs->orig_rax = linux_nr;
+}
+
+static int trace_child_x86_64(long pid)
+{
+	int status = 0;
+	int in_syscall = 0;
+	struct x86_64_regs regs;
+
+	if (linux_wait4(pid, &status) < 0)
+		return 121;
+	if (!wait_stopped(status))
+		return 122;
+	if (linux_ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0)
+		return 123;
+
+	for (;;) {
+		if (linux_ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0)
+			return 124;
+		if (linux_wait4(pid, &status) < 0)
+			return 125;
+
+		if (exited(status))
+			return exit_status(status);
+		if (signaled(status))
+			return 128 + term_signal(status);
+		if (!wait_stopped(status))
+			return 126;
+
+		int sig = stop_signal(status);
+		if (sig == (SIGTRAP | 0x80)) {
+			if (linux_ptrace(PTRACE_GETREGS, pid, 0, (long)&regs) < 0)
+				return 127;
+			if (!in_syscall)
+				translate_x86_64_entry(&regs);
+			else
+				set_freebsd_result(&regs);
+			if (linux_ptrace(PTRACE_SETREGS, pid, 0, (long)&regs) < 0)
+				return 128;
+			in_syscall = !in_syscall;
+			continue;
+		}
+		if (sig == SIGTRAP)
+			continue;
+		if (linux_ptrace(PTRACE_CONT, pid, 0, sig) < 0)
+			return 129;
+		if (linux_wait4(pid, &status) < 0)
+			return 130;
+		if (exited(status))
+			return exit_status(status);
+		if (signaled(status))
+			return 128 + term_signal(status);
+	}
+}
+
+static pic_u8 *find_prev_mov_r10d_imm(pic_u8 *code, pic_size_t start, pic_size_t limit)
+{
+	pic_size_t lo = (start > limit) ? (start - limit) : 0;
+	for (pic_size_t i = start; i >= lo + 5; i--) {
+		if (code[i - 5] == 0x41 && code[i - 4] == 0xba)
+			return code + i - 5;
+		if (i == lo + 5)
+			break;
+	}
+	return (pic_u8 *)0;
+}
+
+static void patch_x86_64_errno_normalization(pic_u8 *code, pic_size_t syscall_off, pic_size_t size)
+{
+	if (syscall_off + 14 > size)
+		return;
+	if (code[syscall_off + 2] != 0x40 || code[syscall_off + 3] != 0x0f ||
+		code[syscall_off + 4] != 0x92)
+		return;
+	if (code[syscall_off + 6] != 0x40 || code[syscall_off + 7] != 0x84)
+		return;
+	if (code[syscall_off + 9] != 0x74 || code[syscall_off + 10] != 0x03)
+		return;
+	if (code[syscall_off + 11] != 0x48 || code[syscall_off + 12] != 0xf7 ||
+		code[syscall_off + 13] != 0xd8)
+		return;
+	for (pic_size_t i = syscall_off + 2; i < syscall_off + 14; i++)
+		code[i] = 0x90;
+}
+
 static void patch_syscalls_x86_64(pic_u8 *code, pic_size_t size)
 {
-	for (pic_size_t i = 0; i + 6 < size; i++) {
-		if (code[i] == 0xb8 && code[i + 5] == 0x0f &&
-			code[i + 6] == 0x05) {
-			pic_u32 nr = read32_le(code + i + 1);
+	for (pic_size_t i = 0; i + 1 < size; i++) {
+		if (code[i] == 0x0f && code[i + 1] == 0x05) {
+			pic_u8 *mov = find_prev_mov_eax_imm(code, i, 32);
+			if (!mov)
+				continue;
+			pic_u32 nr = read32_le(mov + 1);
 			pic_u32 lnr = translate_nr(nr);
+			if (nr == 477) {
+				pic_u8 *mov_r10d = find_prev_mov_r10d_imm(code, i, 32);
+				if (mov_r10d) {
+					pic_u32 flags = read32_le(mov_r10d + 2);
+					write32_le(
+						mov_r10d + 2, translate_mmap_flags(flags));
+				}
+			}
 			if (lnr != nr)
-				write32_le(code + i + 1, lnr);
+				write32_le(mov + 1, lnr);
+			patch_x86_64_errno_normalization(code, i, size);
 		}
 	}
+}
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+	patch_syscalls_x86_64(code, size);
 }
 #elif defined(__i386__)
 static void patch_syscalls_i386(pic_u8 *code, pic_size_t size)
 {
-	for (pic_size_t i = 0; i + 6 < size; i++) {
-		if (code[i] == 0xb8 && code[i + 5] == 0xcd &&
-			code[i + 6] == 0x80) {
-			pic_u32 nr = read32_le(code + i + 1);
+	for (pic_size_t i = 0; i + 1 < size; i++) {
+		if (code[i] == 0xcd && code[i + 1] == 0x80) {
+			pic_u8 *mov = find_prev_mov_eax_imm(code, i, 48);
+			if (!mov)
+				continue;
+			pic_u32 nr = read32_le(mov + 1);
 			pic_u32 lnr = translate_nr(nr);
 			if (lnr != nr)
-				write32_le(code + i + 1, lnr);
+				write32_le(mov + 1, lnr);
 		}
 	}
+}
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+	patch_syscalls_i386(code, size);
 }
 #elif defined(__aarch64__)
 static void patch_syscalls_aarch64(pic_u8 *code, pic_size_t size)
@@ -154,6 +389,10 @@ static void patch_syscalls_aarch64(pic_u8 *code, pic_size_t size)
 		}
 	}
 }
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+	patch_syscalls_aarch64(code, size);
+}
 #elif defined(__arm__)
 static void patch_syscalls_arm(pic_u8 *code, pic_size_t size)
 {
@@ -169,6 +408,10 @@ static void patch_syscalls_arm(pic_u8 *code, pic_size_t size)
 		}
 	}
 }
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+	patch_syscalls_arm(code, size);
+}
 #elif defined(__s390x__)
 static void patch_syscalls_s390x(pic_u8 *code, pic_size_t size)
 {
@@ -181,6 +424,10 @@ static void patch_syscalls_s390x(pic_u8 *code, pic_size_t size)
 				write16_be(code + i + 2, (pic_u16)lnr);
 		}
 	}
+}
+static void patch_syscalls(pic_u8 *code, pic_size_t size)
+{
+	patch_syscalls_s390x(code, size);
 }
 #elif defined(__mips__)
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -220,21 +467,6 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 	patch_syscalls_mips_be(code, size);
 #else
 	patch_syscalls_mips_le(code, size);
-#endif
-}
-#else
-static void patch_syscalls(pic_u8 *code, pic_size_t size)
-{
-#if defined(__x86_64__)
-	patch_syscalls_x86_64(code, size);
-#elif defined(__i386__)
-	patch_syscalls_i386(code, size);
-#elif defined(__aarch64__)
-	patch_syscalls_aarch64(code, size);
-#elif defined(__arm__)
-	patch_syscalls_arm(code, size);
-#elif defined(__s390x__)
-	patch_syscalls_s390x(code, size);
 #endif
 }
 #endif
@@ -349,6 +581,21 @@ int runner_main(int argc, char **argv)
 		if (t_end > 0 && t_end <= (pic_size_t)size)
 			patch_limit = t_end;
 	}
+
+#if defined(__x86_64__)
+	long pid = pic_syscall0(__NR_fork);
+	if (pid < 0)
+		pic_exit_group(RUNNER_ERROR);
+	if (pid == 0) {
+		if (linux_ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
+			pic_exit_group(RUNNER_ERROR);
+		__asm__ volatile("int3");
+		((void (*)(void))blob)();
+		pic_exit_group(RUNNER_ERROR);
+	}
+	pic_exit_group(trace_child_x86_64(pid));
+#endif
+
 	patch_syscalls((pic_u8 *)blob, patch_limit);
 
 #ifdef __thumb__

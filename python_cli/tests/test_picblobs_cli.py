@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
@@ -536,7 +537,7 @@ class TestVerifyCommand:
         self, runner: CliRunner, qemu_available: bool
     ) -> None:
         _require_qemu(qemu_available)
-        r = runner.invoke(main, ["verify", "--type", "hello"])
+        r = runner.invoke(main, ["verify", "--type", "hello", "--os", "linux"])
         assert r.exit_code == 0
         assert "passed" in r.output
 
@@ -551,6 +552,47 @@ class TestVerifyCommand:
         assert r.exit_code == 0
         # No freebsd output when --os filter is applied.
         assert "[freebsd]" not in r.output
+
+    def test_verify_filters_freebsd_to_x86_64(self) -> None:
+        from picblobs_cli.cli import _filter_verify_combos
+
+        combos = [
+            ("hello", "freebsd", "aarch64"),
+            ("hello", "freebsd", "x86_64"),
+            ("ul_exec", "freebsd", "x86_64"),
+            ("hello", "linux", "x86_64"),
+        ]
+        assert _filter_verify_combos(combos, (), (), ()) == [
+            ("hello", "freebsd", "x86_64"),
+            ("hello", "linux", "x86_64"),
+        ]
+
+    def test_windows_stager_fd_uses_hello_windows_inner_blob(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from picblobs_cli import cli
+
+        calls: list[tuple[str, str, str]] = []
+
+        def _get_blob(blob_type: str, os_name: str, arch: str):
+            calls.append((blob_type, os_name, arch))
+            return SimpleNamespace(code=b"HELLO", blob_type=blob_type)
+
+        monkeypatch.setattr(cli.picblobs, "get_blob", _get_blob)
+        monkeypatch.setattr(
+            cli,
+            "run_blob",
+            lambda *args, **kwargs: SimpleNamespace(
+                stdout=b"Hello, world!", stderr=b"", exit_code=0
+            ),
+        )
+
+        result = cli._verify_stager_fd("windows", "x86_64", 30.0)
+        assert result.exit_code == 0
+        assert calls == [
+            ("hello_windows", "windows", "x86_64"),
+            ("stager_fd", "windows", "x86_64"),
+        ]
 
     def test_no_matches(self, runner: CliRunner) -> None:
         r = runner.invoke(main, ["verify", "--type", "nothing_matches"])

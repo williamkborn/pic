@@ -251,7 +251,21 @@ def _filter_verify_blobs(
     for allowed, index in filters:
         if allowed:
             available = [entry for entry in available if entry[index] in allowed]
+    available = [
+        entry
+        for entry in available
+        if _is_verify_target_supported(entry[0], entry[1], entry[2])
+    ]
     return available
+
+
+def _is_verify_target_supported(blob_type: str, os_name: str, arch: str) -> bool:
+    """Return True when a staged target participates in end-to-end verify."""
+    if os_name != "freebsd":
+        return True
+    if arch != "x86_64":
+        return False
+    return blob_type != "ul_exec"
 
 
 def _log_no_verify_matches(all_blobs: list[tuple[str, str, str]]) -> None:
@@ -473,6 +487,27 @@ def _verify_ul_exec(
     return run_blob(blob, config=config, timeout=timeout)
 
 
+def _verify_inner_os(os_name: str) -> str:
+    """Return the OS of the nested test payload for wrapper verifies."""
+    if os_name in {"windows", "freebsd"}:
+        return os_name
+    return "linux"
+
+
+def _verify_inner_blob_type(os_name: str, blob_type: str) -> str:
+    """Return the nested payload type used to verify wrapper-style blobs."""
+    if os_name == "windows":
+        return "hello_windows"
+    mapping = {
+        "alloc_jump": "test_pass",
+        "stager_fd": "test_fd_ok",
+        "stager_pipe": "test_pipe_ok",
+        "stager_mmap": "test_mmap_ok",
+        "stager_tcp": "test_tcp_ok",
+    }
+    return mapping[blob_type]
+
+
 def _verify_stager_tcp(
     os_name: str,
     arch: str,
@@ -480,11 +515,9 @@ def _verify_stager_tcp(
 ) -> "RunResult":
     """Verify stager_tcp end-to-end by serving test_tcp_ok over a local TCP socket.
 
-    Spins up a one-shot localhost TCP server that serves the test_tcp_ok blob
-    (``u32 length`` + payload bytes), builds a stager_tcp config pointing at
-    it, and runs the stager. The inner payload uses Linux syscalls, so we
-    always load test_tcp_ok from the ``linux`` OS regardless of the stager's
-    target OS — the translating freebsd runner makes this work uniformly.
+    Spins up a one-shot localhost TCP server that serves the matching inner
+    test payload (``u32 length`` + payload bytes), builds a stager_tcp config
+    pointing at it, and runs the stager.
     """
     import socket
     import struct
@@ -494,9 +527,11 @@ def _verify_stager_tcp(
     from picblobs.runner import run_blob
 
     try:
-        inner = get_blob("test_tcp_ok", "linux", arch)
+        inner_os = _verify_inner_os(os_name)
+        inner_type = _verify_inner_blob_type(os_name, "stager_tcp")
+        inner = get_blob(inner_type, inner_os, arch)
     except FileNotFoundError as e:
-        raise _VerifySkip(f"test_tcp_ok/linux/{arch} not staged") from e
+        raise _VerifySkip(f"{inner_type}/{inner_os}/{arch} not staged") from e
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -543,9 +578,11 @@ def _verify_stager_fd(
     from picblobs.runner import run_blob
 
     try:
-        inner = get_blob("test_fd_ok", "linux", arch)
+        inner_os = _verify_inner_os(os_name)
+        inner_type = _verify_inner_blob_type(os_name, "stager_fd")
+        inner = get_blob(inner_type, inner_os, arch)
     except FileNotFoundError as e:
-        raise _VerifySkip(f"test_fd_ok/linux/{arch} not staged") from e
+        raise _VerifySkip(f"{inner_type}/{inner_os}/{arch} not staged") from e
 
     config = struct.pack("<I", 0)  # stdin
     stdin_data = struct.pack("<I", len(inner.code)) + inner.code
@@ -574,9 +611,11 @@ def _verify_stager_pipe(
     from picblobs.runner import run_blob
 
     try:
-        inner = get_blob("test_pipe_ok", "linux", arch)
+        inner_os = _verify_inner_os(os_name)
+        inner_type = _verify_inner_blob_type(os_name, "stager_pipe")
+        inner = get_blob(inner_type, inner_os, arch)
     except FileNotFoundError as e:
-        raise _VerifySkip(f"test_pipe_ok/linux/{arch} not staged") from e
+        raise _VerifySkip(f"{inner_type}/{inner_os}/{arch} not staged") from e
 
     tmpdir = tempfile.mkdtemp(prefix="picblobs_pipe_")
     fifo = Path(tmpdir) / "payload.fifo"
@@ -620,9 +659,11 @@ def _verify_stager_mmap(
     from picblobs.runner import run_blob
 
     try:
-        inner = get_blob("test_mmap_ok", "linux", arch)
+        inner_os = _verify_inner_os(os_name)
+        inner_type = _verify_inner_blob_type(os_name, "stager_mmap")
+        inner = get_blob(inner_type, inner_os, arch)
     except FileNotFoundError as e:
-        raise _VerifySkip(f"test_mmap_ok/linux/{arch} not staged") from e
+        raise _VerifySkip(f"{inner_type}/{inner_os}/{arch} not staged") from e
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as f:
         f.write(inner.code)
@@ -683,10 +724,8 @@ def _verify_alloc_jump(
     from picblobs import get_blob
     from picblobs.runner import run_blob
 
-    if os_name == "windows":
-        inner_type, inner_os = "hello_windows", "windows"
-    else:
-        inner_type, inner_os = "test_pass", "linux"
+    inner_type = _verify_inner_blob_type(os_name, "alloc_jump")
+    inner_os = _verify_inner_os(os_name)
 
     try:
         inner = get_blob(inner_type, inner_os, arch)

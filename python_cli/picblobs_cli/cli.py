@@ -758,7 +758,20 @@ def _filter_verify_combos(
     for allowed, index in filters:
         if allowed:
             combos = [entry for entry in combos if entry[index] in allowed]
+    combos = [
+        entry
+        for entry in combos
+        if _is_verify_target_supported(entry[0], entry[1], entry[2])
+    ]
     return combos
+
+
+def _is_verify_target_supported(blob_type: str, os_name: str, arch: str) -> bool:
+    if os_name != "freebsd":
+        return True
+    if arch != "x86_64":
+        return False
+    return blob_type != "ul_exec"
 
 
 def _group_verify_combos(
@@ -851,8 +864,31 @@ def _run_nacl_verify_group(
             summary.fail("nacl_e2e", label, f"FAIL {e}")
 
 
+def _verify_inner_os(os_name: str) -> str:
+    if os_name in {"windows", "freebsd"}:
+        return os_name
+    return "linux"
+
+
+def _verify_inner_blob_type(os_name: str, blob_type: str) -> str:
+    if os_name == "windows":
+        return "hello_windows"
+    mapping = {
+        "alloc_jump": "test_pass",
+        "stager_fd": "test_fd_ok",
+        "stager_pipe": "test_pipe_ok",
+        "stager_mmap": "test_mmap_ok",
+        "stager_tcp": "test_tcp_ok",
+    }
+    return mapping[blob_type]
+
+
 def _verify_stager_tcp(os_name: str, arch: str, timeout: float):
-    inner = picblobs.get_blob("test_tcp_ok", "linux", arch)
+    inner = picblobs.get_blob(
+        _verify_inner_blob_type(os_name, "stager_tcp"),
+        _verify_inner_os(os_name),
+        arch,
+    )
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -885,7 +921,11 @@ def _verify_stager_tcp(os_name: str, arch: str, timeout: float):
 
 
 def _verify_stager_fd(os_name: str, arch: str, timeout: float):
-    inner = picblobs.get_blob("test_fd_ok", "linux", arch)
+    inner = picblobs.get_blob(
+        _verify_inner_blob_type(os_name, "stager_fd"),
+        _verify_inner_os(os_name),
+        arch,
+    )
     cfg = struct.pack("<I", 0)
     blob = picblobs.get_blob("stager_fd", os_name, arch)
     return run_blob(
@@ -898,7 +938,11 @@ def _verify_stager_fd(os_name: str, arch: str, timeout: float):
 
 
 def _verify_stager_pipe(os_name: str, arch: str, timeout: float):
-    inner = picblobs.get_blob("test_pipe_ok", "linux", arch)
+    inner = picblobs.get_blob(
+        _verify_inner_blob_type(os_name, "stager_pipe"),
+        _verify_inner_os(os_name),
+        arch,
+    )
     tmp = Path(tempfile.mkdtemp(prefix="picblobs_pipe_"))
     fifo = tmp / "payload.fifo"
     _os.mkfifo(str(fifo))
@@ -928,7 +972,11 @@ def _verify_stager_pipe(os_name: str, arch: str, timeout: float):
 
 
 def _verify_stager_mmap(os_name: str, arch: str, timeout: float):
-    inner = picblobs.get_blob("test_mmap_ok", "linux", arch)
+    inner = picblobs.get_blob(
+        _verify_inner_blob_type(os_name, "stager_mmap"),
+        _verify_inner_os(os_name),
+        arch,
+    )
     with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as f:
         f.write(inner.code)
         fpath = f.name
@@ -949,11 +997,11 @@ def _verify_stager_mmap(os_name: str, arch: str, timeout: float):
 
 
 def _verify_alloc_jump(os_name: str, arch: str, timeout: float):
-    if os_name == "windows":
-        inner_type, inner_os = "hello_windows", "windows"
-    else:
-        inner_type, inner_os = "test_pass", "linux"
-    inner = picblobs.get_blob(inner_type, inner_os, arch)
+    inner = picblobs.get_blob(
+        _verify_inner_blob_type(os_name, "alloc_jump"),
+        _verify_inner_os(os_name),
+        arch,
+    )
     cfg = struct.pack("<I", len(inner.code)) + inner.code
     blob = picblobs.get_blob("alloc_jump", os_name, arch)
     return run_blob(blob, config=cfg, runner_type=os_name, timeout=timeout)

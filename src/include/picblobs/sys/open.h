@@ -62,10 +62,12 @@
 
 static inline long pic_open(const char *path, int flags, int mode)
 {
-#if PIC_ARCH_OPENAT_ONLY
+#ifdef __NR_openat
 	return pic_syscall4(__NR_openat, AT_FDCWD, (long)path, flags, mode);
-#else
+#elif defined(__NR_open)
 	return pic_syscall3(__NR_open, (long)path, flags, mode);
+#else
+#error "pic_open() requires __NR_open or __NR_openat"
 #endif
 }
 #endif /* PICBLOBS_SYS_OPEN_H */

@@ -25,8 +25,8 @@
  *   u8  argv_data[argv_size]
  *   u8  envp_data[envp_size]
  *
- * Linux only. Supports static and dynamically linked ELFs on all
- * architectures.
+ * Unix-like targets. Supports static and dynamically linked ELFs on all
+ * staged architectures, including the FreeBSD x86_64 userland-exec path.
  */
 
 #include "picblobs/arch.h"
@@ -81,11 +81,14 @@
 #define AT_EUID 12
 #define AT_GID 13
 #define AT_EGID 14
+
+#if !defined(PICBLOBS_OS_FREEBSD)
 #define AT_RANDOM 25
 #define AT_HWCAP 16
 #define AT_HWCAP2 26
 #define AT_CLKTCK 17
 #define AT_SECURE 23
+#endif
 
 #if PIC_ARCH_IS_32BIT
 
@@ -224,6 +227,12 @@ static pic_size_t pic_strlen(const char *s)
 	while (s[n])
 		n++;
 	return n;
+}
+
+PIC_TEXT
+static void debug_log_aux_entry(const char *name, pic_uintptr value)
+{
+	PIC_LOG("ul_exec: aux %s=%x\n", name, (unsigned long)value);
 }
 
 PIC_TEXT
@@ -539,12 +548,14 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
 
 	pic_uintptr top = (pic_uintptr)stack_base + stack_size;
 
+#if !defined(PICBLOBS_OS_FREEBSD)
 	/* AT_RANDOM bytes. */
 	top -= 16;
 	pic_uintptr random_addr = top;
 	pic_u8 *rnd = (pic_u8 *)random_addr;
 	for (int i = 0; i < 16; i++)
 		rnd[i] = (pic_u8)(0x42 + i);
+#endif
 
 	/* envp strings */
 	top -= envp_size;
@@ -559,11 +570,20 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
 		pic_memcpy((void *)argv_str, argv_data, argv_size);
 
 	/* Pointer arrays + auxv */
-	int n_auxv = 15; /* number of auxv entries before AT_NULL */
+	int n_auxv;
+#if !defined(PICBLOBS_OS_FREEBSD)
+	n_auxv = 15;
+#else
+	n_auxv = 7;
+#endif
 	pic_size_t slots = 1 + argc + 1 + envp_count + 1 + (n_auxv + 1) * 2;
 	top &= ~((pic_uintptr)sizeof(pic_uintptr) - 1);
 	top -= slots * sizeof(pic_uintptr);
+#if defined(PICBLOBS_OS_FREEBSD) && defined(__x86_64__)
+	top = (top & ~(pic_uintptr)0xf) - sizeof(pic_uintptr);
+#else
 	top &= ~(pic_uintptr)0xf;
+#endif
 
 	pic_uintptr *sp = (pic_uintptr *)top;
 	*sp++ = (pic_uintptr)argc;
@@ -591,12 +611,20 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
 		*sp++ = (pic_uintptr)(v);                                      \
 	} while (0)
 	AUX(AT_PHDR, phdr_addr);
+	debug_log_aux_entry("AT_PHDR", phdr_addr);
 	AUX(AT_PHENT, phentsize);
+	debug_log_aux_entry("AT_PHENT", phentsize);
 	AUX(AT_PHNUM, phnum);
+	debug_log_aux_entry("AT_PHNUM", phnum);
 	AUX(AT_PAGESZ, PAGE_SIZE);
+	debug_log_aux_entry("AT_PAGESZ", PAGE_SIZE);
 	AUX(AT_BASE, interp_base);
+	debug_log_aux_entry("AT_BASE", interp_base);
 	AUX(AT_FLAGS, 0);
+	debug_log_aux_entry("AT_FLAGS", 0);
 	AUX(AT_ENTRY, entry);
+	debug_log_aux_entry("AT_ENTRY", entry);
+#if !defined(PICBLOBS_OS_FREEBSD)
 	AUX(AT_UID, 0);
 	AUX(AT_EUID, 0);
 	AUX(AT_GID, 0);
@@ -605,8 +633,14 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
 	AUX(AT_RANDOM, random_addr);
 	AUX(AT_HWCAP, 0);
 	AUX(AT_CLKTCK, 100);
+#endif
 	AUX(AT_NULL, 0);
 #undef AUX
+
+	PIC_LOG("ul_exec: stack argc=%d envc=%d top=%x final_sp=%x\n",
+		(long)argc, (long)envp_count,
+		(unsigned long)((pic_uintptr)stack_base + stack_size),
+		(unsigned long)top);
 
 	return top;
 }
@@ -627,13 +661,35 @@ __attribute__((noreturn)) static void jump_to_entry(
 	pic_uintptr entry, pic_uintptr sp)
 {
 #if defined(__x86_64__)
-	__asm__ volatile("mov %[s], %%rsp\n"
+#if defined(PICBLOBS_OS_FREEBSD)
+	/*
+	 * Keep entry and stack in fixed scratch registers before updating %rsp.
+	 * If the compiler reuses the same input register for both operands,
+	 * loading sp into %rsp first would clobber the jump target and branch
+	 * into the synthetic stack.
+	 */
+	__asm__ volatile("mov %[e], %%r11\n"
+			 "mov %[s], %%r10\n"
+			 "mov %%r10, %%rdi\n"
+			 "mov %%r10, %%rsp\n"
 			 "xor %%rdx, %%rdx\n"
 			 "xor %%rax, %%rax\n"
-			 "jmp *%[e]\n"
+			 "jmp *%%r11\n"
 		:
 		: [s] "r"(sp), [e] "r"(entry)
-		: "memory");
+		: "r10", "r11", "memory");
+#else
+	/* Same clobber hazard as the FreeBSD path above. */
+	__asm__ volatile("mov %[e], %%r11\n"
+			 "mov %[s], %%r10\n"
+			 "mov %%r10, %%rsp\n"
+			 "xor %%rdx, %%rdx\n"
+			 "xor %%rax, %%rax\n"
+			 "jmp *%%r11\n"
+		:
+		: [s] "r"(sp), [e] "r"(entry)
+		: "r10", "r11", "memory");
+#endif
 
 #elif defined(__i386__)
 	__asm__ volatile("mov %[s], %%ecx\n"

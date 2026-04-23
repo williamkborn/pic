@@ -81,6 +81,21 @@ RUNNER_TYPE: dict[str, str] = {
 }
 
 
+def runtime_test_arches(os_name: str) -> list[str]:
+    """Return arches that are expected to execute in pytest for an OS.
+
+    FreeBSD runtime execution is intentionally limited to x86_64. Other
+    FreeBSD blob arches may still be built or structurally validated, but
+    ptrace-based runtime execution is not a supported pytest path for them.
+    """
+    os_entry = OPERATING_SYSTEMS.get(os_name)
+    if os_entry is None:
+        return []
+    if os_name == "freebsd":
+        return ["x86_64"]
+    return list(os_entry.architectures)
+
+
 def all_payload_combos() -> list[tuple[str, str, str]]:
     """Return all (blob_type, os, arch) combos from the canonical blob registry."""
     combos = []

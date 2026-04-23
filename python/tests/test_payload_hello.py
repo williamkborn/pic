@@ -15,7 +15,13 @@ import pytest
 from picblobs import get_blob, list_blobs
 from picblobs.runner import is_arch_skip_rosetta, run_blob
 
-from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUNNER_TYPE
+from payload_defs import (
+    EXPECTATIONS,
+    OPERATING_SYSTEMS,
+    PAYLOAD_PLATFORMS,
+    RUNNER_TYPE,
+    runtime_test_arches,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -24,14 +30,13 @@ from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUN
 
 
 def _hello_combos() -> list[tuple[str, str, str]]:
-    """Return (blob_type, os, arch) for hello and hello_windows."""
+    """Return (blob_type, os, arch) for tested hello/hello_windows combos."""
     combos = []
     for bt in ("hello", "hello_windows"):
         for os_name in PAYLOAD_PLATFORMS.get(bt, []):
-            os_entry = OPERATING_SYSTEMS.get(os_name)
-            if os_entry is None:
+            if OPERATING_SYSTEMS.get(os_name) is None:
                 continue
-            for arch in os_entry.architectures:
+            for arch in runtime_test_arches(os_name):
                 combos.append((bt, os_name, arch))
     return sorted(combos)
 

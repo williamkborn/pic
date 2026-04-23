@@ -32,6 +32,15 @@ def _link_mode_flags_command():
         "esac",
     ])
 
+def _target_os_defines():
+    """Return per-target-OS compile defines selected from platform constraints."""
+    return select({
+        "//platforms:is_target_linux": ["PICBLOBS_OS_LINUX"],
+        "//platforms:is_target_freebsd": ["PICBLOBS_OS_FREEBSD"],
+        "//platforms:is_target_windows": ["PICBLOBS_OS_WINDOWS"],
+        "//conditions:default": [],
+    })
+
 def pic_blob(
         name,
         srcs,
@@ -62,7 +71,7 @@ def pic_blob(
     deps = deps or []
     hdrs = hdrs or []
     copts = copts or []
-    local_defines = local_defines or []
+    local_defines = (local_defines or []) + _target_os_defines()
     linkopts = linkopts or []
     lib_name = name + "_obj"
 

@@ -10,6 +10,7 @@ Run after any change to platforms, architectures, or OS support:
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -25,6 +26,7 @@ prepend_source_paths()
 
 from tools.registry import (
     ARCHITECTURES,
+    BLOB_TYPES,
     LINKER_SYMBOLS,
     MMAP_FLAGS,
     OPERATING_SYSTEMS,
@@ -92,6 +94,11 @@ class TestQemuSync:
 
 class TestPlatformConfigSync:
     """Verify platform configs are consistent across all locations."""
+
+    def test_freebsd_ul_exec_is_x86_64_only(self) -> None:
+        manifest = json.loads(_read_file("python/picblobs/manifest.json"))
+        assert BLOB_TYPES["ul_exec"].platforms["freebsd"] == ["x86_64"]
+        assert manifest["catalog"]["ul_exec"]["platforms"]["freebsd"] == ["x86_64"]
 
     def test_stage_blobs_uses_registry(self) -> None:
         content = _read_file("tools/stage_blobs.py")

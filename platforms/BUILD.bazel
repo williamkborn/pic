@@ -12,6 +12,19 @@ constraint_value(name = "linux", constraint_setting = ":target_os")
 constraint_value(name = "freebsd", constraint_setting = ":target_os")
 constraint_value(name = "windows", constraint_setting = ":target_os")
 
+config_setting(
+    name = "is_target_linux",
+    values = {"define": "PICBLOBS_TARGET_OS=linux"},
+)
+config_setting(
+    name = "is_target_freebsd",
+    values = {"define": "PICBLOBS_TARGET_OS=freebsd"},
+)
+config_setting(
+    name = "is_target_windows",
+    values = {"define": "PICBLOBS_TARGET_OS=windows"},
+)
+
 constraint_value(name = "armv7", constraint_setting = "@platforms//cpu:cpu")
 constraint_value(name = "mipsel32", constraint_setting = "@platforms//cpu:cpu")
 constraint_value(name = "s390x", constraint_setting = "@platforms//cpu:cpu")

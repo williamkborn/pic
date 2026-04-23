@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import shutil
 import socket
+import ctypes
+import signal
 from pathlib import Path
 
 import pytest
@@ -50,6 +52,40 @@ def _has_any_cross_compiler() -> bool:
     except ImportError:
         return False
     return any(find_gcc(arch) is not None for arch in ARCHITECTURES)
+
+
+def _can_ptrace_traceme() -> bool:
+    """Return True if this environment permits a basic PTRACE_TRACEME flow."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    ptrace = getattr(libc, "ptrace", None)
+    if ptrace is None:
+        return False
+    ptrace.argtypes = [ctypes.c_long, ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p]
+    ptrace.restype = ctypes.c_long
+    PTRACE_TRACEME = 0
+    PTRACE_CONT = 7
+
+    pid = os.fork()
+    if pid == 0:
+        try:
+            ret = ptrace(PTRACE_TRACEME, 0, None, None)
+            if ret != 0:
+                os._exit(1)
+            os.kill(os.getpid(), signal.SIGSTOP)
+            os._exit(0)
+        except BaseException:
+            os._exit(1)
+
+    try:
+        child_pid, status = os.waitpid(pid, 0)
+        if child_pid != pid or not os.WIFSTOPPED(status):
+            return False
+        if ptrace(PTRACE_CONT, pid, None, None) != 0:
+            return False
+        os.waitpid(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 # --- Environment-based filters (set by `picblobs test --os/--arch/--type`) ---
@@ -196,6 +232,7 @@ def _capability_state() -> dict[str, bool]:
         "requires_qemu": _has_qemu(),
         "requires_local_tcp": _can_bind_localhost(),
         "requires_cross_compile": _has_any_cross_compiler(),
+        "ptrace": _can_ptrace_traceme(),
     }
 
 
@@ -226,8 +263,19 @@ def _apply_capability_skips(
     """Skip tests whose declared infrastructure requirements are unavailable."""
     for item in items:
         for keyword, available in capabilities.items():
+            if keyword == "ptrace":
+                continue
             if keyword in item.keywords and not available:
                 item.add_marker(pytest.mark.skip(reason=_skip_marker_reason(keyword)))
+        if capabilities["ptrace"]:
+            continue
+        _, param_os, _ = _item_filter_params(item)
+        if param_os == "freebsd" and "requires_qemu" in item.keywords:
+            item.add_marker(
+                pytest.mark.skip(
+                    reason="FreeBSD runtime tests require ptrace, which is unavailable in this environment."
+                )
+            )
 
 
 def _item_filter_params(item: pytest.Item) -> tuple[str, str, str]:

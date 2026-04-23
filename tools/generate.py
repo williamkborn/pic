@@ -639,6 +639,21 @@ def _platform_target_os_lines() -> list[str]:
             f'constraint_value(name = "{os_name}", constraint_setting = ":target_os")\n'
         )
     lines.append("\n")
+    lines.extend(_platform_target_os_config_lines())
+    return lines
+
+
+def _platform_target_os_config_lines() -> list[str]:
+    """Return config_setting selectors for one target OS at a time."""
+    lines: list[str] = []
+    for os_name in OPERATING_SYSTEMS:
+        lines.append(
+            "config_setting(\n"
+            f'    name = "is_target_{os_name}",\n'
+            f'    values = {{"define": "PICBLOBS_TARGET_OS={os_name}"}},\n'
+            ")\n"
+        )
+    lines.append("\n")
     return lines
 
 
@@ -779,7 +794,10 @@ def _gen_bazelrc_block() -> str:
         for arch_name in os_def.architectures:
             cfg = f"{os_name}_{arch_name}"
             pad = max(1, 22 - len(cfg))
-            lines.append(f"build:{cfg}{' ' * pad}--platforms=//platforms:{cfg}")
+            lines.append(
+                f"build:{cfg}{' ' * pad}--platforms=//platforms:{cfg} "
+                f"--define=PICBLOBS_TARGET_OS={os_name}"
+            )
         lines.append("")
     return "\n".join(lines)
 

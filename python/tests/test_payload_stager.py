@@ -23,7 +23,13 @@ import pytest
 from picblobs import get_blob
 from picblobs.runner import is_arch_skip_rosetta, run_blob
 
-from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUNNER_TYPE
+from payload_defs import (
+    EXPECTATIONS,
+    OPERATING_SYSTEMS,
+    PAYLOAD_PLATFORMS,
+    RUNNER_TYPE,
+    runtime_test_arches,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -45,9 +51,14 @@ def _stager_combos(stager_type: str) -> list[tuple[str, str]]:
         os_entry = OPERATING_SYSTEMS.get(os_name)
         if os_entry is None:
             continue
-        for arch in os_entry.architectures:
+        for arch in runtime_test_arches(os_name):
             combos.append((os_name, arch))
     return sorted(combos)
+
+
+def _inner_payload_os(target_os: str) -> str:
+    """Return the OS for stager inner test payloads."""
+    return "freebsd" if target_os == "freebsd" else "linux"
 
 
 def _check_skip(
@@ -63,8 +74,9 @@ def _check_skip(
     if is_arch_skip_rosetta(target_arch):
         pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
-    if test_payload and not _blob_exists(test_payload, "linux", target_arch):
-        pytest.skip(f"Test payload not staged: {test_payload}/linux/{target_arch}")
+    inner_os = _inner_payload_os(target_os)
+    if test_payload and not _blob_exists(test_payload, inner_os, target_arch):
+        pytest.skip(f"Test payload not staged: {test_payload}/{inner_os}/{target_arch}")
 
     runner_type = RUNNER_TYPE[target_os]
     try:
@@ -165,7 +177,7 @@ class TestStagerTcp:
         exp = EXPECTATIONS["stager_tcp"]
         blob = get_blob("stager_tcp", target_os, target_arch)
 
-        inner = get_blob("test_tcp_ok", "linux", target_arch)
+        inner = get_blob("test_tcp_ok", _inner_payload_os(target_os), target_arch)
         host, port = tcp_payload_server(inner.code)
 
         # Config: address family (u8) + port (u16) + ip (4 bytes).
@@ -223,7 +235,7 @@ class TestStagerFd:
         exp = EXPECTATIONS["stager_fd"]
         blob = get_blob("stager_fd", target_os, target_arch)
 
-        inner = get_blob("test_fd_ok", "linux", target_arch)
+        inner = get_blob("test_fd_ok", _inner_payload_os(target_os), target_arch)
 
         # Config: fd number (u32). stdin=0.
         config = struct.pack("<I", 0)
@@ -281,7 +293,7 @@ class TestStagerPipe:
         exp = EXPECTATIONS["stager_pipe"]
         blob = get_blob("stager_pipe", target_os, target_arch)
 
-        inner = get_blob("test_pipe_ok", "linux", target_arch)
+        inner = get_blob("test_pipe_ok", _inner_payload_os(target_os), target_arch)
         data = _length_prefixed_payload(inner.code)
 
         # Create FIFO.
@@ -337,7 +349,7 @@ class TestStagerMmap:
         exp = EXPECTATIONS["stager_mmap"]
         blob = get_blob("stager_mmap", target_os, target_arch)
 
-        inner = get_blob("test_mmap_ok", "linux", target_arch)
+        inner = get_blob("test_mmap_ok", _inner_payload_os(target_os), target_arch)
         fpath = payload_file(inner.code)
 
         # Config: path length (u16) + path bytes + offset (u64) + size (u64).

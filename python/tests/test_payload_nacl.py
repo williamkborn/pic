@@ -21,7 +21,13 @@ from picblobs.runner import (
     run_blob_pair,
 )
 
-from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUNNER_TYPE
+from payload_defs import (
+    EXPECTATIONS,
+    OPERATING_SYSTEMS,
+    PAYLOAD_PLATFORMS,
+    RUNNER_TYPE,
+    runtime_test_arches,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +42,7 @@ def _nacl_combos() -> list[tuple[str, str, str]]:
         os_entry = OPERATING_SYSTEMS.get(os_name)
         if os_entry is None:
             continue
-        for arch in os_entry.architectures:
+        for arch in runtime_test_arches(os_name):
             combos.append(("nacl_hello", os_name, arch))
     return sorted(combos)
 
@@ -48,7 +54,7 @@ def _e2e_combos() -> list[tuple[str, str]]:
         os_entry = OPERATING_SYSTEMS.get(os_name)
         if os_entry is None:
             continue
-        for arch in os_entry.architectures:
+        for arch in runtime_test_arches(os_name):
             combos.append((os_name, arch))
     return sorted(combos)
 

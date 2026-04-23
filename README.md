@@ -49,7 +49,7 @@ Current Linux architecture coverage includes `x86_64`, `i686`, `aarch64`,
 | OS | Architectures | Blob types | Runner |
 |---|---|---|---|
 | Linux | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32, sparcv8, powerpc, ppc64le, riscv64 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Direct execution via QEMU user-static |
-| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec | Translating loader: patches FreeBSD syscall numbers to Linux equivalents at load time |
+| FreeBSD | x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, mipsel32, mipsbe32 | hello, nacl_hello, nacl_client, nacl_server, stager_tcp, test_tcp_ok, test_pass, ul_exec (`x86_64` only) | Linux-hosted verification runs `x86_64` only; other FreeBSD blob arches are shipped but not verified |
 | Windows | x86_64, i686, aarch64 | hello_windows, alloc_jump | Mock TEB/PEB on Linux |
 
 ### Current blob inventory
@@ -94,6 +94,11 @@ cd python
 ./.venv/bin/python -m picblobs verify --os linux --arch ppc64le
 ./.venv/bin/python -m picblobs verify --os linux --arch riscv64
 ```
+
+FreeBSD note: `verify` only runs `freebsd:x86_64`. Other FreeBSD blob
+architectures are still built and shipped, but they are excluded from the
+Linux-hosted verification matrix. `ul_exec` is only built for
+`freebsd:x86_64`.
 
 ## Documentation
 

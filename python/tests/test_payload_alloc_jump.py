@@ -17,7 +17,13 @@ import pytest
 from picblobs import get_blob
 from picblobs.runner import is_arch_skip_rosetta, run_blob
 
-from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUNNER_TYPE
+from payload_defs import (
+    EXPECTATIONS,
+    OPERATING_SYSTEMS,
+    PAYLOAD_PLATFORMS,
+    RUNNER_TYPE,
+    runtime_test_arches,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -28,6 +34,11 @@ from payload_defs import EXPECTATIONS, OPERATING_SYSTEMS, PAYLOAD_PLATFORMS, RUN
 TEST_PAYLOAD_TYPE = "test_pass"
 
 
+def _inner_payload_os(target_os: str) -> str:
+    """Return the OS for alloc_jump's inner test payload."""
+    return "freebsd" if target_os == "freebsd" else "linux"
+
+
 def _alloc_jump_combos() -> list[tuple[str, str]]:
     """Return (os, arch) for alloc_jump."""
     combos = []
@@ -35,7 +46,7 @@ def _alloc_jump_combos() -> list[tuple[str, str]]:
         os_entry = OPERATING_SYSTEMS.get(os_name)
         if os_entry is None:
             continue
-        for arch in os_entry.architectures:
+        for arch in runtime_test_arches(os_name):
             combos.append((os_name, arch))
     return sorted(combos)
 
@@ -81,10 +92,10 @@ class TestAllocJumpPayload:
         if is_arch_skip_rosetta(target_arch):
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
-        # The inner test payload uses Linux syscalls, so load from linux.
-        if not _blob_exists(TEST_PAYLOAD_TYPE, "linux", target_arch):
+        inner_os = _inner_payload_os(target_os)
+        if not _blob_exists(TEST_PAYLOAD_TYPE, inner_os, target_arch):
             pytest.skip(
-                f"Test payload not staged: {TEST_PAYLOAD_TYPE}/linux/{target_arch}"
+                f"Test payload not staged: {TEST_PAYLOAD_TYPE}/{inner_os}/{target_arch}"
             )
 
         runner_type = RUNNER_TYPE[target_os]
@@ -99,7 +110,7 @@ class TestAllocJumpPayload:
         blob = get_blob("alloc_jump", target_os, target_arch)
 
         # Load the inner test payload's raw code.
-        inner = get_blob(TEST_PAYLOAD_TYPE, "linux", target_arch)
+        inner = get_blob(TEST_PAYLOAD_TYPE, inner_os, target_arch)
         config = _build_alloc_jump_config(inner.code, target_arch)
 
         result = run_blob(blob, config=config, timeout=exp.timeout)
