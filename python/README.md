@@ -14,7 +14,7 @@ The package contains the release-ready blob catalog:
 This package does not bundle the cross-compiled runner executables used
 for QEMU-based execution and verification. Install
 [`picblobs-cli`](https://pypi.org/project/picblobs-cli/) alongside it if
-you want the `picblobs-cli` command or bundled runners.
+you want the CLI commands or bundled runners.
 
 ## Install
 
@@ -48,21 +48,19 @@ stage = (
 
 ## CLI
 
-The library package exposes a small `picblobs` CLI for listing,
-inspecting, extracting, and locally running blobs when a suitable runner
-is available:
-
-```bash
-picblobs list
-picblobs info hello linux:x86_64
-picblobs extract hello linux:x86_64 -o hello.bin
-```
-
-For full build/run/verify workflows with bundled runners, install the
-companion package:
+The CLI now lives entirely in the companion package:
 
 ```bash
 pip install picblobs-cli
+picblobs-cli list
+picblobs-cli info hello linux:x86_64
+picblobs-cli extract hello linux:x86_64 -o hello.bin
+```
+
+Installing `picblobs-cli` also provides the bundled runners and the full
+build/run/verify toolchain:
+
+```bash
 picblobs-cli verify --os linux
 ```
 

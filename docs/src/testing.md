@@ -19,12 +19,12 @@ Runs all unit tests, sync tests, and payload execution tests. Unimplemented payl
 ./testall -k test_payload_hello        # pytest -k expression
 ```
 
-## Via picblobs CLI
+## Via picblobs-cli
 
 ```bash
-picblobs test                          # run pytest
-picblobs test -v -k test_sync         # specific tests
-picblobs test --os linux --arch x86_64 # filtered
+picblobs-cli test                          # run pytest
+picblobs-cli test -v -k test_sync         # specific tests
+picblobs-cli test --os linux --arch x86_64 # filtered
 ```
 
 ## Test architecture
@@ -42,7 +42,7 @@ Tests are organized by category:
 | `test_extractor.py` | ELF extraction via pyelftools |
 | `test_release_loading.py` | Release loading path (.bin + .json sidecar, manifest) |
 | `test_runner.py` | QEMU runner orchestration, blob preparation |
-| `test_cli.py` | CLI argument parsing and commands |
+| `test_picblobs_cli.py` | CLI argument parsing and commands |
 | `test_sync.py` | Registry sync: generated files, platform configs, syscall tables |
 
 Payload tests are **registry-driven**: the test matrix is `blob_type x os x arch`, generated from `tools/registry.py`. Tests auto-skip when a blob or runner isn't staged. Adding a new payload and building it is sufficient to activate its tests.

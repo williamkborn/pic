@@ -84,15 +84,14 @@ type, then build the final bytes or inspect metadata.
 ```bash
 source sourceme
 ./buildall
-picblobs verify
+picblobs-cli verify
 ```
 
 Targeted verification for a single platform is also supported:
 
 ```bash
-cd python
-./.venv/bin/python -m picblobs verify --os linux --arch ppc64le
-./.venv/bin/python -m picblobs verify --os linux --arch riscv64
+./python/.venv/bin/python -m picblobs_cli verify --os linux --arch ppc64le
+./python/.venv/bin/python -m picblobs_cli verify --os linux --arch riscv64
 ```
 
 FreeBSD note: `verify` only runs `freebsd:x86_64`. Other FreeBSD blob

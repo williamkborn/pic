@@ -75,7 +75,18 @@ class TestConsoleScript:
 
     def test_help_lists_commands(self, runner: CliRunner) -> None:
         r = runner.invoke(main, ["--help"])
-        for cmd in ("run", "verify", "build", "list-runners", "info"):
+        for cmd in (
+            "run",
+            "verify",
+            "build",
+            "list",
+            "info",
+            "extract",
+            "listing",
+            "disasm",
+            "test",
+            "list-runners",
+        ):
             assert cmd in r.output, cmd
 
     def test_version_flag(self, runner: CliRunner) -> None:
@@ -805,3 +816,232 @@ class TestInfo:
         assert "picblobs-cli:" in r.output
         assert "runner bundle:" in r.output
         assert "Targets:" in r.output
+
+    def test_info_prints_blob_metadata(self, runner: CliRunner) -> None:
+        r = runner.invoke(main, ["info", "hello", "linux:x86_64"])
+        assert r.exit_code == 0, r.output
+        assert "Blob:" in r.output
+        assert "hello" in r.output
+        assert "Entry offset:" in r.output
+
+
+class TestListCommand:
+    def test_list_runs(self, runner: CliRunner) -> None:
+        r = runner.invoke(main, ["list"])
+        assert r.exit_code == 0, r.output
+        assert "BLOB TYPE" in r.output
+
+
+class TestExtractCommand:
+    def test_extract_staged_blob(self, runner: CliRunner, tmp_path: Path) -> None:
+        out = tmp_path / "hello.bin"
+        r = runner.invoke(
+            main,
+            ["extract", "hello", "linux:x86_64", "-o", str(out)],
+        )
+        assert r.exit_code == 0, r.output
+        assert out.read_bytes() == picblobs.get_blob("hello", "linux", "x86_64").code
+
+
+class TestRunSoMode:
+    def test_run_so_dry_run_uses_extracted_blob(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import picblobs_cli.cli as cli
+        from picblobs._extractor import BlobData
+        from picblobs.runner import RunResult
+
+        so_path = tmp_path / "blob.so"
+        so_path.write_bytes(b"\x7fELF")
+
+        blob = BlobData(
+            code=b"\x90",
+            config_offset=1,
+            entry_offset=0,
+            blob_type="alloc_jump",
+            target_os="windows",
+            target_arch="x86_64",
+            sha256="abc",
+            sections={},
+        )
+        calls: dict[str, object] = {}
+
+        def _extract(path: str) -> BlobData:
+            calls["path"] = path
+            return blob
+
+        def _run_blob(blob_data: BlobData, **kwargs) -> RunResult:
+            calls["blob"] = blob_data
+            calls["kwargs"] = kwargs
+            return RunResult(
+                stdout=b"",
+                stderr=b"",
+                exit_code=0,
+                duration_s=0.0,
+                command=["runner", "blob"],
+            )
+
+        monkeypatch.setattr("picblobs._extractor.extract", _extract)
+        monkeypatch.setattr(cli, "run_blob", _run_blob)
+
+        r = runner.invoke(main, ["run", "--so", str(so_path), "--dry-run"])
+        assert r.exit_code == 0, r.output
+        assert "runner blob" in r.output
+        assert calls["path"] == str(so_path)
+        assert calls["blob"] is blob
+
+
+class TestVerifyNaclE2E:
+    def test_nacl_e2e_passes_ephemeral_port_config(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import picblobs_cli.cli as cli
+
+        captured: dict[str, object] = {}
+
+        monkeypatch.setattr(
+            cli,
+            "_check_nacl_e2e_speed",
+            lambda *_args, **_kwargs: None,
+        )
+        monkeypatch.setattr(cli, "find_runner", lambda _os, _arch: Path("/tmp/runner"))
+        monkeypatch.setattr(
+            picblobs,
+            "get_blob",
+            lambda blob_type, os_name, arch: SimpleNamespace(
+                blob_type=blob_type,
+                target_os=os_name,
+                target_arch=arch,
+            ),
+        )
+        monkeypatch.setattr(
+            "picblobs.runner.reserve_tcp_port",
+            lambda host="127.0.0.1": 45678,
+        )
+
+        def _run_blob_pair(*args, **kwargs):
+            captured["kwargs"] = kwargs
+            return SimpleNamespace(
+                server_stdout=(
+                    b"[server] listening\n"
+                    b"[server] decrypted: Hello from NaCl PIC blob!\n"
+                    b"[server] secure channel OK\n"
+                ),
+                server_stderr=b"",
+                server_exit=0,
+                client_stdout=(
+                    b"[client] decrypted ACK: OK\n[client] secure channel OK\n"
+                ),
+                client_stderr=b"",
+                client_exit=0,
+            )
+
+        monkeypatch.setattr("picblobs.runner.run_blob_pair", _run_blob_pair)
+
+        detail = cli._verify_nacl_e2e("freebsd", "x86_64", 30.0)
+        assert "Hello from NaCl PIC blob!" in detail
+        kwargs = captured["kwargs"]
+        assert kwargs["server_config"] == struct.pack("<H", 45678)
+        assert kwargs["client_config"] == struct.pack("<H", 45678)
+
+
+class TestDisasmAndListing:
+    def test_disasm_lists_symbols(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import picblobs_cli.cli as cli
+
+        so_path = tmp_path / "hello.so"
+        so_path.write_bytes(b"\x7fELF")
+
+        monkeypatch.setattr(cli, "_find_objdump_or_fail", lambda _arch: "objdump")
+        monkeypatch.setattr(
+            "picblobs._objdump.list_symbols",
+            lambda _so, _objdump: [("00000000", "10", "_start")],
+        )
+
+        r = runner.invoke(
+            main,
+            ["disasm", "--so", str(so_path), "-f", ""],
+        )
+        assert r.exit_code == 0, r.output
+        assert "_start" in r.output
+
+    def test_listing_prefers_debug_path(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        import picblobs_cli.cli as cli
+
+        debug_dir = tmp_path / "debug" / "linux" / "x86_64"
+        debug_dir.mkdir(parents=True)
+        so_path = debug_dir / "hello.so"
+        so_path.write_bytes(b"\x7fELF")
+
+        monkeypatch.setattr(cli, "_debug_blob_dir", lambda: tmp_path / "debug")
+        monkeypatch.setattr(cli, "_release_blob_dir", lambda: tmp_path / "release")
+        monkeypatch.setattr(cli, "_find_objdump_or_fail", lambda _arch: "objdump")
+        monkeypatch.setattr("picblobs._objdump.has_debug_info", lambda *_args: False)
+        monkeypatch.setattr(
+            "picblobs._objdump.disassemble_full",
+            lambda so, _objdump, source=True: f"disasm:{Path(so).name}:{source}",
+        )
+
+        r = runner.invoke(main, ["listing", "hello", "linux:x86_64"])
+        assert r.exit_code == 0, r.output
+        assert "disasm:hello.so:False" in r.output
+
+
+class TestTestCommand:
+    def test_test_command_sets_filters(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: dict[str, object] = {}
+
+        def _run(cmd, **kwargs):
+            calls["cmd"] = cmd
+            calls["env"] = kwargs["env"]
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(subprocess, "run", _run)
+
+        r = runner.invoke(
+            main,
+            [
+                "test",
+                "--os",
+                "linux",
+                "--arch",
+                "x86_64",
+                "--type",
+                "hello",
+                "-k",
+                "smoke",
+                "--",
+                "python/tests/test_payload_hello.py",
+            ],
+        )
+        assert r.exit_code == 0, r.output
+        assert calls["cmd"] == [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-k",
+            "smoke",
+            "python/tests/test_payload_hello.py",
+        ]
+        env = calls["env"]
+        assert env["PICBLOBS_TEST_OS"] == "linux"
+        assert env["PICBLOBS_TEST_ARCH"] == "x86_64"
+        assert env["PICBLOBS_TEST_TYPE"] == "hello"

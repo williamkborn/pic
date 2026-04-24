@@ -20,7 +20,7 @@ source sourceme
 ./buildall
 
 # Verify everything works
-picblobs verify
+picblobs-cli verify
 
 # Run the full test suite
 ./testall
@@ -33,5 +33,5 @@ in `ci/`:
 
 ```bash
 ci/dev.sh                          # interactive shell
-ci/dev.sh python -m picblobs verify   # run a command and exit
+ci/dev.sh python -m picblobs_cli verify   # run a command and exit
 ```

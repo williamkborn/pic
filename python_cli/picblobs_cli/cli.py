@@ -32,6 +32,8 @@ from picblobs.runner import find_runner, run_blob
 from picblobs_cli import __version__ as cli_version
 from picblobs_cli import runners_dir
 
+DEFAULT_TARGET = "linux:x86_64"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -55,8 +57,138 @@ def _fail(message: str) -> None:
     sys.exit(1)
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _release_blob_dir() -> Path:
+    return Path(picblobs.__file__).resolve().parent / "_blobs"
+
+
+def _debug_blob_dir() -> Path:
+    return _project_root() / "debug"
+
+
 def _length_prefixed(payload: bytes) -> bytes:
     return struct.pack("<I", len(payload)) + payload
+
+
+def _load_blob_data(
+    blob_type: str | None,
+    target: str,
+    so_path: Path | None,
+):
+    from picblobs._extractor import extract
+
+    os_name, arch = _parse_target(target)
+    try:
+        if so_path is not None:
+            return extract(str(so_path))
+        if blob_type is None:
+            _fail("a blob type or --so path is required")
+        return picblobs.get_blob(blob_type, os_name, arch)
+    except (FileNotFoundError, ImportError, ValueError) as e:
+        _fail(str(e))
+
+
+def _write_blob_output(
+    blob,
+    output_path: Path,
+    config_hex: str | None,
+) -> None:
+    data = bytearray(blob.code)
+    if config_hex:
+        try:
+            config = bytes.fromhex(config_hex)
+        except ValueError as e:
+            _fail(f"invalid --config-hex: {e}")
+        if blob.config_offset > len(data):
+            data.extend(b"\x00" * (blob.config_offset - len(data)))
+        data[blob.config_offset : blob.config_offset + len(config)] = config
+    output_path.write_bytes(bytes(data))
+    click.echo(f"wrote {len(data)} bytes to {output_path}")
+
+
+def _resolve_staged_so_path(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    *,
+    prefer_debug: bool,
+    allow_release_fallback: bool,
+) -> Path | None:
+    roots: list[Path] = []
+    if prefer_debug:
+        roots.append(_debug_blob_dir())
+    if allow_release_fallback:
+        roots.append(_release_blob_dir())
+    if not prefer_debug:
+        roots.reverse()
+
+    for root in roots:
+        candidate = root / os_name / arch / f"{blob_type}.so"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_disasm_so_path(
+    blob_type: str | None,
+    target: str,
+    so_path: Path | None,
+    *,
+    prefer_debug: bool,
+    allow_release_fallback: bool,
+) -> Path:
+    if so_path is not None:
+        if not so_path.exists():
+            _fail(f"file not found: {so_path}")
+        return so_path
+    if blob_type is None:
+        _fail("a blob type or --so path is required")
+    os_name, arch = _parse_target(target)
+    resolved = _resolve_staged_so_path(
+        blob_type,
+        os_name,
+        arch,
+        prefer_debug=prefer_debug,
+        allow_release_fallback=allow_release_fallback,
+    )
+    if resolved is None:
+        if prefer_debug:
+            _fail(
+                f"no debug .so found for {blob_type} {os_name}:{arch}; "
+                "build with: python tools/stage_blobs.py --debug"
+            )
+        _fail(
+            f"no .so found for {blob_type} {os_name}:{arch}; "
+            "build with: python tools/stage_blobs.py [--debug]"
+        )
+    return resolved
+
+
+def _find_objdump_or_fail(arch: str) -> str:
+    from picblobs._objdump import find_objdump
+
+    try:
+        return find_objdump(arch)
+    except FileNotFoundError as e:
+        _fail(str(e))
+
+
+def _pytest_env(
+    os_name: str | None,
+    arch: str | None,
+    blob_type: str | None,
+) -> dict[str, str]:
+    env = _os.environ.copy()
+    if os_name:
+        env["PICBLOBS_TEST_OS"] = os_name
+    if arch:
+        env["PICBLOBS_TEST_ARCH"] = arch
+    if blob_type:
+        env["PICBLOBS_TEST_TYPE"] = blob_type
+    return env
 
 
 def _iter_runner_binaries(
@@ -341,7 +473,28 @@ _BUILDERS = {
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version=cli_version, prog_name="picblobs-cli")
 def main() -> None:
-    """picblobs-cli — build, run, and verify PIC blobs under QEMU."""
+    """picblobs-cli — inspect, build, run, and verify PIC blobs."""
+
+
+# ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+
+
+@main.command("list")
+def list_cmd() -> None:
+    """List every staged blob in the package."""
+    blobs = picblobs.list_blobs()
+    if not blobs:
+        click.echo("No blobs found in package.")
+        return
+
+    fmt = "{:<20s} {:<10s} {:<15s}"
+    click.echo(fmt.format("BLOB TYPE", "OS", "ARCH"))
+    click.echo(fmt.format("-" * 20, "-" * 10, "-" * 15))
+    for blob_type, os_name, arch in blobs:
+        click.echo(fmt.format(blob_type, os_name, arch))
+    click.echo(f"{len(blobs)} blob(s)")
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +502,7 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 
 
-@main.command()
-def info() -> None:
-    """Print versions, runner bundle path, and QEMU availability."""
+def _emit_package_info() -> None:
     click.echo(f"picblobs:     {picblobs.__version__}")
     click.echo(f"picblobs-cli: {cli_version}")
     click.echo(f"runner bundle: {runners_dir()}")
@@ -373,6 +524,40 @@ def info() -> None:
     for t in picblobs.targets():
         types = picblobs.blob_types(t.os, t.arch)
         click.echo(f"  {t}  ({len(types)} blob types)")
+
+
+def _emit_blob_info(blob) -> None:
+    click.echo(f"Blob:           {blob.blob_type}")
+    click.echo(f"OS:             {blob.target_os}")
+    click.echo(f"Arch:           {blob.target_arch}")
+    click.echo(f"Code size:      {len(blob.code)} bytes")
+    click.echo(f"Config offset:  {blob.config_offset}")
+    click.echo(f"Entry offset:   {blob.entry_offset}")
+    click.echo(f"SHA-256:        {blob.sha256}")
+    click.echo("Sections:")
+    for name, (offset, size) in sorted(blob.sections.items()):
+        click.echo(f"  {name:<20} offset={offset:#06x}  size={size:#06x}")
+
+
+@main.command()
+@click.argument("blob_type", required=False)
+@click.argument("target", required=False, default=DEFAULT_TARGET)
+@click.option(
+    "--so",
+    "so_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Inspect a direct .so path instead of a staged blob",
+)
+def info(
+    blob_type: str | None,
+    target: str,
+    so_path: Path | None,
+) -> None:
+    """Show package info, or blob metadata when TYPE / --so is given."""
+    if blob_type is None and so_path is None:
+        _emit_package_info()
+        return
+    _emit_blob_info(_load_blob_data(blob_type, target, so_path))
 
 
 # ---------------------------------------------------------------------------
@@ -516,17 +701,54 @@ def build(
 
 
 # ---------------------------------------------------------------------------
+# extract
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("blob_type", required=False)
+@click.argument("target", required=False, default=DEFAULT_TARGET)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    required=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Output file path",
+)
+@click.option(
+    "--so",
+    "so_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Extract a direct .so path instead of a staged blob",
+)
+@click.option("--config-hex", help="Config bytes as hex, patched into the output")
+def extract(
+    blob_type: str | None,
+    target: str,
+    output_path: Path,
+    so_path: Path | None,
+    config_hex: str | None,
+) -> None:
+    """Extract a flat blob image to OUTPUT."""
+    blob = _load_blob_data(blob_type, target, so_path)
+    _write_blob_output(blob, output_path, config_hex)
+
+
+# ---------------------------------------------------------------------------
 # run
 # ---------------------------------------------------------------------------
 
 
 def _run_file(
     blob_file: Path,
-    os_name: str,
+    runner_type: str,
     arch: str,
     stdin_data: bytes,
     timeout: float,
     debug: bool,
+    dry_run: bool,
+    runner_path: Path | None,
 ) -> None:
     """Execute an already-assembled blob file under the correct runner.
 
@@ -536,17 +758,23 @@ def _run_file(
     """
     from picblobs.runner import _build_command
 
-    try:
-        runner_path = find_runner(os_name, arch)
-    except FileNotFoundError as e:
-        _fail(str(e))
+    resolved_runner = runner_path
+    if resolved_runner is None:
+        try:
+            resolved_runner = find_runner(runner_type, arch)
+        except FileNotFoundError as e:
+            _fail(str(e))
 
-    cmd = _build_command(runner_path, blob_file, arch)
+    cmd = _build_command(resolved_runner, blob_file, arch)
 
     if debug:
-        click.echo(f"runner:    {runner_path}", err=True)
+        click.echo(f"runner:    {resolved_runner}", err=True)
         click.echo(f"blob file: {blob_file} ({blob_file.stat().st_size} B)", err=True)
         click.echo(f"command:   {' '.join(cmd)}", err=True)
+
+    if dry_run:
+        click.echo(" ".join(cmd))
+        sys.exit(0)
 
     try:
         result = subprocess.run(
@@ -569,8 +797,12 @@ def _run_file(
 def _parse_run_mode(
     positional: tuple[str, ...],
     blob_file: Path | None,
+    so_path: Path | None,
 ) -> tuple[str | None, str]:
-    """Return (blob_type, target) for file or registry run mode."""
+    """Return (blob_type, target) for file, so, or registry run modes."""
+    direct_modes = [blob_file is not None, so_path is not None]
+    if sum(direct_modes) > 1:
+        _fail("--file and --so are mutually exclusive")
     if blob_file is not None:
         if len(positional) != 1:
             _fail(
@@ -578,6 +810,13 @@ def _parse_run_mode(
                 "(got: " + " ".join(repr(p) for p in positional) + ")"
             )
         return None, positional[0]
+    if so_path is not None:
+        if len(positional) > 1:
+            _fail(
+                "with --so, supply at most one positional TARGET "
+                "(default: linux:x86_64)"
+            )
+        return None, positional[0] if positional else DEFAULT_TARGET
     if len(positional) != 2:
         _fail(
             "registry mode expects two positionals: "
@@ -611,18 +850,31 @@ def _emit_run_result(stdout: bytes, stderr: bytes, exit_code: int) -> None:
 
 
 def _run_registry_blob(
-    blob_type: str,
+    blob_type: str | None,
     os_name: str,
     arch: str,
     config: bytes,
     timeout: float,
     debug: bool,
     stdin_data: bytes,
+    runner_type: str,
+    runner_path: Path | None,
+    dry_run: bool,
+    so_path: Path | None,
 ) -> None:
-    """Run a staged blob looked up from the package registry."""
+    """Run a staged blob or direct .so looked up through picblobs."""
+    from picblobs._extractor import extract
+
     try:
-        blob_data = picblobs.get_blob(blob_type, os_name, arch)
+        if so_path is not None:
+            blob_data = extract(str(so_path))
+        else:
+            if blob_type is None:
+                _fail("blob type is required when --file and --so are not used")
+            blob_data = picblobs.get_blob(blob_type, os_name, arch)
     except FileNotFoundError as e:
+        _fail(str(e))
+    except (ImportError, ValueError) as e:
         _fail(str(e))
 
     try:
@@ -632,17 +884,23 @@ def _run_registry_blob(
             timeout=timeout,
             debug=debug,
             stdin_data=stdin_data,
+            runner_type=runner_type,
+            runner_path=runner_path,
+            dry_run=dry_run,
         )
     except FileNotFoundError as e:
         _fail(str(e))
     except subprocess.TimeoutExpired:
         _fail(f"blob timed out after {timeout}s")
 
+    if dry_run:
+        click.echo(" ".join(result.command))
+        sys.exit(0)
     _emit_run_result(result.stdout, result.stderr, result.exit_code)
 
 
 @main.command()
-@click.argument("positional", nargs=-1, required=True)
+@click.argument("positional", nargs=-1)
 @click.option(
     "-f",
     "--file",
@@ -652,6 +910,12 @@ def _run_registry_blob(
     "looking up by blob type. Bypasses the config / "
     "extraction pipeline — the file is handed to the "
     "runner as-is.",
+)
+@click.option(
+    "--so",
+    "so_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Run a direct .so path by extracting it first",
 )
 @click.option("--config-hex", help="Config bytes as hex (registry mode only)")
 @click.option(
@@ -667,15 +931,26 @@ def _run_registry_blob(
     help="Pipe file contents to the blob's stdin",
 )
 @click.option("--timeout", type=float, default=30.0, show_default=True)
+@click.option("--runner-type", help="Runner type override")
+@click.option(
+    "--runner-path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Explicit runner binary path",
+)
 @click.option("--debug", is_flag=True, help="Verbose output, keep temp files")
+@click.option("--dry-run", is_flag=True, help="Print the command without executing")
 def run(
     positional: tuple[str, ...],
     blob_file: Path | None,
+    so_path: Path | None,
     config_hex: str | None,
     payload_file: Path | None,
     stdin_file: Path | None,
     timeout: float,
+    runner_type: str | None,
+    runner_path: Path | None,
     debug: bool,
+    dry_run: bool,
 ) -> None:
     """Run a PIC blob under the bundled runner and QEMU.
 
@@ -684,25 +959,34 @@ def run(
     \b
       picblobs-cli run <blob_type> <target>      # registry lookup
       picblobs-cli run --file FILE <target>      # already-assembled blob
+      picblobs-cli run --so FILE [target]        # direct shared object
 
     File mode is what you want after ``picblobs-cli build ... -o out.bin``
     or any other flow that produces a complete (code+config) blob.
     """
-    blob_type, target = _parse_run_mode(positional, blob_file)
+    blob_type, target = _parse_run_mode(positional, blob_file, so_path)
     os_name, arch = _parse_target(target)
     stdin_data = stdin_file.read_bytes() if stdin_file else b""
+    selected_runner_type = runner_type or os_name
 
     if blob_file is not None:
-        if config_hex or payload_file:
+        if config_hex or payload_file or so_path:
             _fail(
-                "--config-hex / --payload have no effect with --file; "
+                "--config-hex / --payload / --so have no effect with --file; "
                 "assemble the blob first via 'picblobs-cli build ... -o FILE'"
             )
-        _run_file(blob_file, os_name, arch, stdin_data, timeout, debug)
+        _run_file(
+            blob_file,
+            selected_runner_type,
+            arch,
+            stdin_data,
+            timeout,
+            debug,
+            dry_run,
+            runner_path,
+        )
         return
 
-    if blob_type is None:
-        _fail("Blob type is required when --file is not used.")
     _run_registry_blob(
         blob_type,
         os_name,
@@ -711,7 +995,160 @@ def run(
         timeout,
         debug,
         stdin_data,
+        selected_runner_type,
+        runner_path,
+        dry_run,
+        so_path,
     )
+
+
+# ---------------------------------------------------------------------------
+# disasm / listing
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("blob_type", required=False)
+@click.argument("target", required=False, default=DEFAULT_TARGET)
+@click.option(
+    "-f",
+    "--function",
+    "function_name",
+    default="",
+    help="Function name to disassemble; when omitted, list function symbols",
+)
+@click.option(
+    "--so",
+    "so_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Disassemble a direct .so path",
+)
+def disasm(
+    blob_type: str | None,
+    target: str,
+    function_name: str,
+    so_path: Path | None,
+) -> None:
+    """Disassemble a blob function or list function symbols."""
+    from picblobs._objdump import (
+        disassemble_function,
+        has_debug_info,
+        list_symbols,
+    )
+
+    resolved = _resolve_disasm_so_path(
+        blob_type,
+        target,
+        so_path,
+        prefer_debug=True,
+        allow_release_fallback=False,
+    )
+    _, arch = _parse_target(target)
+    objdump = _find_objdump_or_fail(arch)
+
+    if not function_name:
+        try:
+            symbols = list_symbols(str(resolved), objdump)
+        except RuntimeError as e:
+            _fail(str(e))
+        if not symbols:
+            click.echo(f"No function symbols found in {resolved.name}")
+            return
+        fmt = "  {:<16s} {:<10s} {}"
+        click.echo(f"Functions in {resolved.name}:")
+        click.echo(fmt.format("ADDRESS", "SIZE", "NAME"))
+        for addr, size, name in symbols:
+            click.echo(fmt.format(addr, size, name))
+        return
+
+    if not has_debug_info(str(resolved), objdump):
+        _fail(
+            f"no DWARF debug info in {resolved}; "
+            "build with: python tools/stage_blobs.py --debug"
+        )
+    try:
+        output = disassemble_function(
+            str(resolved),
+            objdump,
+            function_name,
+            source=True,
+        )
+    except RuntimeError as e:
+        _fail(str(e))
+    sys.stdout.write(output)
+
+
+@main.command()
+@click.argument("blob_type", required=False)
+@click.argument("target", required=False, default=DEFAULT_TARGET)
+@click.option(
+    "--so",
+    "so_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Disassemble a direct .so path",
+)
+def listing(
+    blob_type: str | None,
+    target: str,
+    so_path: Path | None,
+) -> None:
+    """Print a full disassembly listing, preferring debug .so files."""
+    from picblobs._objdump import disassemble_full, has_debug_info
+
+    resolved = _resolve_disasm_so_path(
+        blob_type,
+        target,
+        so_path,
+        prefer_debug=True,
+        allow_release_fallback=True,
+    )
+    _, arch = _parse_target(target)
+    objdump = _find_objdump_or_fail(arch)
+    try:
+        output = disassemble_full(
+            str(resolved),
+            objdump,
+            source=has_debug_info(str(resolved), objdump),
+        )
+    except RuntimeError as e:
+        _fail(str(e))
+    sys.stdout.write(output)
+
+
+# ---------------------------------------------------------------------------
+# test
+# ---------------------------------------------------------------------------
+
+
+@main.command(context_settings={"ignore_unknown_options": True})
+@click.option("--os", "os_name", help="Filter by OS")
+@click.option("--arch", help="Filter by architecture")
+@click.option("--type", "blob_type", help="Filter by blob type")
+@click.option("-k", "pytest_filter", help="pytest -k expression")
+@click.option("-v", "--verbose", is_flag=True, help="Pass -v to pytest")
+@click.argument("pytest_args", nargs=-1, type=click.UNPROCESSED)
+def test(
+    os_name: str | None,
+    arch: str | None,
+    blob_type: str | None,
+    pytest_filter: str | None,
+    verbose: bool,
+    pytest_args: tuple[str, ...],
+) -> None:
+    """Run the pytest suite with optional picblobs environment filters."""
+    cmd = [sys.executable, "-m", "pytest"]
+    if verbose:
+        cmd.append("-v")
+    if pytest_filter:
+        cmd.extend(["-k", pytest_filter])
+    cmd.extend(pytest_args)
+
+    result = subprocess.run(
+        cmd,
+        check=False,
+        env=_pytest_env(os_name, arch, blob_type),
+    )
+    sys.exit(result.returncode)
 
 
 # ---------------------------------------------------------------------------
@@ -879,6 +1316,7 @@ def _run_nacl_verify_group(
     os_name: str,
     arches: list[str],
     timeout: float,
+    slow: bool,
     summary: _VerifySummary,
 ) -> None:
     """Run one grouped NaCl pair verify section."""
@@ -886,7 +1324,12 @@ def _run_nacl_verify_group(
     for arch in arches:
         label = f"{os_name}:{arch}"
         try:
-            detail = _verify_nacl_e2e(os_name, arch, timeout)
+            detail = _verify_nacl_e2e(
+                os_name,
+                arch,
+                max(timeout, 600.0) if slow else timeout,
+                force_slow=slow,
+            )
             summary.ok(label, detail)
         except _Skip as e:
             summary.skip(label, str(e))
@@ -1053,20 +1496,43 @@ def _verify_ul_exec(os_name: str, arch: str, timeout: float):
     return run_blob(blob, config=cfg, runner_type=os_name, timeout=timeout)
 
 
-def _verify_nacl_e2e(os_name: str, arch: str, timeout: float) -> str:
+_NACL_E2E_SLOW_ARCHES: frozenset[str] = frozenset()
+
+
+def _check_nacl_e2e_speed(arch: str, force_slow: bool) -> None:
+    if arch not in _NACL_E2E_SLOW_ARCHES or force_slow:
+        return
+    raise _Skip(
+        f"QEMU {arch} too slow for crypto handshake; use --slow to force (timeout=600s)"
+    )
+
+
+def _verify_nacl_e2e(
+    os_name: str,
+    arch: str,
+    timeout: float,
+    *,
+    force_slow: bool = False,
+) -> str:
     """Run nacl_server + nacl_client as a paired handshake, return summary."""
     from picblobs.runner import (
+        reserve_tcp_port,
         run_blob_pair,
     )
 
+    _check_nacl_e2e_speed(arch, force_slow)
     runner_path = find_runner(os_name, arch)
     server_blob = picblobs.get_blob("nacl_server", os_name, arch)
     client_blob = picblobs.get_blob("nacl_client", os_name, arch)
+    port = reserve_tcp_port()
+    config = struct.pack("<H", port)
     result = run_blob_pair(
         server_blob,
         client_blob,
         runner_path,
         os_name,
+        server_config=config,
+        client_config=config,
         timeout=timeout,
     )
     server_out = result.server_stdout
@@ -1108,11 +1574,17 @@ class _Skip(Exception):
 @click.option("--arch", "arch_filter", multiple=True, help="Filter by arch")
 @click.option("--type", "type_filter", multiple=True, help="Filter by blob type")
 @click.option("--timeout", type=float, default=30.0, show_default=True)
+@click.option(
+    "--slow",
+    is_flag=True,
+    help="Run slow tests that are skipped by default",
+)
 def verify(
     os_filter: tuple[str, ...],
     arch_filter: tuple[str, ...],
     type_filter: tuple[str, ...],
     timeout: float,
+    slow: bool,
 ) -> None:
     """Run every staged blob end-to-end (mirrors legacy ``picblobs verify``)."""
     combos = _filter_verify_combos(
@@ -1143,7 +1615,7 @@ def verify(
         or "nacl_server" in type_set
     ):
         for os_name, arches in sorted(nacl_pair_arches.items()):
-            _run_nacl_verify_group(os_name, arches, timeout, summary)
+            _run_nacl_verify_group(os_name, arches, timeout, slow, summary)
 
     summary.emit()
     sys.exit(1 if summary.failed else 0)

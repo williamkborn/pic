@@ -18,7 +18,7 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 - **3 operating systems**: Linux, FreeBSD, Windows
 - **Freestanding C blobs** compiled with `-ffreestanding -nostdlib -fPIC -Os`
 - **Python API** for loading, extracting, and running blobs
-- **CLI** for inspecting, running, and verifying blobs
+- **CLI** (`picblobs-cli`) for inspecting, running, and verifying blobs
 - **Cross-architecture testing** via QEMU user-static
 - **Bazel 9 build system** with automatic Bootlin toolchain provisioning
 - **Kernel toolkit** for red team lab exercises
@@ -26,7 +26,7 @@ It would be amazing if Opus just solved the problem for me and yeeted it into py
 ## Verified status
 
 ```text
-$ picblobs verify
+$ picblobs-cli verify
 [linux] hello
   linux:aarch64         OK   'Hello, world!'
   linux:armv5_arm       OK   'Hello, world!'

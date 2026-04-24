@@ -36,6 +36,7 @@ Repository = "https://github.com/williamkborn/pic"
 Issues = "https://github.com/williamkborn/pic/issues"
 
 [project.scripts]
+picblobs = "picblobs_cli.cli:main"
 picblobs-cli = "picblobs_cli.cli:main"
 
 [project.optional-dependencies]

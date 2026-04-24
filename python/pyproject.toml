@@ -28,9 +28,6 @@ Documentation = "https://github.com/williamkborn/pic/tree/main/docs"
 Repository = "https://github.com/williamkborn/pic"
 Issues = "https://github.com/williamkborn/pic/issues"
 
-[project.scripts]
-picblobs = "picblobs.cli:main"
-
 [project.optional-dependencies]
 elf = [
     "pyelftools>=0.31",
