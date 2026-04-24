@@ -13,10 +13,6 @@ from __future__ import annotations
 import struct
 
 import pytest
-
-from picblobs import get_blob
-from picblobs.runner import is_arch_skip_rosetta, run_blob
-
 from payload_defs import (
     EXPECTATIONS,
     OPERATING_SYSTEMS,
@@ -24,7 +20,8 @@ from payload_defs import (
     RUNNER_TYPE,
     runtime_test_arches,
 )
-
+from picblobs import get_blob
+from picblobs.runner import is_arch_skip_rosetta, run_blob
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,17 +43,17 @@ def _alloc_jump_combos() -> list[tuple[str, str]]:
         os_entry = OPERATING_SYSTEMS.get(os_name)
         if os_entry is None:
             continue
-        for arch in runtime_test_arches(os_name):
-            combos.append((os_name, arch))
+        combos.extend((os_name, arch) for arch in runtime_test_arches(os_name))
     return sorted(combos)
 
 
 def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
     try:
         get_blob(blob_type, target_os, target_arch)
-        return True
     except FileNotFoundError:
         return False
+    else:
+        return True
 
 
 def _build_alloc_jump_config(

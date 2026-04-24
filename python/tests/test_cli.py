@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-
-from picblobs.cli import main, _parse_target, _filter_verify_blobs
+from picblobs.cli import _filter_verify_blobs, _parse_target, main
 
 
 class TestParseTarget:
@@ -21,7 +20,7 @@ class TestParseTarget:
         assert _parse_target("freebsd:aarch64") == ("freebsd", "aarch64")
 
     def test_invalid_no_colon(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             _parse_target("linux_x86_64")
 
 
@@ -188,9 +187,7 @@ class TestArgParsing:
 class TestVerifyCommand:
     """Test the 'verify' subcommand dispatch paths."""
 
-    def test_verify_fallback_runner_path(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_verify_fallback_runner_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import picblobs.cli as cli
 
         monkeypatch.setattr(cli, "_setup_logging", lambda verbose=False: None)

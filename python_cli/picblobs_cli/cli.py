@@ -7,6 +7,7 @@ Implements REQ-020: ``run``, ``verify``, ``build``, ``list-runners``,
 
 from __future__ import annotations
 
+import contextlib
 import os as _os
 import shutil
 import socket
@@ -18,19 +19,18 @@ import threading
 from pathlib import Path
 
 import click
-
 import picblobs
 from picblobs import (
+    OS,
     Arch,
     Blob,
     BlobType,
-    OS,
     ValidationError,
 )
 from picblobs.runner import find_runner, run_blob
-from picblobs_cli import __version__ as CLI_VERSION
-from picblobs_cli import runners_dir
 
+from picblobs_cli import __version__ as cli_version
+from picblobs_cli import runners_dir
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,7 +86,9 @@ def _check_allowed_options(
     provided: dict[str, bool],
 ) -> None:
     """Fail if unsupported options were supplied for a blob type."""
-    bad = [name for name, supplied in provided.items() if supplied and name not in allowed]
+    bad = [
+        name for name, supplied in provided.items() if supplied and name not in allowed
+    ]
     if bad:
         _fail(
             f"{blob.value}: options {sorted(bad)} are not valid for this "
@@ -337,7 +339,7 @@ _BUILDERS = {
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version=CLI_VERSION, prog_name="picblobs-cli")
+@click.version_option(version=cli_version, prog_name="picblobs-cli")
 def main() -> None:
     """picblobs-cli — build, run, and verify PIC blobs under QEMU."""
 
@@ -351,7 +353,7 @@ def main() -> None:
 def info() -> None:
     """Print versions, runner bundle path, and QEMU availability."""
     click.echo(f"picblobs:     {picblobs.__version__}")
-    click.echo(f"picblobs-cli: {CLI_VERSION}")
+    click.echo(f"picblobs-cli: {cli_version}")
     click.echo(f"runner bundle: {runners_dir()}")
 
     # QEMU detection.
@@ -385,17 +387,16 @@ def list_runners(os_filter: str | None, arch_filter: str | None) -> None:
     """List every bundled (runner_type, arch) runner binary."""
     root = runners_dir()
     if not root.exists():
-        _fail(
-            f"runner bundle not found at {root}. "
-            f"Run tools/stage_blobs.py first."
-        )
+        _fail(f"runner bundle not found at {root}. Run tools/stage_blobs.py first.")
 
     fmt = "{:<10s} {:<15s} {}"
     click.echo(fmt.format("RUNNER", "ARCH", "PATH"))
     click.echo(fmt.format("-" * 10, "-" * 15, "-" * 40))
 
     found = False
-    for runner_type, arch, runner in _iter_runner_binaries(root, os_filter, arch_filter):
+    for runner_type, arch, runner in _iter_runner_binaries(
+        root, os_filter, arch_filter
+    ):
         found = True
         click.echo(fmt.format(runner_type, arch, str(runner)))
 
@@ -411,25 +412,43 @@ def list_runners(os_filter: str | None, arch_filter: str | None) -> None:
 @main.command()
 @click.argument("blob_type")
 @click.argument("target")
-@click.option("-o", "--output", "output_path", required=True,
-              type=click.Path(dir_okay=False, path_type=Path),
-              help="Output file (written as raw bytes)")
-@click.option("--payload", "payload_file",
-              type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="Payload bytes (alloc_jump)")
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    required=True,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Output file (written as raw bytes)",
+)
+@click.option(
+    "--payload",
+    "payload_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Payload bytes (alloc_jump)",
+)
 @click.option("--address", help="IPv4 address (stager_tcp)")
 @click.option("--port", type=int, help="TCP port (stager_tcp)")
 @click.option("--fd", type=int, help="File descriptor (stager_fd)")
-@click.option("--path", "stage_path", help="FIFO or file path (stager_pipe, stager_mmap)")
+@click.option(
+    "--path",
+    "stage_path",
+    help="FIFO or file path (stager_pipe, stager_mmap)",
+)
 @click.option("--offset", type=int, default=0, help="File offset (stager_mmap)")
 @click.option("--size", type=int, help="Byte count to map (stager_mmap)")
-@click.option("--pe", "pe_file",
-              type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="PE image (reflective_pe)")
+@click.option(
+    "--pe",
+    "pe_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="PE image (reflective_pe)",
+)
 @click.option("--call-dll-main", is_flag=True, help="Call DllMain (reflective_pe)")
-@click.option("--elf", "elf_file",
-              type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="ELF image (ul_exec)")
+@click.option(
+    "--elf",
+    "elf_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="ELF image (ul_exec)",
+)
 @click.option("--argv", multiple=True, help="argv entry (ul_exec, repeatable)")
 @click.option("--envp", multiple=True, help="envp entry (ul_exec, repeatable)")
 def build(
@@ -533,7 +552,8 @@ def _run_file(
         result = subprocess.run(
             cmd,
             capture_output=True,
-            input=stdin_data if stdin_data else None,
+            check=False,
+            input=stdin_data or None,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -623,19 +643,29 @@ def _run_registry_blob(
 
 @main.command()
 @click.argument("positional", nargs=-1, required=True)
-@click.option("-f", "--file", "blob_file",
-              type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="Run an already-assembled blob file instead of "
-                   "looking up by blob type. Bypasses the config / "
-                   "extraction pipeline — the file is handed to the "
-                   "runner as-is.")
+@click.option(
+    "-f",
+    "--file",
+    "blob_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Run an already-assembled blob file instead of "
+    "looking up by blob type. Bypasses the config / "
+    "extraction pipeline — the file is handed to the "
+    "runner as-is.",
+)
 @click.option("--config-hex", help="Config bytes as hex (registry mode only)")
-@click.option("--payload", "payload_file",
-              type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="Read config from a file (registry mode only)")
-@click.option("--stdin", "stdin_file",
-              type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="Pipe file contents to the blob's stdin")
+@click.option(
+    "--payload",
+    "payload_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Read config from a file (registry mode only)",
+)
+@click.option(
+    "--stdin",
+    "stdin_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Pipe file contents to the blob's stdin",
+)
 @click.option("--timeout", type=float, default=30.0, show_default=True)
 @click.option("--debug", is_flag=True, help="Verbose output, keep temp files")
 def run(
@@ -671,7 +701,8 @@ def run(
         _run_file(blob_file, os_name, arch, stdin_data, timeout, debug)
         return
 
-    assert blob_type is not None
+    if blob_type is None:
+        _fail("Blob type is required when --file is not used.")
     _run_registry_blob(
         blob_type,
         os_name,
@@ -758,12 +789,11 @@ def _filter_verify_combos(
     for allowed, index in filters:
         if allowed:
             combos = [entry for entry in combos if entry[index] in allowed]
-    combos = [
+    return [
         entry
         for entry in combos
         if _is_verify_target_supported(entry[0], entry[1], entry[2])
     ]
-    return combos
 
 
 def _is_verify_target_supported(blob_type: str, os_name: str, arch: str) -> bool:
@@ -841,7 +871,7 @@ def _run_verify_group(
             _record_verify_result(blob_type, os_name, arch, result, summary)
         except _Skip as e:
             summary.skip(label, str(e))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             summary.fail(blob_type, label, f"ERROR {e}")
 
 
@@ -860,7 +890,7 @@ def _run_nacl_verify_group(
             summary.ok(label, detail)
         except _Skip as e:
             summary.skip(label, str(e))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             summary.fail("nacl_e2e", label, f"FAIL {e}")
 
 
@@ -950,7 +980,7 @@ def _verify_stager_pipe(os_name: str, arch: str, timeout: float):
 
     def _writer():
         try:
-            with open(str(fifo), "wb") as f:
+            with fifo.open("wb") as f:
                 f.write(payload)
         except OSError:
             pass
@@ -990,10 +1020,8 @@ def _verify_stager_mmap(os_name: str, arch: str, timeout: float):
         blob = picblobs.get_blob("stager_mmap", os_name, arch)
         return run_blob(blob, config=cfg, runner_type=os_name, timeout=timeout)
     finally:
-        try:
+        with contextlib.suppress(OSError):
             Path(fpath).unlink()
-        except OSError:
-            pass
 
 
 def _verify_alloc_jump(os_name: str, arch: str, timeout: float):
@@ -1047,13 +1075,9 @@ def _verify_nacl_e2e(os_name: str, arch: str, timeout: float) -> str:
     client_err = result.client_stderr
 
     if result.server_exit != 0:
-        raise RuntimeError(
-            f"server exit={result.server_exit} stderr={server_err!r}"
-        )
+        raise RuntimeError(f"server exit={result.server_exit} stderr={server_err!r}")
     if result.client_exit != 0:
-        raise RuntimeError(
-            f"client exit={result.client_exit} stderr={client_err!r}"
-        )
+        raise RuntimeError(f"client exit={result.client_exit} stderr={client_err!r}")
 
     if b"Hello from NaCl PIC blob!" not in server_out:
         raise RuntimeError(f"server did not decrypt expected plaintext: {server_out!r}")

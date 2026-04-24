@@ -64,6 +64,17 @@ struct resolved_funcs {
 };
 
 PIC_TEXT
+__attribute__((noreturn)) static void fail_fast(void) { __builtin_trap(); }
+
+PIC_TEXT
+__attribute__((noreturn)) static void exit_process(
+	fn_ExitProcess pExitProcess, unsigned int uExitCode)
+{
+	pExitProcess(uExitCode);
+	fail_fast();
+}
+
+PIC_TEXT
 static int resolve_funcs(struct resolved_funcs *f)
 {
 	f->pGetStdHandle = (fn_GetStdHandle)pic_resolve(
@@ -89,8 +100,18 @@ PIC_TEXT
 static int write_loaded(void *hOut, fn_WriteFile pWriteFile)
 {
 	unsigned long written = 0;
-	return pWriteFile(
+	int write_status = pWriteFile(
 		hOut, msg_loaded, sizeof(msg_loaded) - 1, &written, PIC_NULL);
+
+	if (0 == write_status) {
+		return 0;
+	}
+
+	if (written != (sizeof(msg_loaded) - 1U)) {
+		return 0;
+	}
+
+	return 1;
 }
 
 PIC_TEXT
@@ -119,9 +140,9 @@ void _start(void)
 	PIC_SELF_RELOCATE();
 
 	struct resolved_funcs f;
-	if (!resolve_funcs(&f))
-		for (;;)
-			;
+	if (!resolve_funcs(&f)) {
+		fail_fast();
+	}
 
 	extern char reflective_pe_config[]
 		__attribute__((visibility("hidden")));
@@ -130,8 +151,9 @@ void _start(void)
 	pic_u32 pe_size;
 	/* flags at +4 and entry_type at +8 are reserved for real loads. */
 	const pic_u8 *pe = validate_pe(cfg, &pe_size);
-	if (!pe)
-		f.pExitProcess(1);
+	if (!pe) {
+		exit_process(f.pExitProcess, 1);
+	}
 
 	/*
 	 * Allocate an RWX region and copy the PE headers in. A real
@@ -142,15 +164,18 @@ void _start(void)
 	 */
 	void *image = f.pVirtualAlloc(PIC_NULL, (pic_uintptr)pe_size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!image)
-		f.pExitProcess(1);
+	if (!image) {
+		exit_process(f.pExitProcess, 1);
+	}
 	copy_image(image, pe, pe_size);
 
 	void *hOut = f.pGetStdHandle(STD_OUTPUT_HANDLE);
-	if (hOut == (void *)-1)
-		f.pExitProcess(1);
-	if (!write_loaded(hOut, f.pWriteFile))
-		f.pExitProcess(1);
+	if (hOut == (void *)-1) {
+		exit_process(f.pExitProcess, 1);
+	}
+	if (!write_loaded(hOut, f.pWriteFile)) {
+		exit_process(f.pExitProcess, 1);
+	}
 
-	f.pExitProcess(0);
+	exit_process(f.pExitProcess, 0);
 }

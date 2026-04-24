@@ -138,7 +138,7 @@ static long set_teb_base(void *teb)
 static int unwrap_handle(void *hFile)
 {
 	pic_uintptr v = (pic_uintptr)hFile;
-	if (v & STD_HANDLE_BIAS)
+	if (0U != (v & STD_HANDLE_BIAS))
 		return (int)(v & STD_HANDLE_MASK);
 	return (int)v;
 }
@@ -163,7 +163,8 @@ static void *mock_VirtualAlloc(void *lpAddress, pic_uintptr dwSize,
 	int prot = PIC_PROT_READ | PIC_PROT_WRITE;
 	/* PAGE_EXECUTE=0x10, PAGE_EXECUTE_READ=0x20,
 	 * PAGE_EXECUTE_READWRITE=0x40 */
-	if (flProtect == 0x10 || flProtect == 0x20 || flProtect == 0x40)
+	if ((0x10UL == flProtect) || (0x20UL == flProtect) ||
+		(0x40UL == flProtect))
 		prot |= PIC_PROT_EXEC;
 
 	void *mem = pic_mmap(PIC_NULL, (pic_size_t)dwSize, prot,
@@ -181,11 +182,11 @@ static int mock_WriteFile(void *hFile, const void *lpBuffer,
 	long ret = pic_write(unwrap_handle(hFile), lpBuffer,
 		(pic_size_t)nNumberOfBytesToWrite);
 	if (ret < 0) {
-		if (lpNumberOfBytesWritten)
+		if (PIC_NULL != lpNumberOfBytesWritten)
 			*lpNumberOfBytesWritten = 0;
 		return 0;
 	}
-	if (lpNumberOfBytesWritten)
+	if (PIC_NULL != lpNumberOfBytesWritten)
 		*lpNumberOfBytesWritten = (unsigned long)ret;
 	return 1;
 }
@@ -198,11 +199,11 @@ static int mock_ReadFile(void *hFile, void *lpBuffer,
 	long ret = pic_read(unwrap_handle(hFile), lpBuffer,
 		(pic_size_t)nNumberOfBytesToRead);
 	if (ret < 0) {
-		if (lpNumberOfBytesRead)
+		if (PIC_NULL != lpNumberOfBytesRead)
 			*lpNumberOfBytesRead = 0;
 		return 0;
 	}
-	if (lpNumberOfBytesRead)
+	if (PIC_NULL != lpNumberOfBytesRead)
 		*lpNumberOfBytesRead = (unsigned long)ret;
 	return 1;
 }
@@ -242,12 +243,17 @@ static void *mock_CreateFileA(const char *lpFileName,
 static int mock_CloseHandle(void *hObject)
 {
 	pic_uintptr v = (pic_uintptr)hObject;
-	if (v & STD_HANDLE_BIAS)
+	long close_status = 0;
+
+	if (0U != (v & STD_HANDLE_BIAS))
 		return 1; /* pseudo-handle — never close stdio fds */
 	int fd = (int)v;
-	if (fd <= 2)
+	if (2 >= fd)
 		return 1;
-	return pic_close(fd) == 0 ? 1 : 0;
+	close_status = pic_close(fd);
+	if (0 == close_status)
+		return 1;
+	return 0;
 }
 
 static void mock_ExitProcess(unsigned int uExitCode)

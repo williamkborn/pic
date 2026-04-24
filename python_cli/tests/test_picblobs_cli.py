@@ -8,21 +8,17 @@ the Bazel build tree).
 from __future__ import annotations
 
 import shutil
-import socket
 import struct
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-from click.testing import CliRunner
-
 import picblobs
 import picblobs_cli
+import pytest
+from click.testing import CliRunner
 from picblobs_cli.cli import main
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -92,6 +88,7 @@ class TestConsoleScript:
         r = subprocess.run(
             [sys.executable, "-m", "picblobs_cli", "--help"],
             capture_output=True,
+            check=False,
             text=True,
             timeout=15,
         )
@@ -118,8 +115,11 @@ class TestListRunners:
         assert "linux" in r.output
         # With filter, non-linux runners shouldn't show as rows (the header
         # mentions RUNNER/ARCH/PATH but those aren't runner types).
-        lines = [line for line in r.output.splitlines()
-                 if line and not line.startswith(("RUNNER", "-"))]
+        lines = [
+            line
+            for line in r.output.splitlines()
+            if line and not line.startswith(("RUNNER", "-"))
+        ]
         for line in lines:
             assert line.startswith("linux"), line
 
@@ -128,9 +128,7 @@ class TestListRunners:
         assert r.exit_code == 0
 
     def test_bogus_filter_fails_clean(self, runner: CliRunner) -> None:
-        r = runner.invoke(
-            main, ["list-runners", "--os", "nonesuch"]
-        )
+        r = runner.invoke(main, ["list-runners", "--os", "nonesuch"])
         assert r.exit_code != 0
 
 
@@ -146,29 +144,41 @@ class TestBuildCommand:
         payload_file.write_bytes(payload)
         out_file = tmp_path / "out.bin"
 
-        r = runner.invoke(main, [
-            "build", "alloc_jump", "linux:x86_64",
-            "--payload", str(payload_file),
-            "-o", str(out_file),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "alloc_jump",
+                "linux:x86_64",
+                "--payload",
+                str(payload_file),
+                "-o",
+                str(out_file),
+            ],
+        )
         assert r.exit_code == 0, r.output
 
         expected = (
-            picblobs.Blob("linux", "x86_64")
-            .alloc_jump()
-            .payload(payload)
-            .build()
+            picblobs.Blob("linux", "x86_64").alloc_jump().payload(payload).build()
         )
         assert out_file.read_bytes() == expected
 
     def test_stager_tcp_parity(self, runner: CliRunner, tmp_path: Path) -> None:
         out_file = tmp_path / "stg.bin"
-        r = runner.invoke(main, [
-            "build", "stager_tcp", "linux:aarch64",
-            "--address", "10.0.0.1",
-            "--port", "4444",
-            "-o", str(out_file),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "stager_tcp",
+                "linux:aarch64",
+                "--address",
+                "10.0.0.1",
+                "--port",
+                "4444",
+                "-o",
+                str(out_file),
+            ],
+        )
         assert r.exit_code == 0, r.output
 
         expected = (
@@ -182,34 +192,58 @@ class TestBuildCommand:
 
     def test_stager_fd(self, runner: CliRunner, tmp_path: Path) -> None:
         out = tmp_path / "fd.bin"
-        r = runner.invoke(main, [
-            "build", "stager_fd", "linux:x86_64",
-            "--fd", "3",
-            "-o", str(out),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "stager_fd",
+                "linux:x86_64",
+                "--fd",
+                "3",
+                "-o",
+                str(out),
+            ],
+        )
         assert r.exit_code == 0
         expected = picblobs.Blob("linux", "x86_64").stager_fd().fd(3).build()
         assert out.read_bytes() == expected
 
     def test_stager_pipe(self, runner: CliRunner, tmp_path: Path) -> None:
         out = tmp_path / "pipe.bin"
-        r = runner.invoke(main, [
-            "build", "stager_pipe", "linux:x86_64",
-            "--path", "/tmp/my.fifo",
-            "-o", str(out),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "stager_pipe",
+                "linux:x86_64",
+                "--path",
+                "/tmp/my.fifo",
+                "-o",
+                str(out),
+            ],
+        )
         assert r.exit_code == 0
-        expected = picblobs.Blob("linux", "x86_64").stager_pipe().path("/tmp/my.fifo").build()
+        expected = (
+            picblobs.Blob("linux", "x86_64").stager_pipe().path("/tmp/my.fifo").build()
+        )
         assert out.read_bytes() == expected
 
     def test_stager_mmap(self, runner: CliRunner, tmp_path: Path) -> None:
         out = tmp_path / "mmap.bin"
-        r = runner.invoke(main, [
-            "build", "stager_mmap", "linux:x86_64",
-            "--path", "/tmp/x",
-            "--size", "64",
-            "-o", str(out),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "stager_mmap",
+                "linux:x86_64",
+                "--path",
+                "/tmp/x",
+                "--size",
+                "64",
+                "-o",
+                str(out),
+            ],
+        )
         assert r.exit_code == 0
         expected = (
             picblobs.Blob("linux", "x86_64")
@@ -225,21 +259,34 @@ class TestBuildCommand:
         dummy = b"MZ" + b"\x00" * 126
         pe_file.write_bytes(dummy)
         out = tmp_path / "refl.bin"
-        r = runner.invoke(main, [
-            "build", "reflective_pe", "windows:x86_64",
-            "--pe", str(pe_file),
-            "-o", str(out),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "reflective_pe",
+                "windows:x86_64",
+                "--pe",
+                str(pe_file),
+                "-o",
+                str(out),
+            ],
+        )
         assert r.exit_code == 0
         expected = picblobs.Blob("windows", "x86_64").reflective_pe().pe(dummy).build()
         assert out.read_bytes() == expected
 
     def test_hello_windows(self, runner: CliRunner, tmp_path: Path) -> None:
         out = tmp_path / "hello_windows.bin"
-        r = runner.invoke(main, [
-            "build", "hello_windows", "windows:x86_64",
-            "-o", str(out),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello_windows",
+                "windows:x86_64",
+                "-o",
+                str(out),
+            ],
+        )
         assert r.exit_code == 0, r.output
         expected = picblobs.Blob("windows", "x86_64").hello_windows().build()
         assert out.read_bytes() == expected
@@ -249,46 +296,74 @@ class TestBuildCommand:
     def test_hello_rejects_unrelated_option(
         self, runner: CliRunner, tmp_path: Path
     ) -> None:
-        r = runner.invoke(main, [
-            "build", "hello", "linux:x86_64",
-            "--address", "1.2.3.4",
-            "-o", str(tmp_path / "x.bin"),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello",
+                "linux:x86_64",
+                "--address",
+                "1.2.3.4",
+                "-o",
+                str(tmp_path / "x.bin"),
+            ],
+        )
         assert r.exit_code != 0
         assert "not valid for this blob type" in r.output
 
-    def test_missing_required_payload(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
-        r = runner.invoke(main, [
-            "build", "alloc_jump", "linux:x86_64",
-            "-o", str(tmp_path / "x.bin"),
-        ])
+    def test_missing_required_payload(self, runner: CliRunner, tmp_path: Path) -> None:
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "alloc_jump",
+                "linux:x86_64",
+                "-o",
+                str(tmp_path / "x.bin"),
+            ],
+        )
         assert r.exit_code != 0
         assert "requires --payload" in r.output
 
     def test_missing_port(self, runner: CliRunner, tmp_path: Path) -> None:
-        r = runner.invoke(main, [
-            "build", "stager_tcp", "linux:x86_64",
-            "--address", "1.2.3.4",
-            "-o", str(tmp_path / "x.bin"),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "stager_tcp",
+                "linux:x86_64",
+                "--address",
+                "1.2.3.4",
+                "-o",
+                str(tmp_path / "x.bin"),
+            ],
+        )
         assert r.exit_code != 0
 
     def test_unsupported_os(self, runner: CliRunner, tmp_path: Path) -> None:
-        r = runner.invoke(main, [
-            "build", "hello", "macos:x86_64",
-            "-o", str(tmp_path / "x.bin"),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello",
+                "macos:x86_64",
+                "-o",
+                str(tmp_path / "x.bin"),
+            ],
+        )
         assert r.exit_code != 0
 
-    def test_invalid_target_format(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
-        r = runner.invoke(main, [
-            "build", "hello", "linux_x86_64",  # missing colon
-            "-o", str(tmp_path / "x.bin"),
-        ])
+    def test_invalid_target_format(self, runner: CliRunner, tmp_path: Path) -> None:
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello",
+                "linux_x86_64",  # missing colon
+                "-o",
+                str(tmp_path / "x.bin"),
+            ],
+        )
         assert r.exit_code != 0
 
     def test_reflective_pe_not_on_linux(
@@ -296,11 +371,18 @@ class TestBuildCommand:
     ) -> None:
         pe_file = tmp_path / "x.pe"
         pe_file.write_bytes(b"MZ" + b"\x00" * 126)
-        r = runner.invoke(main, [
-            "build", "reflective_pe", "linux:x86_64",
-            "--pe", str(pe_file),
-            "-o", str(tmp_path / "out.bin"),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "reflective_pe",
+                "linux:x86_64",
+                "--pe",
+                str(pe_file),
+                "-o",
+                str(tmp_path / "out.bin"),
+            ],
+        )
         assert r.exit_code != 0
 
 
@@ -310,17 +392,13 @@ class TestBuildCommand:
 
 
 class TestRunCommand:
-    def test_hello_native(
-        self, runner: CliRunner, qemu_available: bool
-    ) -> None:
+    def test_hello_native(self, runner: CliRunner, qemu_available: bool) -> None:
         _require_qemu(qemu_available)
         r = runner.invoke(main, ["run", "hello", "linux:x86_64"])
         assert r.exit_code == 0
         assert "Hello, world!" in r.output
 
-    def test_hello_cross_arch(
-        self, runner: CliRunner, qemu_available: bool
-    ) -> None:
+    def test_hello_cross_arch(self, runner: CliRunner, qemu_available: bool) -> None:
         _require_qemu(qemu_available)
         r = runner.invoke(main, ["run", "hello", "linux:aarch64"])
         assert r.exit_code == 0
@@ -351,11 +429,18 @@ class TestRunCommand:
         config_file = tmp_path / "cfg.bin"
         config_file.write_bytes(struct.pack("<I", 0))
 
-        r = runner.invoke(main, [
-            "run", "stager_fd", "linux:x86_64",
-            "--payload", str(config_file),
-            "--stdin", str(stdin_file),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "stager_fd",
+                "linux:x86_64",
+                "--payload",
+                str(config_file),
+                "--stdin",
+                str(stdin_file),
+            ],
+        )
         assert r.exit_code == 0, r.output
         assert "FD_OK" in r.output
 
@@ -376,11 +461,18 @@ class TestRunFromFile:
         payload_file = tmp_path / f"inner_{arch}.bin"
         payload_file.write_bytes(inner_code)
         out_file = tmp_path / f"aj_{arch}.bin"
-        r = runner.invoke(main, [
-            "build", "alloc_jump", f"linux:{arch}",
-            "--payload", str(payload_file),
-            "-o", str(out_file),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "alloc_jump",
+                f"linux:{arch}",
+                "--payload",
+                str(payload_file),
+                "-o",
+                str(out_file),
+            ],
+        )
         assert r.exit_code == 0, r.output
         return out_file
 
@@ -392,9 +484,15 @@ class TestRunFromFile:
     ) -> None:
         _require_qemu(qemu_available)
         blob = self._build_alloc_jump(runner, tmp_path, "x86_64")
-        r = runner.invoke(main, [
-            "run", "--file", str(blob), "linux:x86_64",
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(blob),
+                "linux:x86_64",
+            ],
+        )
         assert r.exit_code == 0, r.output
         assert "PASS" in r.output
 
@@ -407,9 +505,15 @@ class TestRunFromFile:
         """Cross-arch dispatch via QEMU works for files from disk."""
         _require_qemu(qemu_available)
         blob = self._build_alloc_jump(runner, tmp_path, "aarch64")
-        r = runner.invoke(main, [
-            "run", "--file", str(blob), "linux:aarch64",
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(blob),
+                "linux:aarch64",
+            ],
+        )
         assert r.exit_code == 0, r.output
         assert "PASS" in r.output
 
@@ -425,17 +529,29 @@ class TestRunFromFile:
         _require_qemu(qemu_available)
 
         blob_file = self._build_alloc_jump(runner, tmp_path, "x86_64")
-        r_file = runner.invoke(main, [
-            "run", "--file", str(blob_file), "linux:x86_64",
-        ])
+        r_file = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(blob_file),
+                "linux:x86_64",
+            ],
+        )
 
         inner = picblobs.get_blob("test_pass", "linux", "x86_64").code
         cfg_file = tmp_path / "aj_cfg.bin"
         cfg_file.write_bytes(struct.pack("<I", len(inner)) + inner)
-        r_registry = runner.invoke(main, [
-            "run", "alloc_jump", "linux:x86_64",
-            "--payload", str(cfg_file),
-        ])
+        r_registry = runner.invoke(
+            main,
+            [
+                "run",
+                "alloc_jump",
+                "linux:x86_64",
+                "--payload",
+                str(cfg_file),
+            ],
+        )
 
         assert r_file.exit_code == r_registry.exit_code == 0
         assert r_file.stdout == r_registry.stdout
@@ -445,9 +561,16 @@ class TestRunFromFile:
     ) -> None:
         fake = tmp_path / "empty.bin"
         fake.write_bytes(b"\x00" * 16)
-        r = runner.invoke(main, [
-            "run", "hello", "linux:x86_64", "--file", str(fake),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "hello",
+                "linux:x86_64",
+                "--file",
+                str(fake),
+            ],
+        )
         assert r.exit_code != 0
         assert "--file" in r.output
 
@@ -456,10 +579,17 @@ class TestRunFromFile:
     ) -> None:
         fake = tmp_path / "empty.bin"
         fake.write_bytes(b"\x00" * 16)
-        r = runner.invoke(main, [
-            "run", "--file", str(fake), "linux:x86_64",
-            "--config-hex", "00",
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(fake),
+                "linux:x86_64",
+                "--config-hex",
+                "00",
+            ],
+        )
         assert r.exit_code != 0
 
     def test_payload_rejected_in_file_mode(
@@ -469,30 +599,38 @@ class TestRunFromFile:
         fake.write_bytes(b"\x00" * 16)
         stray = tmp_path / "stray.bin"
         stray.write_bytes(b"X")
-        r = runner.invoke(main, [
-            "run", "--file", str(fake), "linux:x86_64",
-            "--payload", str(stray),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(fake),
+                "linux:x86_64",
+                "--payload",
+                str(stray),
+            ],
+        )
         assert r.exit_code != 0
 
     def test_missing_file(self, runner: CliRunner, tmp_path: Path) -> None:
-        r = runner.invoke(main, [
-            "run", "--file", str(tmp_path / "does_not_exist.bin"),
-            "linux:x86_64",
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(tmp_path / "does_not_exist.bin"),
+                "linux:x86_64",
+            ],
+        )
         assert r.exit_code != 0
 
-    def test_file_mode_needs_target(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_file_mode_needs_target(self, runner: CliRunner, tmp_path: Path) -> None:
         fake = tmp_path / "empty.bin"
         fake.write_bytes(b"\x00" * 16)
         r = runner.invoke(main, ["run", "--file", str(fake)])
         assert r.exit_code != 0
 
-    def test_registry_mode_needs_two_positionals(
-        self, runner: CliRunner
-    ) -> None:
+    def test_registry_mode_needs_two_positionals(self, runner: CliRunner) -> None:
         r = runner.invoke(main, ["run", "hello"])
         assert r.exit_code != 0
 
@@ -508,20 +646,34 @@ class TestRunFromFile:
         inner = picblobs.get_blob("test_fd_ok", "linux", "x86_64").code
 
         stage = tmp_path / "stage.bin"
-        rb = runner.invoke(main, [
-            "build", "stager_fd", "linux:x86_64",
-            "--fd", "0",
-            "-o", str(stage),
-        ])
+        rb = runner.invoke(
+            main,
+            [
+                "build",
+                "stager_fd",
+                "linux:x86_64",
+                "--fd",
+                "0",
+                "-o",
+                str(stage),
+            ],
+        )
         assert rb.exit_code == 0, rb.output
 
         stdin_file = tmp_path / "stdin.bin"
         stdin_file.write_bytes(struct.pack("<I", len(inner)) + inner)
 
-        r = runner.invoke(main, [
-            "run", "--file", str(stage), "linux:x86_64",
-            "--stdin", str(stdin_file),
-        ])
+        r = runner.invoke(
+            main,
+            [
+                "run",
+                "--file",
+                str(stage),
+                "linux:x86_64",
+                "--stdin",
+                str(stdin_file),
+            ],
+        )
         assert r.exit_code == 0, r.output
         assert "FD_OK" in r.output
 
@@ -533,22 +685,16 @@ class TestRunFromFile:
 
 class TestVerifyCommand:
     @pytest.mark.timeout(60)
-    def test_hello_only(
-        self, runner: CliRunner, qemu_available: bool
-    ) -> None:
+    def test_hello_only(self, runner: CliRunner, qemu_available: bool) -> None:
         _require_qemu(qemu_available)
         r = runner.invoke(main, ["verify", "--type", "hello", "--os", "linux"])
         assert r.exit_code == 0
         assert "passed" in r.output
 
     @pytest.mark.timeout(60)
-    def test_type_and_os_filter(
-        self, runner: CliRunner, qemu_available: bool
-    ) -> None:
+    def test_type_and_os_filter(self, runner: CliRunner, qemu_available: bool) -> None:
         _require_qemu(qemu_available)
-        r = runner.invoke(
-            main, ["verify", "--type", "hello", "--os", "linux"]
-        )
+        r = runner.invoke(main, ["verify", "--type", "hello", "--os", "linux"])
         assert r.exit_code == 0
         # No freebsd output when --os filter is applied.
         assert "[freebsd]" not in r.output
@@ -620,7 +766,8 @@ class TestRunnerDiscovery:
         # search_paths to bypass both sources.
         with pytest.raises(FileNotFoundError) as exc:
             find_runner(
-                "not_a_real_os", "not_an_arch",
+                "not_a_real_os",
+                "not_an_arch",
                 search_paths=[tmp_path],
             )
         assert "picblobs-cli" in str(exc.value)

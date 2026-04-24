@@ -3,7 +3,8 @@
 Fluent, immutable builder pattern for assembling PIC blobs. Usage:
 
     picblobs.Blob("linux", "x86_64").alloc_jump().payload(b"...").build()
-    picblobs.Blob("linux", "aarch64").stager_tcp().address("10.0.0.1").port(4444).build()
+    picblobs.Blob("linux", "aarch64").stager_tcp()
+        .address("10.0.0.1").port(4444).build()
     picblobs.Blob("windows", "x86_64").reflective_pe().pe(pe_bytes).build()
 
 Each step returns a new builder object; partial builders are reusable as
@@ -74,7 +75,7 @@ class _BaseTypedBuilder:
     _os: OS
     _arch: Arch
 
-    def _replace(self, **kwargs) -> "_BaseTypedBuilder":
+    def _replace(self, **kwargs) -> _BaseTypedBuilder:
         return dataclasses.replace(self, **kwargs)
 
 
@@ -109,7 +110,7 @@ class AllocJumpBuilder(_BaseTypedBuilder):
 
     _payload: bytes | None = None
 
-    def payload(self, data: bytes) -> "AllocJumpBuilder":
+    def payload(self, data: bytes) -> AllocJumpBuilder:
         if not isinstance(data, (bytes, bytearray)):
             raise ValidationError("payload must be bytes")
         if len(data) == 0:
@@ -136,7 +137,7 @@ class StagerTcpBuilder(_BaseTypedBuilder):
     _address: str | None = None
     _port: int | None = None
 
-    def address(self, ip: str) -> "StagerTcpBuilder":
+    def address(self, ip: str) -> StagerTcpBuilder:
         if not isinstance(ip, str):
             raise ValidationError("address must be a string (IPv4 dotted-quad)")
         try:
@@ -145,7 +146,7 @@ class StagerTcpBuilder(_BaseTypedBuilder):
             raise ValidationError(f"address {ip!r} is not a valid IPv4") from e
         return self._replace(_address=ip)
 
-    def port(self, port: int) -> "StagerTcpBuilder":
+    def port(self, port: int) -> StagerTcpBuilder:
         if not isinstance(port, int) or isinstance(port, bool):
             raise ValidationError("port must be int")
         if port < 1 or port > 65535:
@@ -172,7 +173,7 @@ class StagerFdBuilder(_BaseTypedBuilder):
 
     _fd: int = 0
 
-    def fd(self, fd: int) -> "StagerFdBuilder":
+    def fd(self, fd: int) -> StagerFdBuilder:
         if not isinstance(fd, int) or isinstance(fd, bool):
             raise ValidationError("fd must be int")
         if fd < 0 or fd > 0xFFFFFFFF:
@@ -194,7 +195,7 @@ class StagerPipeBuilder(_BaseTypedBuilder):
 
     _path: str | None = None
 
-    def path(self, path: str) -> "StagerPipeBuilder":
+    def path(self, path: str) -> StagerPipeBuilder:
         if not isinstance(path, str):
             raise ValidationError("path must be a string")
         if len(path) == 0:
@@ -223,7 +224,7 @@ class StagerMmapBuilder(_BaseTypedBuilder):
     _offset: int = 0
     _size: int | None = None
 
-    def path(self, path: str) -> "StagerMmapBuilder":
+    def path(self, path: str) -> StagerMmapBuilder:
         if not isinstance(path, str):
             raise ValidationError("path must be a string")
         if len(path) == 0:
@@ -232,14 +233,14 @@ class StagerMmapBuilder(_BaseTypedBuilder):
             raise ValidationError(f"path too long: {len(path)} bytes (max 255)")
         return self._replace(_path=path)
 
-    def offset(self, offset: int) -> "StagerMmapBuilder":
+    def offset(self, offset: int) -> StagerMmapBuilder:
         if not isinstance(offset, int) or isinstance(offset, bool):
             raise ValidationError("offset must be int")
         if offset < 0:
             raise ValidationError(f"offset {offset} must be non-negative")
         return self._replace(_offset=offset)
 
-    def size(self, size: int) -> "StagerMmapBuilder":
+    def size(self, size: int) -> StagerMmapBuilder:
         if not isinstance(size, int) or isinstance(size, bool):
             raise ValidationError("size must be int")
         if size <= 0:
@@ -273,7 +274,7 @@ class ReflectivePeBuilder(_BaseTypedBuilder):
     _pe: bytes | None = None
     _call_dll_main: bool = False
 
-    def pe(self, data: bytes) -> "ReflectivePeBuilder":
+    def pe(self, data: bytes) -> ReflectivePeBuilder:
         if not isinstance(data, (bytes, bytearray)):
             raise ValidationError("pe must be bytes")
         if len(data) < 2:
@@ -284,7 +285,7 @@ class ReflectivePeBuilder(_BaseTypedBuilder):
             )
         return self._replace(_pe=bytes(data))
 
-    def call_dll_main(self, flag: bool) -> "ReflectivePeBuilder":
+    def call_dll_main(self, flag: bool) -> ReflectivePeBuilder:
         if not isinstance(flag, bool):
             raise ValidationError("call_dll_main must be bool")
         return self._replace(_call_dll_main=flag)
@@ -310,14 +311,14 @@ class UlExecBuilder(_BaseTypedBuilder):
     _argv: tuple[str, ...] | None = None
     _envp: tuple[str, ...] = ()
 
-    def elf(self, data: bytes) -> "UlExecBuilder":
+    def elf(self, data: bytes) -> UlExecBuilder:
         if not isinstance(data, (bytes, bytearray)):
             raise ValidationError("elf must be bytes")
         if len(data) < 4 or bytes(data[:4]) != b"\x7fELF":
             raise ValidationError("elf does not start with magic 0x7fELF")
         return self._replace(_elf=bytes(data))
 
-    def argv(self, values: list[str]) -> "UlExecBuilder":
+    def argv(self, values: list[str]) -> UlExecBuilder:
         if not isinstance(values, (list, tuple)):
             raise ValidationError("argv must be a list or tuple of str")
         for v in values:
@@ -325,7 +326,7 @@ class UlExecBuilder(_BaseTypedBuilder):
                 raise ValidationError("argv entries must be str")
         return self._replace(_argv=tuple(values))
 
-    def envp(self, values: list[str]) -> "UlExecBuilder":
+    def envp(self, values: list[str]) -> UlExecBuilder:
         if not isinstance(values, (list, tuple)):
             raise ValidationError("envp must be a list or tuple of str")
         for v in values:

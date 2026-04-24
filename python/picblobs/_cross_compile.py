@@ -203,7 +203,7 @@ def _find_bazel_output_base() -> Path | None:
     try:
         # Find project root (look for MODULE.bazel).
         p = Path(__file__).resolve()
-        for parent in [p] + list(p.parents):
+        for parent in [p, *list(p.parents)]:
             if (parent / "MODULE.bazel").exists():
                 project_root = parent
                 break
@@ -213,6 +213,7 @@ def _find_bazel_output_base() -> Path | None:
         res = subprocess.run(
             ["bazel", "info", "output_base"],
             capture_output=True,
+            check=False,
             text=True,
             timeout=10,
             cwd=str(project_root),
@@ -316,7 +317,7 @@ def compile_c_elf(
             cmd.extend(extra_cflags)
         cmd.extend(ARCH_EXTRA_CFLAGS.get(arch, []))
 
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, check=False, timeout=30)
         if result.returncode != 0:
             return None
 
@@ -352,7 +353,7 @@ def compile_raw_elf(arch: str, asm_source: str, *, pie: bool = False) -> bytes |
             cmd.append("-static")
         cmd.extend(ARCH_EXTRA_CFLAGS.get(arch, []))
 
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, check=False, timeout=30)
         if result.returncode != 0:
             return None
 

@@ -1,0 +1,49 @@
+target-version = "py310"
+line-length = 88
+extend-exclude = [
+    "build-artifacts",
+]
+
+[lint]
+select = ["ALL"]
+ignore = [
+    "ARG001",
+    "ARG002",
+    "ARG005",
+    "ANN",
+    "BLE001",
+    "C901",
+    "COM812",
+    "D",
+    "EM",
+    "ERA001",
+    "EXE001",
+    "FBT",
+    "FLY002",
+    "INP001",
+    "N806",
+    "N818",
+    "PLC0415",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR2004",
+                                    "S603",
+    "S607",
+    "S105",
+            "SLF001",
+    "T201",
+    "TRY003",
+    "TRY400",
+]
+
+[lint.per-file-ignores]
+"python/tests/conftest.py" = ["E402"]
+"python/tests/*.py" = ["PLR0402", "PT006", "PT011", "PT012", "PT018", "S101", "S108", "TC003"]
+"python/tests/test_sync.py" = ["E402"]
+"python_cli/tests/*.py" = ["PLR0402", "PT006", "PT011", "PT012", "PT018", "S101", "S108", "TC003"]
+"tools/extract_release.py" = ["E402"]
+"tools/generate.py" = ["E501"]
+"tools/registry.py" = ["E501"]
+"tools/validate_wine.py" = ["E402"]

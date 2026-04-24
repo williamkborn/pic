@@ -1,10 +1,9 @@
 /*
- * FreeBSD test runner — syscall-translating loader on Linux.
+ * FreeBSD test runner — Linux-hosted FreeBSD syscall emulation.
  *
- * Loads a FreeBSD-targeting PIC blob, patches FreeBSD syscall numbers
- * to their Linux equivalents in the code, then executes the blob.
- * The blob thinks it's calling FreeBSD syscalls but actually hits
- * the Linux kernel with correct numbers.
+ * On x86_64 this runner executes the blob under ptrace and translates
+ * FreeBSD syscall numbers/results at the syscall boundary. Other
+ * architectures still use static syscall patching in the loaded code.
  *
  * This runner is hand-written (not generated) because it needs to
  * use Linux syscalls internally while translating FreeBSD numbers
@@ -116,9 +115,11 @@ static const struct nr_map syscall_table[] = {
 
 static inline pic_u32 translate_nr(pic_u32 freebsd_nr)
 {
-	for (int i = 0; i < (int)NR_TABLE_SIZE; i++)
-		if (syscall_table[i].freebsd_nr == freebsd_nr)
+	for (int i = 0; i < (int)NR_TABLE_SIZE; i++) {
+		if (syscall_table[i].freebsd_nr == freebsd_nr) {
 			return syscall_table[i].linux_nr;
+		}
+	}
 	return freebsd_nr;
 }
 
@@ -156,7 +157,8 @@ static inline void write16_be(pic_u8 *p, pic_u16 v)
 	p[1] = (pic_u8)v;
 }
 
-static pic_u8 *find_prev_mov_eax_imm(pic_u8 *code, pic_size_t start, pic_size_t limit)
+static pic_u8 *find_prev_mov_eax_imm(
+	pic_u8 *code, pic_size_t start, pic_size_t limit)
 {
 	pic_size_t lo = (start > limit) ? (start - limit) : 0;
 	for (pic_size_t i = start; i >= lo + 4; i--) {
@@ -171,13 +173,13 @@ static pic_u8 *find_prev_mov_eax_imm(pic_u8 *code, pic_size_t start, pic_size_t 
 static pic_u32 translate_mmap_flags(pic_u32 freebsd_flags)
 {
 	pic_u32 linux_flags = 0;
-	if (freebsd_flags & 0x0001)
+	if (0U != (freebsd_flags & 0x0001U))
 		linux_flags |= 0x01;
-	if (freebsd_flags & 0x0002)
+	if (0U != (freebsd_flags & 0x0002U))
 		linux_flags |= 0x02;
-	if (freebsd_flags & 0x0010)
+	if (0U != (freebsd_flags & 0x0010U))
 		linux_flags |= 0x10;
-	if (freebsd_flags & 0x1000)
+	if (0U != (freebsd_flags & 0x1000U))
 		linux_flags |= 0x20;
 	return linux_flags;
 }
@@ -192,25 +194,13 @@ static long linux_wait4(long pid, int *status)
 	return pic_syscall4(__NR_wait4, pid, (long)status, 0, 0);
 }
 
-static int wait_stopped(int status)
-{
-	return (status & 0xff) == 0x7f;
-}
+static int wait_stopped(int status) { return (status & 0xff) == 0x7f; }
 
-static int stop_signal(int status)
-{
-	return (status >> 8) & 0xff;
-}
+static int stop_signal(int status) { return (status >> 8) & 0xff; }
 
-static int exited(int status)
-{
-	return (status & 0x7f) == 0;
-}
+static int exited(int status) { return (status & 0x7f) == 0; }
 
-static int exit_status(int status)
-{
-	return (status >> 8) & 0xff;
-}
+static int exit_status(int status) { return (status >> 8) & 0xff; }
 
 static int signaled(int status)
 {
@@ -218,10 +208,7 @@ static int signaled(int status)
 	return sig != 0 && sig != 0x7f;
 }
 
-static int term_signal(int status)
-{
-	return status & 0x7f;
-}
+static int term_signal(int status) { return status & 0x7f; }
 
 #if defined(__x86_64__)
 static void set_freebsd_result(struct x86_64_regs *regs)
@@ -245,59 +232,123 @@ static void translate_x86_64_entry(struct x86_64_regs *regs)
 	regs->orig_rax = linux_nr;
 }
 
+static int wait_initial_trace_stop(long pid, int *status)
+{
+	if (linux_wait4(pid, status) < 0)
+		return 121;
+	if (0 == wait_stopped(*status))
+		return 122;
+	if (linux_ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0)
+		return 123;
+	return 0;
+}
+
+static int wait_for_ptrace_stop(long pid, int *status)
+{
+	if (linux_ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0)
+		return 124;
+	if (linux_wait4(pid, status) < 0)
+		return 125;
+	return 0;
+}
+
+static int wait_for_signal_resume(long pid, int sig, int *status)
+{
+	if (linux_ptrace(PTRACE_CONT, pid, 0, sig) < 0)
+		return 129;
+	if (linux_wait4(pid, status) < 0)
+		return 130;
+	return 0;
+}
+
+static int maybe_trace_exit(int status, int *done)
+{
+	*done = 1;
+	if (exited(status))
+		return exit_status(status);
+	if (signaled(status))
+		return 128 + term_signal(status);
+	*done = 0;
+	return 0;
+}
+
+static int handle_x86_64_syscall_stop(long pid, int *in_syscall)
+{
+	struct x86_64_regs regs = {0};
+
+	if (linux_ptrace(PTRACE_GETREGS, pid, 0, (long)&regs) < 0)
+		return 127;
+	if (0 == *in_syscall)
+		translate_x86_64_entry(&regs);
+	else
+		set_freebsd_result(&regs);
+	if (linux_ptrace(PTRACE_SETREGS, pid, 0, (long)&regs) < 0)
+		return 128;
+	*in_syscall = !(*in_syscall);
+	return 0;
+}
+
+static int handle_x86_64_signal_stop(long pid, int sig, int *status, int *done)
+{
+	int trace_status = 0;
+
+	if (sig == SIGTRAP)
+		return 0;
+
+	trace_status = wait_for_signal_resume(pid, sig, status);
+	if (0 != trace_status) {
+		return trace_status;
+	}
+
+	return maybe_trace_exit(*status, done);
+}
+
 static int trace_child_x86_64(long pid)
 {
 	int status = 0;
 	int in_syscall = 0;
-	struct x86_64_regs regs;
+	int done = 0;
+	int trace_status = wait_initial_trace_stop(pid, &status);
 
-	if (linux_wait4(pid, &status) < 0)
-		return 121;
-	if (!wait_stopped(status))
-		return 122;
-	if (linux_ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0)
-		return 123;
+	if (0 != trace_status) {
+		return trace_status;
+	}
 
 	for (;;) {
-		if (linux_ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0)
-			return 124;
-		if (linux_wait4(pid, &status) < 0)
-			return 125;
+		trace_status = wait_for_ptrace_stop(pid, &status);
+		if (0 != trace_status) {
+			return trace_status;
+		}
 
-		if (exited(status))
-			return exit_status(status);
-		if (signaled(status))
-			return 128 + term_signal(status);
-		if (!wait_stopped(status))
+		trace_status = maybe_trace_exit(status, &done);
+		if (0 != done) {
+			return trace_status;
+		}
+		if (0 == wait_stopped(status))
 			return 126;
 
 		int sig = stop_signal(status);
 		if (sig == (SIGTRAP | 0x80)) {
-			if (linux_ptrace(PTRACE_GETREGS, pid, 0, (long)&regs) < 0)
-				return 127;
-			if (!in_syscall)
-				translate_x86_64_entry(&regs);
-			else
-				set_freebsd_result(&regs);
-			if (linux_ptrace(PTRACE_SETREGS, pid, 0, (long)&regs) < 0)
-				return 128;
-			in_syscall = !in_syscall;
+			trace_status =
+				handle_x86_64_syscall_stop(pid, &in_syscall);
+			if (0 != trace_status) {
+				return trace_status;
+			}
 			continue;
 		}
-		if (sig == SIGTRAP)
-			continue;
-		if (linux_ptrace(PTRACE_CONT, pid, 0, sig) < 0)
-			return 129;
-		if (linux_wait4(pid, &status) < 0)
-			return 130;
-		if (exited(status))
-			return exit_status(status);
-		if (signaled(status))
-			return 128 + term_signal(status);
+		trace_status =
+			handle_x86_64_signal_stop(pid, sig, &status, &done);
+		if (0 != done) {
+			return trace_status;
+		}
+		if (0 != trace_status) {
+			return trace_status;
+		}
 	}
 }
 
-static pic_u8 *find_prev_mov_r10d_imm(pic_u8 *code, pic_size_t start, pic_size_t limit)
+static pic_u8 *find_prev_mov_r10d_imm(
+	pic_u8 *code, pic_size_t start, pic_size_t limit)
 {
 	pic_size_t lo = (start > limit) ? (start - limit) : 0;
 	for (pic_size_t i = start; i >= lo + 5; i--) {
@@ -309,19 +360,34 @@ static pic_u8 *find_prev_mov_r10d_imm(pic_u8 *code, pic_size_t start, pic_size_t
 	return (pic_u8 *)0;
 }
 
-static void patch_x86_64_errno_normalization(pic_u8 *code, pic_size_t syscall_off, pic_size_t size)
+static int bytes_match(const pic_u8 *code, pic_size_t offset,
+	const pic_u8 *pattern, pic_size_t len)
 {
+	for (pic_size_t i = 0; i < len; i++) {
+		if (code[offset + i] != pattern[i]) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static void patch_x86_64_errno_normalization(
+	pic_u8 *code, pic_size_t syscall_off, pic_size_t size)
+{
+	static const pic_u8 setc_seq[] = {0x40, 0x0f, 0x92};
+	static const pic_u8 add_seq[] = {0x40, 0x84};
+	static const pic_u8 jz_seq[] = {0x74, 0x03};
+	static const pic_u8 neg_seq[] = {0x48, 0xf7, 0xd8};
+
 	if (syscall_off + 14 > size)
 		return;
-	if (code[syscall_off + 2] != 0x40 || code[syscall_off + 3] != 0x0f ||
-		code[syscall_off + 4] != 0x92)
+	if (0 == bytes_match(code, syscall_off + 2, setc_seq, sizeof(setc_seq)))
 		return;
-	if (code[syscall_off + 6] != 0x40 || code[syscall_off + 7] != 0x84)
+	if (0 == bytes_match(code, syscall_off + 6, add_seq, sizeof(add_seq)))
 		return;
-	if (code[syscall_off + 9] != 0x74 || code[syscall_off + 10] != 0x03)
+	if (0 == bytes_match(code, syscall_off + 9, jz_seq, sizeof(jz_seq)))
 		return;
-	if (code[syscall_off + 11] != 0x48 || code[syscall_off + 12] != 0xf7 ||
-		code[syscall_off + 13] != 0xd8)
+	if (0 == bytes_match(code, syscall_off + 11, neg_seq, sizeof(neg_seq)))
 		return;
 	for (pic_size_t i = syscall_off + 2; i < syscall_off + 14; i++)
 		code[i] = 0x90;
@@ -332,16 +398,17 @@ static void patch_syscalls_x86_64(pic_u8 *code, pic_size_t size)
 	for (pic_size_t i = 0; i + 1 < size; i++) {
 		if (code[i] == 0x0f && code[i + 1] == 0x05) {
 			pic_u8 *mov = find_prev_mov_eax_imm(code, i, 32);
-			if (!mov)
+			if (PIC_NULL == mov)
 				continue;
 			pic_u32 nr = read32_le(mov + 1);
 			pic_u32 lnr = translate_nr(nr);
 			if (nr == 477) {
-				pic_u8 *mov_r10d = find_prev_mov_r10d_imm(code, i, 32);
+				pic_u8 *mov_r10d =
+					find_prev_mov_r10d_imm(code, i, 32);
 				if (mov_r10d) {
 					pic_u32 flags = read32_le(mov_r10d + 2);
-					write32_le(
-						mov_r10d + 2, translate_mmap_flags(flags));
+					write32_le(mov_r10d + 2,
+						translate_mmap_flags(flags));
 				}
 			}
 			if (lnr != nr)
@@ -537,51 +604,61 @@ static pic_size_t parse_size(const char *s)
 	}
 	for (; *s; s++) {
 		int d = parse_digit(*s, base);
-		if (d < 0)
+		if (0 > d)
 			return 0;
 		v = v * (pic_size_t)base + (pic_size_t)d;
 	}
 	return v;
 }
 
-int runner_main(int argc, char **argv)
+static pic_u8 *load_blob_image(const char *path, long *size_out)
 {
-	if (argc < 2)
-		pic_exit_group(RUNNER_ERROR);
+	int fd = (int)pic_open(path, PIC_O_RDONLY, 0);
+	long size = 0;
+	void *blob = PIC_NULL;
 
-	int fd = (int)pic_open(argv[1], PIC_O_RDONLY, 0);
 	if (fd < 0)
-		pic_exit_group(RUNNER_ERROR);
+		return PIC_NULL;
 
-	long size = file_size(fd);
+	size = file_size(fd);
 	if (size <= 0) {
-		pic_close(fd);
-		pic_exit_group(RUNNER_ERROR);
+		(void)pic_close(fd);
+		return PIC_NULL;
 	}
 
-	void *blob = pic_mmap(PIC_NULL, (pic_size_t)size,
+	blob = pic_mmap(PIC_NULL, (pic_size_t)size,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
 	if ((long)blob == -1) {
-		pic_close(fd);
-		pic_exit_group(RUNNER_ERROR);
+		(void)pic_close(fd);
+		return PIC_NULL;
 	}
 
 	if (read_all(fd, blob, (pic_size_t)size) < 0) {
-		pic_close(fd);
-		pic_exit_group(RUNNER_ERROR);
+		(void)pic_close(fd);
+		return PIC_NULL;
 	}
-	pic_close(fd);
 
-	/* Optional argv[2]: hex text_end — scope syscall patching to the
-	 * code region so .rodata/.data/.config can't cause false matches. */
+	(void)pic_close(fd);
+	*size_out = size;
+	return (pic_u8 *)blob;
+}
+
+static pic_size_t patch_limit_from_argv(int argc, char **argv, long size)
+{
 	pic_size_t patch_limit = (pic_size_t)size;
+
 	if (argc >= 3) {
 		pic_size_t t_end = parse_size(argv[2]);
-		if (t_end > 0 && t_end <= (pic_size_t)size)
+		if ((t_end > 0) && (t_end <= (pic_size_t)size))
 			patch_limit = t_end;
 	}
 
+	return patch_limit;
+}
+
+static void run_x86_64_blob(void *blob)
+{
 #if defined(__x86_64__)
 	long pid = pic_syscall0(__NR_fork);
 	if (pid < 0)
@@ -594,9 +671,33 @@ int runner_main(int argc, char **argv)
 		pic_exit_group(RUNNER_ERROR);
 	}
 	pic_exit_group(trace_child_x86_64(pid));
+#else
+	(void)blob;
+#endif
+}
+
+int runner_main(int argc, char **argv)
+{
+	long size = 0;
+	pic_u8 *blob = PIC_NULL;
+	pic_size_t patch_limit = 0;
+
+	if (argc < 2)
+		pic_exit_group(RUNNER_ERROR);
+
+	blob = load_blob_image(argv[1], &size);
+	if (PIC_NULL == blob)
+		pic_exit_group(RUNNER_ERROR);
+
+	/* Optional argv[2]: hex text_end — scope syscall patching to the
+	 * code region so .rodata/.data/.config can't cause false matches. */
+	patch_limit = patch_limit_from_argv(argc, argv, size);
+
+#if defined(__x86_64__)
+	run_x86_64_blob(blob);
 #endif
 
-	patch_syscalls((pic_u8 *)blob, patch_limit);
+	patch_syscalls(blob, patch_limit);
 
 #ifdef __thumb__
 	((void (*)(void))((pic_uintptr)blob | 1))();

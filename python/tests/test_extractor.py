@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
+from elftools.common.exceptions import ELFError
 from picblobs._extractor import BlobData, extract
 
 
@@ -55,7 +55,7 @@ class TestExtract:
     def test_invalid_elf_raises(self, tmp_path: Path) -> None:
         bad_file = tmp_path / "bad.so"
         bad_file.write_bytes(b"not an elf")
-        with pytest.raises(Exception):
+        with pytest.raises(ELFError):
             extract(bad_file)
 
     @pytest.mark.requires_blobs
@@ -98,7 +98,7 @@ class TestPathDerivation:
         fake = tmp_path / "linux" / "x86_64" / "test.so"
         fake.parent.mkdir(parents=True)
         fake.write_bytes(b"not an elf")
-        with pytest.raises(Exception):
+        with pytest.raises(ELFError):
             extract(
                 fake, blob_type="custom", target_os="freebsd", target_arch="aarch64"
             )

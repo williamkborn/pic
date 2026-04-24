@@ -433,7 +433,41 @@ static int map_load_segment(const pic_u8 *elf_data, pic_size_t elf_size,
 	if (segment->p_flags & PF_X)
 		pic_sync_icache((void *)seg_addr, segment->p_memsz);
 
-	pic_mprotect((void *)map_start, map_size, pf_to_prot(segment->p_flags));
+	if (pic_mprotect((void *)map_start, map_size,
+		    pf_to_prot(segment->p_flags)) < 0) {
+		(void)pic_munmap((void *)map_start, map_size);
+		return 0;
+	}
+	return 1;
+}
+
+PIC_TEXT
+static int validate_elf_image(const Elf_Ehdr *ehdr, pic_size_t elf_size)
+{
+	pic_size_t phdr_end = 0;
+
+	if (elf_size < sizeof(Elf_Ehdr)) {
+		return 0;
+	}
+
+	if (*(const pic_u32 *)ehdr->e_ident != ELF_MAGIC) {
+		return 0;
+	}
+
+	if ((ET_EXEC != ehdr->e_type) && (ET_DYN != ehdr->e_type)) {
+		return 0;
+	}
+
+	if (ehdr->e_phnum > 512) {
+		return 0;
+	}
+
+	phdr_end = (pic_size_t)ehdr->e_phoff +
+		(pic_size_t)ehdr->e_phnum * (pic_size_t)ehdr->e_phentsize;
+	if (((pic_size_t)ehdr->e_phoff > elf_size) || (phdr_end > elf_size)) {
+		return 0;
+	}
+
 	return 1;
 }
 
@@ -456,12 +490,17 @@ PIC_TEXT
 static pic_uintptr load_elf_from_memory(const pic_u8 *elf_data,
 	pic_size_t elf_size, const Elf_Ehdr *ehdr, Elf_Addr *out_phdr_addr)
 {
-	const Elf_Phdr *phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
+	const Elf_Phdr *phdr = PIC_NULL;
 	pic_uintptr base = 0;
 	pic_uintptr vaddr_min = 0;
 	pic_uintptr vaddr_max = 0;
 
-	if (!find_load_range(ehdr, phdr, &vaddr_min, &vaddr_max))
+	if (0 == validate_elf_image(ehdr, elf_size))
+		return (pic_uintptr)-1;
+
+	phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
+
+	if (0 == find_load_range(ehdr, phdr, &vaddr_min, &vaddr_max))
 		return (pic_uintptr)-1;
 
 	if (ehdr->e_type == ET_DYN) {
@@ -520,6 +559,10 @@ static pic_uintptr load_interp(const char *path, Elf_Addr *out_entry)
 	pic_close(fd);
 
 	const Elf_Ehdr *ie = (const Elf_Ehdr *)buf;
+	if (0 == validate_elf_image(ie, (pic_size_t)fsize)) {
+		(void)pic_munmap(buf, (pic_size_t)fsize);
+		return (pic_uintptr)-1;
+	}
 	*out_entry = ie->e_entry;
 
 	pic_uintptr ibase = load_elf_from_memory(
@@ -534,113 +577,175 @@ static pic_uintptr load_interp(const char *path, Elf_Addr *out_entry)
  * ---------------------------------------------------------------- */
 
 PIC_TEXT
-static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
-	pic_u32 argv_size, pic_u32 envp_count, const char *envp_data,
-	pic_u32 envp_size, Elf_Addr entry, Elf_Addr phdr_addr, Elf_Half phnum,
-	Elf_Half phentsize, pic_uintptr interp_base)
+static pic_uintptr alloc_stack(pic_size_t stack_size)
 {
-	pic_size_t stack_size = 2 * 1024 * 1024;
 	void *stack_base =
 		pic_mmap(PIC_NULL, stack_size, PIC_PROT_READ | PIC_PROT_WRITE,
 			PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)stack_base == -1)
+	if ((long)stack_base == -1) {
 		pic_exit_group(120);
+	}
 
-	pic_uintptr top = (pic_uintptr)stack_base + stack_size;
+	return (pic_uintptr)stack_base;
+}
 
+PIC_TEXT
+static pic_uintptr copy_string_block(
+	pic_uintptr top, const char *src, pic_u32 size)
+{
+	top -= size;
+	if (size > 0U) {
+		pic_memcpy((void *)top, src, size);
+	}
+	return top;
+}
+
+PIC_TEXT
+static int auxv_entry_count(void)
+{
 #if !defined(PICBLOBS_OS_FREEBSD)
-	/* AT_RANDOM bytes. */
-	top -= 16;
-	pic_uintptr random_addr = top;
-	pic_u8 *rnd = (pic_u8 *)random_addr;
-	for (int i = 0; i < 16; i++)
-		rnd[i] = (pic_u8)(0x42 + i);
-#endif
-
-	/* envp strings */
-	top -= envp_size;
-	pic_uintptr envp_str = top;
-	if (envp_size > 0)
-		pic_memcpy((void *)envp_str, envp_data, envp_size);
-
-	/* argv strings */
-	top -= argv_size;
-	pic_uintptr argv_str = top;
-	if (argv_size > 0)
-		pic_memcpy((void *)argv_str, argv_data, argv_size);
-
-	/* Pointer arrays + auxv */
-	int n_auxv;
-#if !defined(PICBLOBS_OS_FREEBSD)
-	n_auxv = 15;
+	return 15;
 #else
-	n_auxv = 7;
+	return 7;
 #endif
-	pic_size_t slots = 1 + argc + 1 + envp_count + 1 + (n_auxv + 1) * 2;
-	top &= ~((pic_uintptr)sizeof(pic_uintptr) - 1);
+}
+
+PIC_TEXT
+static pic_uintptr align_initial_stack_top(
+	pic_uintptr top, pic_u32 argc, pic_u32 envp_count)
+{
+	pic_size_t slots = 1 + argc + 1 + envp_count + 1 +
+		((pic_size_t)(auxv_entry_count() + 1) * 2U);
+
+	top &= ~((pic_uintptr)sizeof(pic_uintptr) - 1U);
 	top -= slots * sizeof(pic_uintptr);
 #if defined(PICBLOBS_OS_FREEBSD) && defined(__x86_64__)
 	top = (top & ~(pic_uintptr)0xf) - sizeof(pic_uintptr);
 #else
 	top &= ~(pic_uintptr)0xf;
 #endif
+	return top;
+}
 
-	pic_uintptr *sp = (pic_uintptr *)top;
-	*sp++ = (pic_uintptr)argc;
+PIC_TEXT
+static pic_uintptr *push_string_vector(
+	pic_uintptr *sp, pic_u32 count, pic_uintptr strings_base)
+{
+	const char *p = (const char *)strings_base;
 
-	/* argv pointers */
-	const char *p = (const char *)argv_str;
-	for (pic_u32 i = 0; i < argc; i++) {
+	for (pic_u32 i = 0; i < count; i++) {
 		*sp++ = (pic_uintptr)p;
-		p += pic_strlen(p) + 1;
+		p += pic_strlen(p) + 1U;
 	}
 	*sp++ = 0;
 
-	/* envp pointers */
-	p = (const char *)envp_str;
-	for (pic_u32 i = 0; i < envp_count; i++) {
-		*sp++ = (pic_uintptr)p;
-		p += pic_strlen(p) + 1;
-	}
-	*sp++ = 0;
+	return sp;
+}
 
-	/* auxv */
-#define AUX(t, v)                                                              \
-	do {                                                                   \
-		*sp++ = (pic_uintptr)(t);                                      \
-		*sp++ = (pic_uintptr)(v);                                      \
-	} while (0)
-	AUX(AT_PHDR, phdr_addr);
-	debug_log_aux_entry("AT_PHDR", phdr_addr);
-	AUX(AT_PHENT, phentsize);
-	debug_log_aux_entry("AT_PHENT", phentsize);
-	AUX(AT_PHNUM, phnum);
-	debug_log_aux_entry("AT_PHNUM", phnum);
-	AUX(AT_PAGESZ, PAGE_SIZE);
-	debug_log_aux_entry("AT_PAGESZ", PAGE_SIZE);
-	AUX(AT_BASE, interp_base);
-	debug_log_aux_entry("AT_BASE", interp_base);
-	AUX(AT_FLAGS, 0);
-	debug_log_aux_entry("AT_FLAGS", 0);
-	AUX(AT_ENTRY, entry);
-	debug_log_aux_entry("AT_ENTRY", entry);
+PIC_TEXT
+static void fill_at_random(pic_uintptr random_addr)
+{
 #if !defined(PICBLOBS_OS_FREEBSD)
-	AUX(AT_UID, 0);
-	AUX(AT_EUID, 0);
-	AUX(AT_GID, 0);
-	AUX(AT_EGID, 0);
-	AUX(AT_SECURE, 0);
-	AUX(AT_RANDOM, random_addr);
-	AUX(AT_HWCAP, 0);
-	AUX(AT_CLKTCK, 100);
+	pic_u8 *rnd = (pic_u8 *)random_addr;
+
+	for (int i = 0; i < 16; i++) {
+		rnd[i] = (pic_u8)(0x42 + i);
+	}
+#else
+	(void)random_addr;
 #endif
-	AUX(AT_NULL, 0);
-#undef AUX
+}
+
+PIC_TEXT
+static pic_uintptr reserve_random_block(
+	pic_uintptr top, pic_uintptr *random_addr)
+{
+#if !defined(PICBLOBS_OS_FREEBSD)
+	top -= 16U;
+	*random_addr = top;
+	fill_at_random(*random_addr);
+#else
+	*random_addr = 0;
+#endif
+	return top;
+}
+
+PIC_TEXT
+static pic_uintptr *push_auxv_entry(
+	pic_uintptr *sp, pic_uintptr tag, pic_uintptr value, const char *name)
+{
+	*sp++ = tag;
+	*sp++ = value;
+	debug_log_aux_entry(name, value);
+	return sp;
+}
+
+PIC_TEXT
+static pic_uintptr *push_linux_auxv(pic_uintptr *sp, pic_uintptr random_addr)
+{
+#if !defined(PICBLOBS_OS_FREEBSD)
+	sp = push_auxv_entry(sp, AT_UID, 0, "AT_UID");
+	sp = push_auxv_entry(sp, AT_EUID, 0, "AT_EUID");
+	sp = push_auxv_entry(sp, AT_GID, 0, "AT_GID");
+	sp = push_auxv_entry(sp, AT_EGID, 0, "AT_EGID");
+	sp = push_auxv_entry(sp, AT_SECURE, 0, "AT_SECURE");
+	sp = push_auxv_entry(sp, AT_RANDOM, random_addr, "AT_RANDOM");
+	sp = push_auxv_entry(sp, AT_HWCAP, 0, "AT_HWCAP");
+	sp = push_auxv_entry(sp, AT_CLKTCK, 100, "AT_CLKTCK");
+#else
+	(void)random_addr;
+#endif
+	return sp;
+}
+
+PIC_TEXT
+static pic_uintptr *push_auxv_entries(pic_uintptr *sp, Elf_Addr entry,
+	Elf_Addr phdr_addr, Elf_Half phnum, Elf_Half phentsize,
+	pic_uintptr interp_base, pic_uintptr random_addr)
+{
+	sp = push_auxv_entry(sp, AT_PHDR, phdr_addr, "AT_PHDR");
+	sp = push_auxv_entry(sp, AT_PHENT, phentsize, "AT_PHENT");
+	sp = push_auxv_entry(sp, AT_PHNUM, phnum, "AT_PHNUM");
+	sp = push_auxv_entry(sp, AT_PAGESZ, PAGE_SIZE, "AT_PAGESZ");
+	sp = push_auxv_entry(sp, AT_BASE, interp_base, "AT_BASE");
+	sp = push_auxv_entry(sp, AT_FLAGS, 0, "AT_FLAGS");
+	sp = push_auxv_entry(sp, AT_ENTRY, entry, "AT_ENTRY");
+	sp = push_linux_auxv(sp, random_addr);
+	*sp++ = AT_NULL;
+	*sp++ = 0;
+	return sp;
+}
+
+PIC_TEXT
+static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
+	pic_u32 argv_size, pic_u32 envp_count, const char *envp_data,
+	pic_u32 envp_size, Elf_Addr entry, Elf_Addr phdr_addr, Elf_Half phnum,
+	Elf_Half phentsize, pic_uintptr interp_base)
+{
+	pic_size_t stack_size = 2 * 1024 * 1024;
+	pic_uintptr stack_base = alloc_stack(stack_size);
+	pic_uintptr top = (pic_uintptr)stack_base + stack_size;
+	pic_uintptr random_addr = 0;
+	pic_uintptr envp_str = 0;
+	pic_uintptr argv_str = 0;
+	pic_uintptr *sp = PIC_NULL;
+
+	top = reserve_random_block(top, &random_addr);
+	envp_str = copy_string_block(top, envp_data, envp_size);
+	top = envp_str;
+	argv_str = copy_string_block(top, argv_data, argv_size);
+	top = align_initial_stack_top(argv_str, argc, envp_count);
+
+	sp = (pic_uintptr *)top;
+	*sp++ = (pic_uintptr)argc;
+	sp = push_string_vector(sp, argc, argv_str);
+	sp = push_string_vector(sp, envp_count, envp_str);
+	sp = push_auxv_entries(sp, entry, phdr_addr, phnum, phentsize,
+		interp_base, random_addr);
 
 	PIC_LOG("ul_exec: stack argc=%d envc=%d top=%x final_sp=%x\n",
 		(long)argc, (long)envp_count,
-		(unsigned long)((pic_uintptr)stack_base + stack_size),
-		(unsigned long)top);
+		(unsigned long)(stack_base + stack_size), (unsigned long)top);
 
 	return top;
 }
@@ -657,17 +762,9 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
  * stack pointer register if we use generic "r" constraints.
  */
 PIC_TEXT
-__attribute__((noreturn)) static void jump_to_entry(
+__attribute__((noreturn)) static void jump_to_entry_x86_64_freebsd(
 	pic_uintptr entry, pic_uintptr sp)
 {
-#if defined(__x86_64__)
-#if defined(PICBLOBS_OS_FREEBSD)
-	/*
-	 * Keep entry and stack in fixed scratch registers before updating %rsp.
-	 * If the compiler reuses the same input register for both operands,
-	 * loading sp into %rsp first would clobber the jump target and branch
-	 * into the synthetic stack.
-	 */
 	__asm__ volatile("mov %[e], %%r11\n"
 			 "mov %[s], %%r10\n"
 			 "mov %%r10, %%rdi\n"
@@ -678,8 +775,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "r"(sp), [e] "r"(entry)
 		: "r10", "r11", "memory");
-#else
-	/* Same clobber hazard as the FreeBSD path above. */
+	__builtin_unreachable();
+}
+
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_x86_64_linux(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	__asm__ volatile("mov %[e], %%r11\n"
 			 "mov %[s], %%r10\n"
 			 "mov %%r10, %%rsp\n"
@@ -689,9 +791,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "r"(sp), [e] "r"(entry)
 		: "r10", "r11", "memory");
-#endif
+	__builtin_unreachable();
+}
 
-#elif defined(__i386__)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_i386(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	__asm__ volatile("mov %[s], %%ecx\n"
 			 "mov %[e], %%eax\n"
 			 "mov %%ecx, %%esp\n"
@@ -700,8 +806,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "g"((unsigned)sp), [e] "g"((unsigned)entry)
 		: "eax", "ecx", "edx", "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__aarch64__)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_aarch64(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	register pic_uintptr x2 __asm__("x2") = entry;
 	register pic_uintptr x3 __asm__("x3") = sp;
 	__asm__ volatile("mov sp, %[s]\n"
@@ -710,8 +821,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "r"(x3), [e] "r"(x2)
 		: "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__arm__)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_arm(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	register unsigned r2 __asm__("r2") = (unsigned)entry;
 	register unsigned r3 __asm__("r3") = (unsigned)sp;
 	__asm__ volatile("mov sp, %[s]\n"
@@ -720,8 +836,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "r"(r3), [e] "r"(r2)
 		: "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__mips__)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_mips(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	__asm__ volatile("move $t0, %[s]\n"
 			 "move $t9, %[e]\n"
 			 "move $sp, $t0\n"
@@ -730,12 +851,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "r"((unsigned)sp), [e] "r"((unsigned)entry)
 		: "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__s390x__)
-	/*
-	 * s390x: r0 can't be used as branch target (special in base/index).
-	 * Use r1 for entry and r3 for sp. Set sp last, then branch.
-	 */
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_s390x(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	register pic_uintptr _e __asm__("r1") = entry;
 	register pic_uintptr _s __asm__("r3") = sp;
 	__asm__ volatile("lgr %%r15, %%r3\n"
@@ -744,8 +866,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: "r"(_e), "r"(_s)
 		: "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__sparc__)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_sparc(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	register pic_uintptr _e __asm__("o1") = entry;
 	register pic_uintptr _s __asm__("o2") = sp;
 	__asm__ volatile("mov %%o2, %%sp\n"
@@ -755,8 +882,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: "r"(_e), "r"(_s)
 		: "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__riscv)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_riscv(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	register pic_uintptr _e __asm__("a1") = entry;
 	register pic_uintptr _s __asm__("a2") = sp;
 	__asm__ volatile("mv sp, %1\n"
@@ -765,8 +897,13 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: "r"(_e), "r"(_s)
 		: "memory");
+	__builtin_unreachable();
+}
 
-#elif defined(__powerpc__)
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry_powerpc(
+	pic_uintptr entry, pic_uintptr sp)
+{
 	register pic_uintptr _e __asm__("r12") = entry;
 	register pic_uintptr _s __asm__("r11") = sp;
 	__asm__ volatile("mr 1, %[s]\n"
@@ -776,11 +913,49 @@ __attribute__((noreturn)) static void jump_to_entry(
 		:
 		: [s] "r"(_s), [e] "r"(_e)
 		: "memory");
+	__builtin_unreachable();
+}
+
+#if defined(__x86_64__)
+#if defined(PICBLOBS_OS_FREEBSD)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_x86_64_freebsd(entry, sp)
+#else
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_x86_64_linux(entry, sp)
+#endif
+
+#elif defined(__i386__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_i386(entry, sp)
+
+#elif defined(__aarch64__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_aarch64(entry, sp)
+
+#elif defined(__arm__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_arm(entry, sp)
+
+#elif defined(__mips__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_mips(entry, sp)
+
+#elif defined(__s390x__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_s390x(entry, sp)
+
+#elif defined(__sparc__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_sparc(entry, sp)
+
+#elif defined(__riscv)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_riscv(entry, sp)
+
+#elif defined(__powerpc__)
+#define PIC_JUMP_TO_ENTRY(entry, sp) jump_to_entry_powerpc(entry, sp)
 
 #else
 #error "unsupported architecture"
 #endif
-	__builtin_unreachable();
+
+PIC_TEXT
+__attribute__((noreturn)) static void jump_to_entry(
+	pic_uintptr entry, pic_uintptr sp)
+{
+	PIC_JUMP_TO_ENTRY(entry, sp);
 }
 
 /* ----------------------------------------------------------------
@@ -847,19 +1022,9 @@ PIC_TEXT
 static void validate_elf_config(
 	const struct ul_exec_config *cfg, const Elf_Ehdr *ehdr)
 {
-	if (cfg->elf_size < sizeof(Elf_Ehdr))
+	if (0 == validate_elf_image(ehdr, cfg->elf_size)) {
 		pic_exit_group(100);
-	if (*(pic_u32 *)ehdr->e_ident != ELF_MAGIC)
-		pic_exit_group(101);
-	if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN)
-		pic_exit_group(102);
-	if (ehdr->e_phnum > 512)
-		pic_exit_group(100);
-
-	pic_size_t phdr_end = (pic_size_t)ehdr->e_phoff +
-		(pic_size_t)ehdr->e_phnum * (pic_size_t)ehdr->e_phentsize;
-	if (ehdr->e_phoff > cfg->elf_size || phdr_end > cfg->elf_size)
-		pic_exit_group(100);
+	}
 }
 
 PIC_TEXT

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run repository lint checks.
 
-Currently enforces cyclomatic complexity via lizard with a CCN threshold of 10.
+Enforces Ruff linting for Python plus cyclomatic complexity via lizard.
 
 Usage:
     python tools/lint.py            # run lint checks
@@ -23,6 +23,7 @@ log = logging.getLogger("lint")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LIZARD_THRESHOLD = 10
 BASELINE_FILE = PROJECT_ROOT / "tools" / "lizard_baseline.txt"
+RUFF_ROOTS = ["python/picblobs", "python/tests", "python_cli", "tools"]
 
 LIZARD_ROOTS = ["src", "tests", "python", "python_cli", "tools"]
 EXCLUDE = {
@@ -53,14 +54,37 @@ def _build_lizard_command() -> list[str]:
     return cmd
 
 
+def _build_ruff_command() -> list[str]:
+    return ["ruff", "check", *RUFF_ROOTS]
+
+
 def _supports_appimage_extract(binary: str) -> bool:
     result = subprocess.run(
         [binary, "--appimage-version"],
         cwd=PROJECT_ROOT,
         text=True,
         capture_output=True,
+        check=False,
     )
     return result.returncode == 0
+
+
+def _run_ruff_check() -> int:
+    binary = shutil.which("ruff")
+    if binary is None:
+        log.error("ruff not found. Install it to run Python lint checks.")
+        return 1
+
+    cmd = _build_ruff_command()
+    log.info("ruff: Python lint checks")
+    result = subprocess.run(
+        cmd, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False
+    )
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return result.returncode
 
 
 def _load_baseline() -> set[str]:
@@ -107,6 +131,10 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
+    if _run_ruff_check() != 0:
+        log.error("Ruff issues found.")
+        return 1
+
     binary = shutil.which("lizard")
     if binary is None:
         log.error("lizard not found. Install it to run complexity checks.")
@@ -117,7 +145,9 @@ def main() -> int:
         cmd.insert(1, "--appimage-extract-and-run")
     log.info("lizard: cyclomatic complexity threshold <= %d", LIZARD_THRESHOLD)
     baseline = _load_baseline()
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT, text=True, capture_output=True)
+    result = subprocess.run(
+        cmd, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False
+    )
 
     current, stale = _filter_warnings(result.stdout, baseline)
 

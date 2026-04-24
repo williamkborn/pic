@@ -31,6 +31,42 @@ typedef void(PIC_WINAPI *fn_ExitProcess)(unsigned int uExitCode);
 PIC_RODATA
 static const char msg[] = "Hello, world!\n";
 
+PIC_TEXT
+__attribute__((noreturn)) static void fail_fast(void) { __builtin_trap(); }
+
+PIC_TEXT
+__attribute__((noreturn)) static void exit_process(
+	fn_ExitProcess pExitProcess, unsigned int uExitCode)
+{
+	pExitProcess(uExitCode);
+	fail_fast();
+}
+
+PIC_TEXT
+static int write_stdout(fn_GetStdHandle pGetStdHandle, fn_WriteFile pWriteFile)
+{
+	void *stdout_handle = PIC_NULL;
+	unsigned long written = 0;
+	int write_status = 0;
+
+	stdout_handle = pGetStdHandle(STD_OUTPUT_HANDLE);
+	if (((void *)-1 == stdout_handle) || (PIC_NULL == stdout_handle)) {
+		return 0;
+	}
+
+	write_status = pWriteFile(
+		stdout_handle, msg, sizeof(msg) - 1U, &written, PIC_NULL);
+	if (0 == write_status) {
+		return 0;
+	}
+
+	if (written != (sizeof(msg) - 1U)) {
+		return 0;
+	}
+
+	return 1;
+}
+
 PIC_ENTRY
 void _start(void)
 {
@@ -45,15 +81,12 @@ void _start(void)
 		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
 
 	if (!pGetStdHandle || !pWriteFile || !pExitProcess) {
-		/* Resolution failed — nothing we can do without APIs. */
-		for (;;)
-			;
+		fail_fast();
 	}
 
-	void *stdout_handle = pGetStdHandle(STD_OUTPUT_HANDLE);
+	if (0 == write_stdout(pGetStdHandle, pWriteFile)) {
+		exit_process(pExitProcess, 1);
+	}
 
-	unsigned long written = 0;
-	pWriteFile(stdout_handle, msg, sizeof(msg) - 1, &written, PIC_NULL);
-
-	pExitProcess(0);
+	exit_process(pExitProcess, 0);
 }

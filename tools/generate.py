@@ -39,15 +39,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from registry import (
     ARCHITECTURES,
-    LINKER_SYMBOLS,
     MMAP_FLAGS,
     OPERATING_SYSTEMS,
     SYSCALL_DEFS,
     SYSCALL_NUMBERS,
     SyscallDef,
-    all_platforms,
-    all_syscall_names,
-    gcc_defines,
     syscall_os_support,
 )
 
@@ -91,12 +87,13 @@ def _clang_format(content: str) -> str:
             ],
             input=content,
             capture_output=True,
+            check=False,
             text=True,
         )
         if result.returncode == 0:
             return result.stdout
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError):
+        return content
     return content
 
 
@@ -163,9 +160,11 @@ def _gen_arch_h() -> str:
         lines.append(
             f"#define PIC_ARCH_BITS            {64 if not arch.is_32bit else 32}\n"
         )
-        for trait in trait_names:
-            if getattr(arch, trait, False):
-                lines.append(f"#define {trait_macros[trait]:<28s} 1\n")
+        lines.extend(
+            f"#define {trait_macros[trait]:<28s} 1\n"
+            for trait in trait_names
+            if getattr(arch, trait, False)
+        )
         lines.append("\n")
 
     lines.append(
@@ -257,13 +256,6 @@ def _gen_syscall_h() -> str:
 
 
 def _gen_picblobs_h() -> str:
-    sys_dir = PROJECT_ROOT / "src/include/picblobs/sys"
-    wrappers = sorted(
-        f.name
-        for f in sys_dir.glob("*.h")
-        if f.name != "constants.h"  # not a syscall wrapper
-    )
-
     # picblobs.h now includes syscall.h (for the primitive) but NOT
     # individual sys/*.h wrappers — those require an OS header first.
     # The blob author includes: os/{os}.h + picblobs.h, OR os/{os}.h + individual sys/*.h.
@@ -309,12 +301,12 @@ def _gen_syscall_header(sdef: SyscallDef) -> str:
     lines.append(f"/* picblobs/sys/{sdef.name}.h — {sdef.wrapper}() syscall. */\n")
     lines.append(f"/* Supported: {', '.join(supported_oses)} */\n\n")
     lines.append(f"#ifndef {guard}\n#define {guard}\n\n")
-    lines.append(f'#include "picblobs/types.h"\n\n')
+    lines.append('#include "picblobs/types.h"\n\n')
 
     lines.extend(_hosted_syscall_lines(sdef))
 
-    lines.append(f'#include "picblobs/arch.h"\n')
-    lines.append(f'#include "picblobs/syscall.h"\n\n')
+    lines.append('#include "picblobs/arch.h"\n')
+    lines.append('#include "picblobs/syscall.h"\n\n')
 
     lines.extend(_syscall_number_lines(sdef, os_support))
     lines.extend(_syscall_constant_lines(sdef))
@@ -634,10 +626,10 @@ def _platform_target_os_lines() -> list[str]:
         "# Bazel's toolchain resolution. This constraint is for blob target selection.\n",
         'constraint_setting(name = "target_os")\n\n',
     ]
-    for os_name in OPERATING_SYSTEMS:
-        lines.append(
-            f'constraint_value(name = "{os_name}", constraint_setting = ":target_os")\n'
-        )
+    lines.extend(
+        f'constraint_value(name = "{os_name}", constraint_setting = ":target_os")\n'
+        for os_name in OPERATING_SYSTEMS
+    )
     lines.append("\n")
     lines.extend(_platform_target_os_config_lines())
     return lines
@@ -646,13 +638,15 @@ def _platform_target_os_lines() -> list[str]:
 def _platform_target_os_config_lines() -> list[str]:
     """Return config_setting selectors for one target OS at a time."""
     lines: list[str] = []
-    for os_name in OPERATING_SYSTEMS:
-        lines.append(
+    lines.extend(
+        [
             "config_setting(\n"
             f'    name = "is_target_{os_name}",\n'
             f'    values = {{"define": "PICBLOBS_TARGET_OS={os_name}"}},\n'
             ")\n"
-        )
+            for os_name in OPERATING_SYSTEMS
+        ]
+    )
     lines.append("\n")
     return lines
 
@@ -683,11 +677,10 @@ def _platform_instruction_mode_lines() -> list[str]:
         'constraint_setting(\n    name = "instruction_mode",\n'
         '    default_constraint_value = ":mode_default",\n)\n\n'
     ]
-    for mode in ("mode_default", "mode_arm", "mode_thumb"):
-        lines.append(
-            f'constraint_value(name = "{mode}", '
-            f'constraint_setting = ":instruction_mode")\n'
-        )
+    lines.extend(
+        f'constraint_value(name = "{mode}", constraint_setting = ":instruction_mode")\n'
+        for mode in ("mode_default", "mode_arm", "mode_thumb")
+    )
     lines.append("\n")
     return lines
 
@@ -1002,7 +995,7 @@ def _render_bazelrc(existing: str) -> str:
                 start = i
             end = i
     if start is not None:
-        return "\n".join(lines[:start] + [block] + lines[end + 1 :])
+        return "\n".join([*lines[:start], block, *lines[end + 1 :]])
     return existing + "\n" + block + "\n"
 
 

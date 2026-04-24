@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Format all project source files.
 
-Runs clang-format on C/H files and ruff on Python files.
+Runs clang-format on C/H files and Ruff format on Python files.
 Excludes build artifacts, venvs, and external dependencies.
 
 Usage:
@@ -24,7 +24,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Directories to search for source files.
 C_ROOTS = ["src", "tests"]
-PY_ROOTS = ["python/picblobs", "tools", "python/tests"]
+PY_ROOTS = [
+    "python/picblobs",
+    "python/tests",
+    "python_cli/picblobs_cli",
+    "python_cli/tests",
+    "tools",
+]
 
 # Directories to exclude (relative to project root).
 EXCLUDE = {
@@ -71,9 +77,9 @@ def _run_formatter(
 
     full_cmd = cmd + [str(f) for f in files]
     log.info("%s: %d files", name, len(files))
-    log.debug("  %s", " ".join(cmd[:3] + ["..."]))
+    log.debug("  %s", " ".join([*cmd[:3], "..."]))
 
-    result = subprocess.run(full_cmd, capture_output=True, text=True)
+    result = subprocess.run(full_cmd, capture_output=True, check=False, text=True)
 
     if result.returncode != 0:
         if check:
@@ -115,10 +121,7 @@ def main() -> int:
 
     # Python files: ruff format
     if py_files:
-        if args.check:
-            py_cmd = ["ruff", "format", "--check"]
-        else:
-            py_cmd = ["ruff", "format"]
+        py_cmd = ["ruff", "format", "--check"] if args.check else ["ruff", "format"]
         if not _run_formatter("ruff", py_cmd, py_files, args.check):
             ok = False
 

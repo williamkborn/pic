@@ -15,8 +15,6 @@ import re
 import subprocess
 import sys
 
-import pytest
-
 try:
     from ._test_env import PROJECT_ROOT, prepend_source_paths
 except ImportError:  # pragma: no cover - supports direct module import
@@ -34,13 +32,9 @@ from tools.registry import (
     SYSCALL_NUMBERS,
     all_platforms,
     all_syscall_names,
-    arches_with_trait,
     gcc_defines,
-    platform_configs,
     qemu_binaries,
-    syscall_os_support,
 )
-
 
 # ============================================================
 # Helpers
@@ -64,6 +58,7 @@ class TestGeneratedFreshness:
         result = subprocess.run(
             [sys.executable, str(PROJECT_ROOT / "tools" / "generate.py"), "--check"],
             capture_output=True,
+            check=False,
             text=True,
             cwd=str(PROJECT_ROOT),
         )
@@ -85,7 +80,7 @@ class TestQemuSync:
         from picblobs._qemu import QEMU_BINARIES
 
         expected = qemu_binaries()
-        assert QEMU_BINARIES == expected, (
+        assert expected == QEMU_BINARIES, (
             f"QEMU_BINARIES drift.\n"
             f"  Missing: {set(expected) - set(QEMU_BINARIES)}\n"
             f"  Extra:   {set(QEMU_BINARIES) - set(expected)}"
@@ -244,7 +239,8 @@ class TestSyscallConsistency:
                     f"Arch '{name}' is openat_only but has no 'openat' in syscall table"
                 )
                 assert "open" not in nrs, (
-                    f"Arch '{name}' is openat_only but still has 'open' in syscall table"
+                    f"Arch '{name}' is openat_only but still has 'open' "
+                    "in syscall table"
                 )
 
     def test_mmap_flags_all_have_defaults(self) -> None:
@@ -362,7 +358,8 @@ class TestModuleBazelSync:
             if arch.bootlin_arch not in seen:
                 seen.add(arch.bootlin_arch)
                 assert f'arch = "{arch.bootlin_arch}"' in content, (
-                    f"MODULE.bazel missing toolchain for bootlin_arch='{arch.bootlin_arch}'"
+                    "MODULE.bazel missing toolchain for "
+                    f"bootlin_arch='{arch.bootlin_arch}'"
                 )
                 assert f'triple = "{arch.gcc_triple}"' in content, (
                     f"MODULE.bazel missing triple='{arch.gcc_triple}'"

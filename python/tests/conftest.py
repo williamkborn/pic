@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import shutil
-import socket
-import ctypes
 import signal
+import socket
 from pathlib import Path
 
 import pytest
+
 from ._test_env import PROJECT_ROOT, prepend_source_paths
 
 prepend_source_paths()
 
-from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms
-from payload_defs import all_payload_combos  # noqa: E402
+from payload_defs import all_payload_combos
 
+from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms
 
 BAZEL_BIN = PROJECT_ROOT / "bazel-bin"
 _PACKAGE_RUNNERS = PROJECT_ROOT / "python" / "picblobs" / "_runners"
@@ -41,9 +42,10 @@ def _can_bind_localhost() -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("127.0.0.1", 0))
-        return True
     except OSError:
         return False
+    else:
+        return True
 
 
 def _has_any_cross_compiler() -> bool:
@@ -83,9 +85,10 @@ def _can_ptrace_traceme() -> bool:
         if ptrace(PTRACE_CONT, pid, None, None) != 0:
             return False
         os.waitpid(pid, 0)
-        return True
     except OSError:
         return False
+    else:
+        return True
 
 
 # --- Environment-based filters (set by `picblobs test --os/--arch/--type`) ---
@@ -248,7 +251,9 @@ def _collection_filters() -> dict[str, str]:
 def _skip_marker_reason(keyword: str) -> str:
     """Return the human-facing skip reason for one capability marker."""
     reasons = {
-        "requires_runners": "Test runners not built. Run: bazel build //tests/runners/...",
+        "requires_runners": (
+            "Test runners not built. Run: bazel build //tests/runners/..."
+        ),
         "requires_qemu": "QEMU user-static not installed.",
         "requires_local_tcp": "Local TCP sockets are unavailable in this environment.",
         "requires_cross_compile": "No Bootlin cross-compiler is discoverable.",
@@ -273,7 +278,10 @@ def _apply_capability_skips(
         if param_os == "freebsd" and "requires_qemu" in item.keywords:
             item.add_marker(
                 pytest.mark.skip(
-                    reason="FreeBSD runtime tests require ptrace, which is unavailable in this environment."
+                    reason=(
+                        "FreeBSD runtime tests require ptrace, which is "
+                        "unavailable in this environment."
+                    )
                 )
             )
 

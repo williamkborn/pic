@@ -1486,8 +1486,7 @@ def all_platforms() -> list[tuple[str, str]]:
     """Return [(os, arch), ...] for all defined platforms."""
     result = []
     for os_name, os_def in OPERATING_SYSTEMS.items():
-        for arch_name in os_def.architectures:
-            result.append((os_name, arch_name))
+        result.extend((os_name, arch_name) for arch_name in os_def.architectures)
     return result
 
 

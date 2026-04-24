@@ -97,7 +97,7 @@ def _registry_blob_types() -> dict | None:
     if str(_PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(_PROJECT_ROOT))
     try:
-        from tools.registry import BLOB_TYPES  # type: ignore
+        from tools.registry import BLOB_TYPES
     except ImportError:
         return None
     return BLOB_TYPES
@@ -161,16 +161,16 @@ def _config_layout_from_config_dict(blob_e: BlobType, config: dict) -> ConfigLay
         )
         for field in config.get("fields", [])
     ]
-    for trailing in config.get("trailing_data", []):
-        fields.append(
-            ConfigField(
-                name=trailing["name"],
-                type="u8[]",
-                offset=config.get("fixed_size", 0),
-                size=0,
-                variable=True,
-            )
+    fields.extend(
+        ConfigField(
+            name=trailing["name"],
+            type="u8[]",
+            offset=config.get("fixed_size", 0),
+            size=0,
+            variable=True,
         )
+        for trailing in config.get("trailing_data", [])
+    )
     if not fields:
         raise ValidationError(f"{blob_e.value} has no config struct")
     return ConfigLayout(
@@ -211,16 +211,16 @@ def _config_layout_from_registry(blob_e: BlobType, registry: dict) -> ConfigLayo
         )
         for f in bt.config_schema.fields
     ]
-    for trailing in bt.config_schema.trailing_data:
-        fields.append(
-            ConfigField(
-                name=trailing.name,
-                type="u8[]",
-                offset=bt.config_schema.fixed_size,
-                size=0,
-                variable=True,
-            )
+    fields.extend(
+        ConfigField(
+            name=trailing.name,
+            type="u8[]",
+            offset=bt.config_schema.fixed_size,
+            size=0,
+            variable=True,
         )
+        for trailing in bt.config_schema.trailing_data
+    )
 
     return ConfigLayout(
         blob_type=blob_e,
@@ -248,13 +248,19 @@ def targets() -> list[Target]:
     for _, os_name, arch in list_blobs():
         seen.add((os_name, arch))
 
-    result: list[Target] = []
-    for os_name, arch_name in sorted(seen):
-        try:
-            result.append(Target(OS.parse(os_name), Arch.parse(arch_name)))
-        except ValidationError:
-            continue
-    return result
+    return [
+        target
+        for os_name, arch_name in sorted(seen)
+        if (target := _parse_target_pair(os_name, arch_name)) is not None
+    ]
+
+
+def _parse_target_pair(os_name: str, arch_name: str) -> Target | None:
+    """Return a Target for valid names, or None for unknown entries."""
+    try:
+        return Target(OS.parse(os_name), Arch.parse(arch_name))
+    except ValidationError:
+        return None
 
 
 def blob_types(os, arch) -> list[BlobType]:

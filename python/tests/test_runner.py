@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from picblobs._extractor import BlobData
 from picblobs.runner import (
     QEMU_BINARIES,

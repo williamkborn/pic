@@ -48,6 +48,27 @@ __asm__(".section .config,\"aw\"\n"
 	".space 4\n"
 	".previous\n");
 
+PIC_TEXT
+__attribute__((noreturn)) static void fail_fast(void) { __builtin_trap(); }
+
+PIC_TEXT
+__attribute__((noreturn)) static void exit_process(
+	fn_ExitProcess pExitProcess, unsigned int uExitCode)
+{
+	pExitProcess(uExitCode);
+	fail_fast();
+}
+
+PIC_TEXT
+static void copy_payload(void *dst_mem, const pic_u8 *src, pic_u32 payload_size)
+{
+	pic_u8 *dst = (pic_u8 *)dst_mem;
+
+	for (pic_u32 i = 0; i < payload_size; i++) {
+		dst[i] = src[i];
+	}
+}
+
 PIC_ENTRY
 void _start(void)
 {
@@ -59,9 +80,9 @@ void _start(void)
 	fn_ExitProcess pExitProcess = (fn_ExitProcess)pic_resolve(
 		HASH_KERNEL32_DLL, HASH_EXIT_PROCESS);
 
-	if (!pVirtualAlloc || !pExitProcess)
-		for (;;)
-			;
+	if (!pVirtualAlloc || !pExitProcess) {
+		fail_fast();
+	}
 
 	extern char alloc_jump_config[] __attribute__((visibility("hidden")));
 	const struct alloc_jump_config *cfg =
@@ -69,30 +90,24 @@ void _start(void)
 
 	pic_u32 size = cfg->payload_size;
 	if (size == 0) {
-		pExitProcess(1);
-		for (;;)
-			;
+		exit_process(pExitProcess, 1);
 	}
 
 	/* Allocate RWX memory for the inner payload. */
 	void *mem = pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!mem) {
-		pExitProcess(1);
-		for (;;)
-			;
+		exit_process(pExitProcess, 1);
 	}
 
 	/* Copy payload into allocated memory. */
-	pic_u8 *dst = (pic_u8 *)mem;
 	const pic_u8 *src = (const pic_u8 *)alloc_jump_config +
 		sizeof(struct alloc_jump_config);
-	for (pic_u32 i = 0; i < size; i++)
-		dst[i] = src[i];
+	copy_payload(mem, src, size);
 
 	/* Jump to the inner payload. */
 	((void (*)(void))mem)();
 
 	/* Should not return. */
-	pExitProcess(0);
+	exit_process(pExitProcess, 0);
 }

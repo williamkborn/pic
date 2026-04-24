@@ -14,9 +14,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from picblobs.runner import RunResult
 
 log = logging.getLogger("picblobs")
 
@@ -251,12 +256,11 @@ def _filter_verify_blobs(
     for allowed, index in filters:
         if allowed:
             available = [entry for entry in available if entry[index] in allowed]
-    available = [
+    return [
         entry
         for entry in available
         if _is_verify_target_supported(entry[0], entry[1], entry[2])
     ]
-    return available
 
 
 def _is_verify_target_supported(blob_type: str, os_name: str, arch: str) -> bool:
@@ -467,7 +471,7 @@ def _verify_ul_exec(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify ul_exec by compiling and executing a test ELF.
 
     Compiles a static 'Hello, ET_EXEC!' binary for the target
@@ -476,7 +480,7 @@ def _verify_ul_exec(
     """
     from picblobs import get_blob
     from picblobs._cross_compile import build_ul_exec_config, compile_hello_et_exec
-    from picblobs.runner import RunResult, run_blob
+    from picblobs.runner import run_blob
 
     elf_data = compile_hello_et_exec(arch)
     if elf_data is None:
@@ -512,7 +516,7 @@ def _verify_stager_tcp(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify stager_tcp end-to-end by serving test_tcp_ok over a local TCP socket.
 
     Spins up a one-shot localhost TCP server that serves the matching inner
@@ -570,7 +574,7 @@ def _verify_stager_fd(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify stager_fd by piping a length-prefixed test_fd_ok into stdin."""
     import struct
 
@@ -600,7 +604,7 @@ def _verify_stager_pipe(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify stager_pipe by writing a length-prefixed test_pipe_ok into a FIFO."""
     import os as _os
     import struct
@@ -625,7 +629,7 @@ def _verify_stager_pipe(
 
     def _writer() -> None:
         try:
-            with open(str(fifo), "wb") as f:
+            with fifo.open("wb") as f:
                 f.write(payload)
         except OSError:
             pass
@@ -650,7 +654,7 @@ def _verify_stager_mmap(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify stager_mmap by writing test_mmap_ok to a file and mapping it in."""
     import struct
     import tempfile
@@ -679,17 +683,15 @@ def _verify_stager_mmap(
         blob = get_blob("stager_mmap", os_name, arch)
         return run_blob(blob, config=config, runner_type=os_name, timeout=timeout)
     finally:
-        try:
+        with contextlib.suppress(OSError):
             Path(fpath).unlink()
-        except OSError:
-            pass
 
 
 def _verify_reflective_pe(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify reflective_pe by feeding it a minimal MZ-prefixed dummy PE.
 
     The blob validates the DOS magic, allocates RWX via VirtualAlloc,
@@ -711,7 +713,7 @@ def _verify_alloc_jump(
     os_name: str,
     arch: str,
     timeout: float,
-) -> "RunResult":
+) -> RunResult:
     """Verify alloc_jump by packing an inner test payload into its config.
 
     The inner payload writes a known string and exits 0. For Windows blobs
@@ -769,7 +771,6 @@ def _verify_nacl_e2e(
     Raises _VerifySkip or Exception on failure.
     """
     import struct
-    import subprocess
 
     from picblobs import get_blob
     from picblobs.runner import (
@@ -803,10 +804,14 @@ def _check_nacl_e2e_speed(arch: str, force_slow: bool) -> None:
     if arch not in _NACL_E2E_SLOW_ARCHES or force_slow:
         return
     is_32 = arch in ("mipsel32", "mipsbe32")
+    emulation = (
+        f"each 64-bit op becomes multiple 32-bit instructions on {arch}"
+        if is_32
+        else f"{arch} emulation is slow"
+    )
     reason = (
-        f"TweetNaCl XSalsa20-Poly1305 uses 64-bit arithmetic — "
-        f"{'each 64-bit op becomes multiple 32-bit instructions on ' + arch if is_32 else arch + ' emulation is slow'}, "
-        f"all emulated through QEMU; expect 5-10+ minutes"
+        "TweetNaCl XSalsa20-Poly1305 uses 64-bit arithmetic — "
+        f"{emulation}, all emulated through QEMU; expect 5-10+ minutes"
     )
     raise _VerifySkip(
         f"QEMU {arch} too slow for crypto handshake — {reason}; "
@@ -926,7 +931,7 @@ def cmd_test(args: argparse.Namespace) -> int:
 
     cmd.extend(args.pytest_args)
 
-    result = subprocess.run(cmd, env=env)
+    result = subprocess.run(cmd, check=False, env=env)
     return result.returncode
 
 
@@ -1042,7 +1047,9 @@ def main(argv: list[str] | None = None) -> int:
     p_verify.add_argument(
         "--slow",
         action="store_true",
-        help="Run slow tests that are skipped by default (e.g., NaCl e2e on MIPS/s390x)",
+        help=(
+            "Run slow tests that are skipped by default (e.g., NaCl e2e on MIPS/s390x)"
+        ),
     )
 
     # --- listing ---

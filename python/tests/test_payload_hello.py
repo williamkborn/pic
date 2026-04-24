@@ -11,10 +11,6 @@ See: spec/verification/TEST-011-payload-pytest-suite.md
 from __future__ import annotations
 
 import pytest
-
-from picblobs import get_blob, list_blobs
-from picblobs.runner import is_arch_skip_rosetta, run_blob
-
 from payload_defs import (
     EXPECTATIONS,
     OPERATING_SYSTEMS,
@@ -22,7 +18,8 @@ from payload_defs import (
     RUNNER_TYPE,
     runtime_test_arches,
 )
-
+from picblobs import get_blob, list_blobs
+from picblobs.runner import is_arch_skip_rosetta, run_blob
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -36,8 +33,7 @@ def _hello_combos() -> list[tuple[str, str, str]]:
         for os_name in PAYLOAD_PLATFORMS.get(bt, []):
             if OPERATING_SYSTEMS.get(os_name) is None:
                 continue
-            for arch in runtime_test_arches(os_name):
-                combos.append((bt, os_name, arch))
+            combos.extend((bt, os_name, arch) for arch in runtime_test_arches(os_name))
     return sorted(combos)
 
 
@@ -45,9 +41,10 @@ def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
     """Check if a blob is staged in the package."""
     try:
         get_blob(blob_type, target_os, target_arch)
-        return True
     except FileNotFoundError:
         return False
+    else:
+        return True
 
 
 # ---------------------------------------------------------------------------

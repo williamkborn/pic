@@ -9,7 +9,7 @@ from pathlib import Path
 def find_project_root() -> Path:
     """Find the repository root (directory containing MODULE.bazel)."""
     p = Path(__file__).resolve()
-    for parent in [p] + list(p.parents):
+    for parent in [p, *list(p.parents)]:
         if (parent / "MODULE.bazel").exists():
             return parent
     return Path.cwd()

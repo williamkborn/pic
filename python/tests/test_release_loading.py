@@ -12,19 +12,17 @@ import hashlib
 import json
 from pathlib import Path
 
-import pytest
-
 import picblobs
+import pytest
 from picblobs import BlobType, ConfigLayout
 from picblobs._extractor import BlobData, load_from_sidecar
-
 
 # ============================================================
 # Fixtures
 # ============================================================
 
 
-@pytest.fixture()
+@pytest.fixture
 def sidecar_pair(tmp_path: Path) -> tuple[Path, Path]:
     """Create a valid .bin + .json sidecar pair in tmp_path."""
     code = b"\xcc" * 64

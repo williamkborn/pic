@@ -17,6 +17,11 @@ import dataclasses
 import hashlib
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from elftools.elf.elffile import ELFFile
+    from elftools.elf.sections import SymbolTableSection
 
 
 @dataclasses.dataclass(frozen=True)
@@ -167,7 +172,7 @@ def extract(
         if not blob_type:
             blob_type = so_path.stem
 
-    with open(so_path, "rb") as f:
+    with so_path.open("rb") as f:
         elf = ELFFile(f)
 
         symtab = elf.get_section_by_name(".symtab")
@@ -194,7 +199,7 @@ def extract(
     )
 
 
-def _find_symbols(symtab: "SymbolTableSection", names: set[str]) -> dict[str, int]:
+def _find_symbols(symtab: SymbolTableSection, names: set[str]) -> dict[str, int]:
     """Return values for all requested symbols in a single pass."""
     result: dict[str, int] = {}
     for sym in symtab.iter_symbols():
@@ -209,7 +214,7 @@ def _find_symbols(symtab: "SymbolTableSection", names: set[str]) -> dict[str, in
 
 
 def _extract_blob_data(
-    elf: "ELFFile",
+    elf: ELFFile,
     start: int,
     end: int,
 ) -> tuple[bytearray, dict[str, tuple[int, int]]]:

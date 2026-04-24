@@ -10,13 +10,10 @@ See: spec/verification/TEST-011-payload-pytest-suite.md
 from __future__ import annotations
 
 import pytest
-
+from payload_defs import OPERATING_SYSTEMS
 from picblobs import get_blob
 from picblobs._cross_compile import build_ul_exec_config, compile_c_elf, compile_raw_elf
-from picblobs.runner import is_arch_skip_rosetta, run_blob, find_runner
-
-from payload_defs import OPERATING_SYSTEMS
-
+from picblobs.runner import find_runner, is_arch_skip_rosetta, run_blob
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -26,9 +23,10 @@ from payload_defs import OPERATING_SYSTEMS
 def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
     try:
         get_blob(blob_type, target_os, target_arch)
-        return True
     except FileNotFoundError:
         return False
+    else:
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +34,15 @@ def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
 # ---------------------------------------------------------------------------
 
 # Static test: uses libc. Compiled with -static.
-STATIC_LIBC_SRC = '#include <unistd.h>\n#include <string.h>\nint main(void) {\n    const char msg[] = "UL_EXEC_OK\\n";\n    write(1, msg, strlen(msg));\n    return 0;\n}\n'
+STATIC_LIBC_SRC = """\
+#include <unistd.h>
+#include <string.h>
+int main(void) {
+    const char msg[] = "UL_EXEC_OK\\n";
+    write(1, msg, strlen(msg));
+    return 0;
+}
+"""
 
 # Dynamic test (x86_64 only): same source, no -static.
 DYNAMIC_TEST_SRC = STATIC_LIBC_SRC

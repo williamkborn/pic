@@ -29,7 +29,6 @@ sys.path.insert(0, str(_root / "python"))
 from picblobs import get_blob, list_blobs
 from picblobs.runner import run_blob
 
-
 # ---------------------------------------------------------------------------
 # Minimal PE builder
 # ---------------------------------------------------------------------------
@@ -129,7 +128,8 @@ def build_pe(code: bytes, config: bytes, config_offset: int, arch: str) -> bytes
     struct.pack_into("<I", sect, 0x0C, text_rva)  # VirtualAddress
     struct.pack_into("<I", sect, 0x10, raw_size)  # SizeOfRawData
     struct.pack_into("<I", sect, 0x14, _FILE_ALIGN)  # PointerToRawData
-    # IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | IMAGE_SCN_CNT_CODE
+    # IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ |
+    # IMAGE_SCN_MEM_WRITE | IMAGE_SCN_CNT_CODE
     struct.pack_into("<I", sect, 0x24, 0xE0000020)
     pe.extend(sect)
 
@@ -154,9 +154,8 @@ def find_wine(arch: str) -> str | None:
         for name in ["wine64", "wine"]:
             if shutil.which(name):
                 return name
-    elif arch == "i686":
-        if shutil.which("wine"):
-            return "wine"
+    elif arch == "i686" and shutil.which("wine"):
+        return "wine"
     return None
 
 
@@ -173,12 +172,14 @@ def run_wine(
         proc = subprocess.run(
             [wine, exe_path],
             capture_output=True,
+            check=False,
             timeout=timeout,
             env=env,
         )
-        return proc.returncode, proc.stdout, proc.stderr
     except subprocess.TimeoutExpired:
         return -1, b"", b"TIMEOUT"
+    else:
+        return proc.returncode, proc.stdout, proc.stderr
     finally:
         Path(exe_path).unlink(missing_ok=True)
 
@@ -205,7 +206,7 @@ def validate_blob(
 
     # Run under Wine.
     pe = build_pe(blob.code, config, blob.config_offset, target_arch)
-    wine_rc, wine_stdout, wine_stderr = run_wine(pe, wine)
+    wine_rc, wine_stdout, _wine_stderr = run_wine(pe, wine)
 
     # Compare. Strip Wine debug noise from stdout.
     # Wine may prefix output with debug messages even with WINEDEBUG=-all
@@ -228,8 +229,7 @@ def validate_blob(
 
     if ok:
         return True, f"MATCH (exit={wine_rc}, stdout={wine_stdout!r})"
-    else:
-        return False, "MISMATCH: " + "; ".join(details)
+    return False, "MISMATCH: " + "; ".join(details)
 
 
 # ---------------------------------------------------------------------------

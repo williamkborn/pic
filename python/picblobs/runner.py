@@ -9,6 +9,7 @@ Manages the lifecycle of running a PIC blob under QEMU user-static:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import functools
 import logging
@@ -21,10 +22,10 @@ import tempfile
 import time
 from pathlib import Path
 
-log = logging.getLogger(__name__)
-
 from picblobs._extractor import BlobData, extract
 from picblobs._qemu import QEMU_BINARIES
+
+log = logging.getLogger(__name__)
 
 # Fallback: Bazel build tree.
 _BAZEL_RUNNER_SEARCH = [
@@ -270,9 +271,8 @@ def _build_command(
     args = [str(blob_file), *(extra_args or [])]
     if _is_native_arch(arch):
         return [str(runner_path), *args]
-    else:
-        qemu = find_qemu(arch)
-        return [str(qemu), str(runner_path), *args]
+    qemu = find_qemu(arch)
+    return [str(qemu), str(runner_path), *args]
 
 
 def build_blob_command(
@@ -311,10 +311,8 @@ def _text_end(blob: BlobData) -> int:
 def _cleanup_blob_file(blob_file: Path) -> None:
     """Remove a temp blob file and its parent directory."""
     blob_file.unlink(missing_ok=True)
-    try:
+    with contextlib.suppress(OSError):
         blob_file.parent.rmdir()
-    except OSError:
-        pass
 
 
 def wait_for_stdout_marker(
@@ -418,22 +416,29 @@ def _pair_run_attempt(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
-        server_stdout, server_stderr = server_proc.communicate(timeout=timeout)
-        result = PairRunResult(
-            server_stdout=server_prefix + server_stdout,
-            server_stderr=server_stderr,
-            server_exit=server_proc.returncode,
-            client_stdout=client_stdout,
-            client_stderr=client_stderr,
-            client_exit=client_proc.returncode,
-        )
-        if result.server_exit == 0 and result.client_exit == 0:
-            return result, ""
-        return None, (
-            f"server exit={result.server_exit} stderr={result.server_stderr!r}; "
-            f"client exit={result.client_exit} stderr={result.client_stderr!r}"
-        )
+        try:
+            client_stdout, client_stderr = client_proc.communicate(timeout=timeout)
+            server_stdout, server_stderr = server_proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_proc(server_proc)
+            _terminate_proc(client_proc)
+            return None, "pair timed out"
+        else:
+            result = PairRunResult(
+                server_stdout=server_prefix + server_stdout,
+                server_stderr=server_stderr,
+                server_exit=server_proc.returncode,
+                client_stdout=client_stdout,
+                client_stderr=client_stderr,
+                client_exit=client_proc.returncode,
+            )
+            if result.server_exit == 0 and result.client_exit == 0:
+                return result, ""
+            detail = (
+                f"server exit={result.server_exit} stderr={result.server_stderr!r}; "
+                f"client exit={result.client_exit} stderr={result.client_stderr!r}"
+            )
+            return None, detail
     except subprocess.TimeoutExpired:
         _terminate_proc(server_proc)
         _terminate_proc(client_proc)
@@ -601,7 +606,8 @@ def _execute_blob_command(
     proc = subprocess.run(
         cmd,
         capture_output=True,
-        input=stdin_data if stdin_data else None,
+        check=False,
+        input=stdin_data or None,
         timeout=timeout,
     )
     duration = time.monotonic() - start

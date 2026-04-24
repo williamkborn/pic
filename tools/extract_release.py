@@ -26,15 +26,12 @@ sys.path.insert(0, str(_PROJECT_ROOT / "python"))
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from elftools.elf.elffile import ELFFile
-from elftools.elf.sections import SymbolTableSection
 
 from tools.registry import (
     BLOB_TYPES,
-    OPERATING_SYSTEMS,
     arch_endian,
     manifest_architectures,
 )
-
 
 # ============================================================
 # ELF extraction (build-time only)
@@ -61,7 +58,7 @@ def _extract_so(so_path: Path) -> dict:
     Returns a dict with keys: code, size, config_offset, entry_offset,
     sha256, sections (with perm).
     """
-    with open(so_path, "rb") as f:
+    with so_path.open("rb") as f:
         elf = ELFFile(f)
         blob_start, blob_end, config_start = _extract_blob_bounds(elf, so_path)
         buf, sections = _extract_alloc_sections(elf, blob_start, blob_end)
@@ -358,7 +355,9 @@ def extract_release(
         extracted_triples.append((blob_type, os_name, arch))
         if verbose:
             print(
-                f"  {basename}  {extracted['size']} bytes  sha256={extracted['sha256'][:16]}..."
+                "  "
+                f"{basename}  {extracted['size']} bytes  "
+                f"sha256={extracted['sha256'][:16]}..."
             )
 
     # Remove release artifacts for blobs that are no longer staged.
@@ -393,7 +392,6 @@ def check_release(so_dir: Path, out_dir: Path) -> bool:
         )
         return False
 
-    manifest = json.loads(manifest_path.read_text())
     blobs_dir = out_dir / "blobs"
 
     # Check every .so has a corresponding .bin with matching hash.
@@ -419,7 +417,8 @@ def check_release(so_dir: Path, out_dir: Path) -> bool:
         # Re-extract and compare hash.
         try:
             extracted = _extract_so(so_path)
-        except Exception:
+        except Exception as exc:
+            print(f"  SKIP {so_path}: {exc}", file=sys.stderr)
             continue
 
         sidecar = json.loads(json_path.read_text())

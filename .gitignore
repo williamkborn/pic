@@ -55,3 +55,5 @@ mbed/blobs/*.h
 # Generated blobs
 mbed/blobs/
 
+build-artifacts/
+

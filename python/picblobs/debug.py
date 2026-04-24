@@ -26,7 +26,6 @@ from picblobs.cli import (
     cmd_extract,
     cmd_info,
     cmd_list,
-    cmd_listing,
     cmd_run,
     cmd_test,
     cmd_verify,
@@ -94,7 +93,6 @@ def cmd_disasm(args: argparse.Namespace) -> int:
         disassemble_function,
         find_objdump,
         has_debug_info,
-        list_symbols,
     )
 
     target_os, target_arch = _parse_target(args.target)
@@ -261,12 +259,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Disassemble a function from a debug .so",
         description=(
             "Disassemble a single function with source interleaving from\n"
-            "a debug .so file. Requires debug builds (python tools/stage_blobs.py --debug).\n\n"
+            "a debug .so file. Requires debug builds "
+            "(python tools/stage_blobs.py --debug).\n\n"
             "Without --function, lists all function symbols.\n\n"
             "Examples:\n"
             "  picblobs-debug disasm hello linux:x86_64 --function _start\n"
             "  picblobs-debug disasm hello linux:aarch64\n"
-            "  picblobs-debug disasm --so debug/linux/x86_64/hello.so linux:x86_64 -f blob_main\n"
+            "  picblobs-debug disasm --so debug/linux/x86_64/hello.so "
+            "linux:x86_64 -f blob_main\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

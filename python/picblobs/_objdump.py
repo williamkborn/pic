@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 # Architecture → (toolchain-specific objdump, fallback system objdump).
@@ -106,6 +105,7 @@ def list_symbols(so_path: str, objdump: str) -> list[tuple[str, str, str]]:
     result = subprocess.run(
         [objdump, "-t", so_path],
         capture_output=True,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -148,7 +148,7 @@ def disassemble_function(
         cmd.append("-S")
     cmd.append(so_path)
 
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, check=False)
     output = result.stdout.decode(errors="replace")
 
     if not output.strip() or result.returncode != 0:
@@ -178,7 +178,7 @@ def disassemble_full(so_path: str, objdump: str, source: bool = True) -> str:
         cmd.append("-S")
     cmd.append(so_path)
 
-    result = subprocess.run(cmd, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, check=False)
     if result.returncode != 0:
         stderr = result.stderr.decode(errors="replace").strip()
         raise RuntimeError(f"objdump error: {stderr}")
@@ -191,6 +191,7 @@ def has_debug_info(so_path: str, objdump: str) -> bool:
     result = subprocess.run(
         [objdump, "-h", so_path],
         capture_output=True,
+        check=False,
     )
     output = result.stdout.decode(errors="replace")
     return ".debug_info" in output

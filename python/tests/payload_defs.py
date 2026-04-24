@@ -104,6 +104,5 @@ def all_payload_combos() -> list[tuple[str, str, str]]:
             os_entry = OPERATING_SYSTEMS.get(os_name)
             if os_entry is None:
                 continue
-            for arch in os_entry.architectures:
-                combos.append((blob_type, os_name, arch))
+            combos.extend((blob_type, os_name, arch) for arch in os_entry.architectures)
     return sorted(combos)

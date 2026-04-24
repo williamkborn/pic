@@ -51,20 +51,14 @@ from picblobs._introspect import (
 
 __version__ = "0.1.0"
 __all__ = [
-    # Core extraction
-    "get_blob",
-    "list_blobs",
-    "BlobData",
-    "extract",
-    "clear_cache",
-    # Enums
     "OS",
-    "Arch",
-    "BlobType",
-    "ValidationError",
-    # Builder API (REQ-015)
-    "Blob",
     "AllocJumpBuilder",
+    "Arch",
+    "Blob",
+    "BlobData",
+    "BlobType",
+    "ConfigField",
+    "ConfigLayout",
     "HelloBuilder",
     "HelloWindowsBuilder",
     "ReflectivePeBuilder",
@@ -72,20 +66,22 @@ __all__ = [
     "StagerMmapBuilder",
     "StagerPipeBuilder",
     "StagerTcpBuilder",
-    "UlExecBuilder",
-    # Introspection (REQ-016)
     "Target",
-    "ConfigField",
-    "ConfigLayout",
-    "targets",
-    "blob_types",
-    "is_supported",
-    "raw_blob",
+    "UlExecBuilder",
+    "ValidationError",
     "blob_size",
+    "blob_types",
     "build_hash",
+    "clear_cache",
     "config_layout",
     "djb2",
     "djb2_dll",
+    "extract",
+    "get_blob",
+    "is_supported",
+    "list_blobs",
+    "raw_blob",
+    "targets",
 ]
 
 _PKG_DIR = Path(__file__).parent
@@ -181,8 +177,7 @@ def list_blobs() -> list[tuple[str, str, str]]:
         results = []
         for blob_type, entry in manifest.get("catalog", {}).items():
             for os_name, arches in entry.get("platforms", {}).items():
-                for arch in arches:
-                    results.append((blob_type, os_name, arch))
+                results.extend((blob_type, os_name, arch) for arch in arches)
         return sorted(results)
 
     # Fallback: discover from filesystem (both .bin and .so directories).

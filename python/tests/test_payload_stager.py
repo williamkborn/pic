@@ -11,18 +11,14 @@ See: spec/verification/TEST-011-payload-pytest-suite.md
 
 from __future__ import annotations
 
+import contextlib
 import os
 import socket
 import struct
-import tempfile
 import threading
 from pathlib import Path
 
 import pytest
-
-from picblobs import get_blob
-from picblobs.runner import is_arch_skip_rosetta, run_blob
-
 from payload_defs import (
     EXPECTATIONS,
     OPERATING_SYSTEMS,
@@ -30,7 +26,8 @@ from payload_defs import (
     RUNNER_TYPE,
     runtime_test_arches,
 )
-
+from picblobs import get_blob
+from picblobs.runner import is_arch_skip_rosetta, run_blob
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,9 +37,10 @@ from payload_defs import (
 def _blob_exists(blob_type: str, target_os: str, target_arch: str) -> bool:
     try:
         get_blob(blob_type, target_os, target_arch)
-        return True
     except FileNotFoundError:
         return False
+    else:
+        return True
 
 
 def _stager_combos(stager_type: str) -> list[tuple[str, str]]:
@@ -51,8 +49,7 @@ def _stager_combos(stager_type: str) -> list[tuple[str, str]]:
         os_entry = OPERATING_SYSTEMS.get(os_name)
         if os_entry is None:
             continue
-        for arch in runtime_test_arches(os_name):
-            combos.append((os_name, arch))
+        combos.extend((os_name, arch) for arch in runtime_test_arches(os_name))
     return sorted(combos)
 
 
@@ -130,10 +127,8 @@ def tcp_payload_server():
     yield _start
 
     for srv in servers:
-        try:
+        with contextlib.suppress(OSError):
             srv.close()
-        except OSError:
-            pass
 
 
 @pytest.fixture
@@ -302,7 +297,7 @@ class TestStagerPipe:
 
         # Writer thread (opens FIFO for writing after reader opens it).
         def _write_fifo() -> None:
-            with open(str(fifo), "wb") as f:
+            with fifo.open("wb") as f:
                 f.write(data)
 
         writer = threading.Thread(target=_write_fifo, daemon=True)

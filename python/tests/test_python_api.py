@@ -12,19 +12,17 @@ import hashlib
 import socket
 import struct
 
-import pytest
-
 import picblobs
+import pytest
 from picblobs import (
+    OS,
     Arch,
     Blob,
     BlobType,
     ConfigLayout,
-    OS,
     Target,
     ValidationError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,9 +32,10 @@ from picblobs import (
 def _blob_staged(blob_type: str, os_: str, arch: str) -> bool:
     try:
         picblobs.get_blob(blob_type, os_, arch)
-        return True
     except FileNotFoundError:
         return False
+    else:
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +193,7 @@ class TestBuilderAllocJump:
             r = subprocess.run(
                 [str(runner), str(path)],
                 capture_output=True,
+                check=False,
                 timeout=10,
             )
             assert r.returncode == 0, r.stderr
@@ -359,11 +359,11 @@ class TestBuilderImmutability:
 
     def test_top_level_blob_frozen(self) -> None:
         b = Blob("linux", "x86_64")
-        with pytest.raises(dataclasses_error()):  # type: ignore
-            b.os = OS.WINDOWS  # type: ignore
+        with pytest.raises(dataclasses_error()):
+            b.os = OS.WINDOWS  # type: ignore[misc]
 
 
-def dataclasses_error():
+def dataclasses_error() -> type[Exception]:
     import dataclasses
 
     return dataclasses.FrozenInstanceError

@@ -22,9 +22,8 @@ import shutil
 import stat
 import subprocess
 import sys
-from pathlib import Path
-
 import sys as _sys
+from pathlib import Path
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from registry import BLOB_TYPES, platform_configs
@@ -51,18 +50,19 @@ def discover_blob_targets() -> list[str]:
     build_file = PROJECT_ROOT / "src" / "payload" / "BUILD.bazel"
     if not build_file.exists():
         return ["hello"]
-    targets = []
-    for match in re.finditer(
-        r'pic_blob\(\s*name\s*=\s*"([^"]+)"', build_file.read_text()
-    ):
-        targets.append(match.group(1))
+    targets = [
+        match.group(1)
+        for match in re.finditer(
+            r'pic_blob\(\s*name\s*=\s*"([^"]+)"', build_file.read_text()
+        )
+    ]
     return targets or ["hello"]
 
 
 def bazel_build(configs: list[str], labels: list[str]) -> bool:
     """Run bazel build for configs+labels. Returns True on success."""
     cmd = ["bazel", "build"] + [f"--config={c}" for c in configs] + labels
-    result = subprocess.run(cmd, capture_output=True, cwd=PROJECT_ROOT)
+    result = subprocess.run(cmd, capture_output=True, check=False, cwd=PROJECT_ROOT)
     if result.returncode != 0:
         for line in result.stderr.decode().splitlines():
             if "error" in line.lower():
@@ -115,12 +115,14 @@ def verify_elf_arch(so_path: Path, expected_arch: str) -> bool:
         result = subprocess.run(
             ["file", "-b", str(so_path)],
             capture_output=True,
+            check=False,
             text=True,
             timeout=5,
         )
-        return expected in result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return True  # can't check, don't block
+    else:
+        return expected in result.stdout
 
 
 def find_bazel_output(label: str, extension: str) -> Path:
@@ -343,11 +345,7 @@ def main() -> int:
         help="Blob target names (default: auto-discovered from BUILD.bazel)",
     )
     _default_configs = [
-        k
-        for k in PLATFORM_CONFIGS
-        if k.startswith("linux:")
-        or k.startswith("windows:")
-        or k.startswith("freebsd:")
+        k for k in PLATFORM_CONFIGS if k.startswith(("linux:", "windows:", "freebsd:"))
     ]
     parser.add_argument(
         "--configs",

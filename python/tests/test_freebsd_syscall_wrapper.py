@@ -97,7 +97,9 @@ def _compile_probe(
     else:
         cmd.insert(-3, "-DPICBLOBS_OS_LINUX=1")
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(
+        cmd, capture_output=True, check=False, text=True, timeout=30
+    )
     assert result.returncode == 0, (
         f"compile failed for {arch} (freebsd={freebsd}):\n{result.stderr}"
     )
@@ -118,6 +120,7 @@ def _disassemble(arch: str, obj: Path) -> str:
     result = subprocess.run(
         [str(od), "-d", str(obj)],
         capture_output=True,
+        check=False,
         text=True,
         timeout=30,
     )
@@ -217,10 +220,10 @@ int main(void)
         "-o",
         str(out),
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    r = subprocess.run(cmd, capture_output=True, check=False, text=True, timeout=30)
     assert r.returncode == 0, f"host compile failed:\n{r.stderr}"
 
-    run = subprocess.run([str(out)], capture_output=True, timeout=10)
+    run = subprocess.run([str(out)], capture_output=True, check=False, timeout=10)
     assert run.returncode == 0, (
         f"FreeBSD wrapper failed: exit={run.returncode}, "
         f"stdout={run.stdout!r} stderr={run.stderr!r}"

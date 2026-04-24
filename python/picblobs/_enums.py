@@ -27,7 +27,7 @@ class OS(str, enum.Enum):
     WINDOWS = "windows"
 
     @classmethod
-    def parse(cls, value: "OS | str") -> "OS":
+    def parse(cls, value: OS | str) -> OS:
         if isinstance(value, cls):
             return value
         if isinstance(value, str):
@@ -55,7 +55,7 @@ class Arch(str, enum.Enum):
     RISCV64 = "riscv64"
 
     @classmethod
-    def parse(cls, value: "Arch | str") -> "Arch":
+    def parse(cls, value: Arch | str) -> Arch:
         if isinstance(value, cls):
             return value
         if isinstance(value, str):
@@ -87,7 +87,7 @@ class BlobType(str, enum.Enum):
     TEST_MMAP_OK = "test_mmap_ok"
 
     @classmethod
-    def parse(cls, value: "BlobType | str") -> "BlobType":
+    def parse(cls, value: BlobType | str) -> BlobType:
         if isinstance(value, cls):
             return value
         if isinstance(value, str):
