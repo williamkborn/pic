@@ -84,3 +84,9 @@ class TestRepoTooling:
         assert "tools/fmt.py" in content
         assert "tools/lint.py" in content
         assert "tools/c_lint_check.sh" in content
+
+    def test_fmt_uses_repo_clang_format_config(self) -> None:
+        content = (REPO_ROOT / "tools" / "fmt.py").read_text()
+
+        assert ".clang-format" in content
+        assert "--style=" in content

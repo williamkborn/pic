@@ -18,7 +18,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from quality_paths import collect_files
+from quality_paths import PROJECT_ROOT, collect_files
 
 log = logging.getLogger("fmt")
 
@@ -46,6 +46,7 @@ EXCLUDE = {
     ".cache",
     "node_modules",
 }
+CLANG_FORMAT_STYLE = f"file:{PROJECT_ROOT / '.clang-format'}"
 
 
 def _run_formatter(
@@ -67,7 +68,13 @@ def _run_formatter(
     log.info("%s: %d files", name, len(files))
     log.debug("  %s", " ".join([*cmd[:3], "..."]))
 
-    result = subprocess.run(full_cmd, capture_output=True, check=False, text=True)
+    result = subprocess.run(
+        full_cmd,
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
 
     if result.returncode != 0:
         if check:
@@ -116,7 +123,10 @@ def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path]]:
 def _format_c_files(files: list[Path], *, check: bool) -> bool:
     if not files:
         return True
-    cmd = ["clang-format", "--dry-run", "--Werror"] if check else ["clang-format", "-i"]
+    if check:
+        cmd = ["clang-format", "--dry-run", "--Werror", f"--style={CLANG_FORMAT_STYLE}"]
+    else:
+        cmd = ["clang-format", "-i", f"--style={CLANG_FORMAT_STYLE}"]
     return _run_formatter("clang-format", cmd, files, check)
 
 
