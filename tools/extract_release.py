@@ -26,6 +26,7 @@ sys.path.insert(0, str(_PROJECT_ROOT / "python"))
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import Section
 
 from tools.registry import (
     BLOB_TYPES,
@@ -76,7 +77,7 @@ def _extract_so(so_path: Path) -> dict:
 
 def _extract_blob_bounds(elf: ELFFile, so_path: Path) -> tuple[int, int, int]:
     """Return (__blob_start, __blob_end, __config_start) symbol values."""
-    symtab = elf.get_section_by_name(".symtab")
+    symtab = _get_section_by_name_relaxed(elf, ".symtab")
     if symtab is None:
         raise ValueError(f"No .symtab in {so_path}")
 
@@ -102,7 +103,7 @@ def _extract_alloc_sections(
     size = blob_end - blob_start
     buf = bytearray(size)
     sections: dict[str, dict] = {}
-    for section in elf.iter_sections():
+    for section in _iter_sections_relaxed(elf):
         section_info = _section_overlap(section, blob_start, blob_end)
         if section_info is None:
             continue
@@ -119,6 +120,30 @@ def _extract_alloc_sections(
             }
         _copy_section_bytes(buf, section, blob_start, overlap_start, overlap_end)
     return buf, sections
+
+
+def _iter_sections_relaxed(elf: ELFFile):
+    """Yield generic section views without pyelftools' strict type wrappers.
+
+    Some 32-bit FreeBSD/MIPS blobs contain relocation sections whose headers are
+    acceptable to binutils but rejected by pyelftools' ``RelocationSection``
+    constructor. Extraction only needs the raw alloc sections, so iterate the
+    section headers directly and wrap them as generic ``Section`` objects.
+    """
+    for index in range(elf.num_sections()):
+        header = elf._get_section_header(index)
+        name = elf._get_section_name(header)
+        yield Section(header, name, elf)
+
+
+def _get_section_by_name_relaxed(elf: ELFFile, target_name: str):
+    """Return one named section without forcing pyelftools to scan every type."""
+    for index in range(elf.num_sections()):
+        header = elf._get_section_header(index)
+        name = elf._get_section_name(header)
+        if name == target_name:
+            return elf._make_section(header)
+    return None
 
 
 def _section_overlap(

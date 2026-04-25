@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Install Python dev environment
+        run: |
+          source sourceme
+          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Validate lefthook config
+        run: lefthook validate
+
+      - name: Check formatting
+        run: python tools/fmt.py --check
+
+      - name: Check lint
+        run: python tools/lint.py --check
+
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.12"
+          - "3.13"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Python dev environment
+        run: |
+          source sourceme
+          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run picblobs unit suite
+        run: ./testall --unit-only -q
+
+      - name: Run picblobs-cli suite
+        run: python -m pytest python_cli/tests -q
+
+  build-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Bazel and runtime tools
+        run: |
+          BAZEL_VERSION="$(cat .bazelversion)"
+          curl -fsSL \
+            "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
+            -o /tmp/bazel
+          sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Install Python dev environment
+        run: |
+          source sourceme
+          uv pip install twine
+          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Build a representative staged target
+        run: python tools/stage_blobs.py --targets hello --configs linux:x86_64
+
+      - name: Run targeted execution smoke
+        run: |
+          PICBLOBS_TEST_OS=linux \
+          PICBLOBS_TEST_ARCH=x86_64 \
+          PICBLOBS_TEST_TYPE=hello \
+            python -m pytest python/tests/test_payload_hello.py -q
+          python -m picblobs_cli run hello linux:x86_64 | tee /tmp/picblobs-run.txt
+          grep -F "Hello, world!" /tmp/picblobs-run.txt
+
+      - name: Build distributions
+        run: |
+          uv build python --wheel --sdist --out-dir dist/picblobs --no-build-isolation
+          uv build python_cli --wheel --sdist --out-dir dist/picblobs-cli --no-build-isolation
+          python tools/check_dist.py picblobs --dist-dir dist/picblobs
+          python tools/check_dist.py picblobs-cli --dist-dir dist/picblobs-cli
+          python -m twine check dist/picblobs/* dist/picblobs-cli/*
+
+      - name: Smoke-install built wheels
+        run: |
+          python -m venv /tmp/picblobs-wheel-smoke
+          /tmp/picblobs-wheel-smoke/bin/python -m pip install --upgrade pip
+          /tmp/picblobs-wheel-smoke/bin/python -m pip install \
+            dist/picblobs/*.whl \
+            dist/picblobs-cli/*.whl
+          /tmp/picblobs-wheel-smoke/bin/picblobs-cli --help > /dev/null
+          /tmp/picblobs-wheel-smoke/bin/python - <<'PY'
+          from picblobs import get_blob, list_blobs
+          from picblobs.runner import find_runner
+          import picblobs_cli
+
+          assert list_blobs()
+          blob = get_blob("hello", "linux", "x86_64")
+          assert blob.code
+          runner = find_runner("linux", "x86_64")
+          assert runner.exists(), runner
+          print(picblobs_cli.__version__)
+          PY

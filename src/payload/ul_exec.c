@@ -762,6 +762,7 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
  * stack pointer register if we use generic "r" constraints.
  */
 PIC_TEXT
+#if defined(__x86_64__)
 __attribute__((noreturn)) static void jump_to_entry_x86_64_freebsd(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -777,8 +778,10 @@ __attribute__((noreturn)) static void jump_to_entry_x86_64_freebsd(
 		: "r10", "r11", "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__x86_64__)
 __attribute__((noreturn)) static void jump_to_entry_x86_64_linux(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -793,8 +796,10 @@ __attribute__((noreturn)) static void jump_to_entry_x86_64_linux(
 		: "r10", "r11", "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__i386__)
 __attribute__((noreturn)) static void jump_to_entry_i386(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -808,8 +813,10 @@ __attribute__((noreturn)) static void jump_to_entry_i386(
 		: "eax", "ecx", "edx", "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__aarch64__)
 __attribute__((noreturn)) static void jump_to_entry_aarch64(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -823,8 +830,10 @@ __attribute__((noreturn)) static void jump_to_entry_aarch64(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__arm__)
 __attribute__((noreturn)) static void jump_to_entry_arm(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -838,8 +847,10 @@ __attribute__((noreturn)) static void jump_to_entry_arm(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__mips__)
 __attribute__((noreturn)) static void jump_to_entry_mips(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -853,8 +864,10 @@ __attribute__((noreturn)) static void jump_to_entry_mips(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__s390x__)
 __attribute__((noreturn)) static void jump_to_entry_s390x(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -868,8 +881,10 @@ __attribute__((noreturn)) static void jump_to_entry_s390x(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__sparc__)
 __attribute__((noreturn)) static void jump_to_entry_sparc(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -884,8 +899,10 @@ __attribute__((noreturn)) static void jump_to_entry_sparc(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__riscv)
 __attribute__((noreturn)) static void jump_to_entry_riscv(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -899,8 +916,10 @@ __attribute__((noreturn)) static void jump_to_entry_riscv(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 PIC_TEXT
+#if defined(__powerpc__)
 __attribute__((noreturn)) static void jump_to_entry_powerpc(
 	pic_uintptr entry, pic_uintptr sp)
 {
@@ -915,6 +934,7 @@ __attribute__((noreturn)) static void jump_to_entry_powerpc(
 		: "memory");
 	__builtin_unreachable();
 }
+#endif
 
 #if defined(__x86_64__)
 #if defined(PICBLOBS_OS_FREEBSD)

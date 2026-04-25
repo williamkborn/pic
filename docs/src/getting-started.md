@@ -6,6 +6,8 @@
 - [QEMU user-static](https://www.qemu.org/) for cross-architecture testing
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip/venv
+- `clang-format` for C formatting
+- `clang-tidy` for full C lint (`pre-push` / `tools/c_lint_check.sh`)
 
 Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/) for
 Linux cross-compilation (ARMv5, ARMv7, AArch64, MIPS, s390x, x86).
@@ -25,6 +27,10 @@ picblobs-cli verify
 # Run the full test suite
 ./testall
 ```
+
+`source sourceme` also installs the repo's Git hooks with `lefthook`, so local
+formatting and lint checks start running automatically on `git commit` and
+`git push`.
 
 ## Docker / Podman (no local setup)
 

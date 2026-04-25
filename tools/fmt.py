@@ -16,11 +16,14 @@ import logging
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+from quality_paths import collect_files
 
 log = logging.getLogger("fmt")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Directories to search for source files.
 C_ROOTS = ["src", "tests"]
@@ -45,21 +48,6 @@ EXCLUDE = {
 }
 
 
-def _find_files(roots: list[str], extensions: set[str]) -> list[Path]:
-    """Find all files with given extensions under roots, excluding artifacts."""
-    files = []
-    for root_name in roots:
-        root = PROJECT_ROOT / root_name
-        if not root.exists():
-            continue
-        for path in root.rglob("*"):
-            if any(part in EXCLUDE for part in path.relative_to(PROJECT_ROOT).parts):
-                continue
-            if path.suffix in extensions and path.is_file():
-                files.append(path)
-    return sorted(files)
-
-
 def _run_formatter(
     name: str,
     cmd: list[str],
@@ -72,8 +60,8 @@ def _run_formatter(
 
     binary = shutil.which(cmd[0])
     if binary is None:
-        log.warning("%s not found, skipping %d files", cmd[0], len(files))
-        return True
+        log.error("%s not found. Install it to format %d files.", cmd[0], len(files))
+        return False
 
     full_cmd = cmd + [str(f) for f in files]
     log.info("%s: %d files", name, len(files))
@@ -94,36 +82,64 @@ def _run_formatter(
     return True
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Format all project source files")
     parser.add_argument(
         "--check",
         action="store_true",
         help="Check formatting without modifying (exit 1 if unformatted)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Optional files or directories to format. Defaults to repo source roots.",
+    )
+    return parser.parse_args()
+
+
+def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path]]:
+    c_files = collect_files(
+        paths,
+        roots=C_ROOTS,
+        extensions={".c", ".h"},
+        exclude=EXCLUDE,
+    )
+    py_files = collect_files(
+        paths,
+        roots=PY_ROOTS,
+        extensions={".py"},
+        exclude=EXCLUDE,
+    )
+    return c_files, py_files
+
+
+def _format_c_files(files: list[Path], *, check: bool) -> bool:
+    if not files:
+        return True
+    cmd = ["clang-format", "--dry-run", "--Werror"] if check else ["clang-format", "-i"]
+    return _run_formatter("clang-format", cmd, files, check)
+
+
+def _format_python_files(files: list[Path], *, check: bool) -> bool:
+    if not files:
+        return True
+    cmd = ["ruff", "format", "--check"] if check else ["ruff", "format"]
+    return _run_formatter("ruff", cmd, files, check)
+
+
+def main() -> int:
+    args = _parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
-    c_files = _find_files(C_ROOTS, {".c", ".h"})
-    py_files = _find_files(PY_ROOTS, {".py"})
+    c_files, py_files = _collect_targets(args.paths)
 
-    ok = True
+    if not c_files and not py_files:
+        log.info("No matching files.")
+        return 0
 
-    # C/H files: clang-format
-    if c_files:
-        if args.check:
-            c_cmd = ["clang-format", "--dry-run", "--Werror"]
-        else:
-            c_cmd = ["clang-format", "-i"]
-        if not _run_formatter("clang-format", c_cmd, c_files, args.check):
-            ok = False
-
-    # Python files: ruff format
-    if py_files:
-        py_cmd = ["ruff", "format", "--check"] if args.check else ["ruff", "format"]
-        if not _run_formatter("ruff", py_cmd, py_files, args.check):
-            ok = False
+    ok = _format_c_files(c_files, check=args.check)
+    ok = _format_python_files(py_files, check=args.check) and ok
 
     if ok:
         log.info("ok")

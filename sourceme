@@ -14,18 +14,23 @@ cd "${_picblobs_root}/python" || return 1
 
 if [[ ! -d .venv ]]; then
   echo "==> Creating virtualenv with uv"
-  uv venv
+  uv venv || return 1
 fi
 
 echo "==> Installing picblobs in dev mode"
-uv pip install -e '.[dev]'
+uv pip install -e '.[dev]' || return 1
 
 echo "==> Installing picblobs-cli in dev mode"
-uv pip install -e "${_picblobs_root}/python_cli"
+uv pip install -e "${_picblobs_root}/python_cli" || return 1
 
-source .venv/bin/activate
+source .venv/bin/activate || return 1
 
 cd "${_picblobs_root}"
+
+if [[ -z "${CI:-}" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "==> Installing git hooks with lefthook"
+  lefthook install || return 1
+fi
 
 echo "==> Ready. Try: picblobs-cli --help"
 

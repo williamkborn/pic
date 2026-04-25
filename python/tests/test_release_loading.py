@@ -314,6 +314,84 @@ class TestConfigLayoutSidecarFallback:
 
 
 class TestExtractReleaseCleanup:
+    def test_relaxed_section_iteration_avoids_pyelftools_wrappers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tools import extract_release as er
+
+        class Header(dict):
+            __getattr__ = dict.__getitem__
+
+        class FakeElf:
+            def num_sections(self) -> int:
+                return 1
+
+            def _get_section_header(self, index: int) -> Header:
+                assert index == 0
+                return Header(
+                    sh_flags=0,
+                    sh_size=0,
+                    sh_addr=0,
+                    sh_type="SHT_RELA",
+                )
+
+            def _get_section_name(self, header: Header) -> str:
+                assert header["sh_type"] == "SHT_RELA"
+                return ".rela.dyn"
+
+            def iter_sections(self):  # pragma: no cover - regression guard
+                raise AssertionError("iter_sections should not be used")
+
+        created: list[tuple[str, str]] = []
+
+        class FakeSection:
+            def __init__(self, header: Header, name: str, elffile: FakeElf) -> None:
+                del elffile
+                created.append((header["sh_type"], name))
+                self.header = header
+                self.name = name
+
+        monkeypatch.setattr(er, "Section", FakeSection)
+
+        sections = list(er._iter_sections_relaxed(FakeElf()))
+
+        assert len(sections) == 1
+        assert created == [("SHT_RELA", ".rela.dyn")]
+
+    def test_relaxed_section_lookup_avoids_full_section_scan(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from tools import extract_release as er
+
+        class Header(dict):
+            __getattr__ = dict.__getitem__
+
+        class FakeElf:
+            def num_sections(self) -> int:
+                return 2
+
+            def _get_section_header(self, index: int) -> Header:
+                if index == 0:
+                    return Header(sh_type="SHT_RELA")
+                if index == 1:
+                    return Header(sh_type="SHT_SYMTAB")
+                raise AssertionError(index)
+
+            def _get_section_name(self, header: Header) -> str:
+                if header["sh_type"] == "SHT_RELA":
+                    return ".rela.dyn"
+                return ".symtab"
+
+            def _make_section(self, header: Header):
+                return {"type": header["sh_type"]}
+
+            def iter_sections(self):  # pragma: no cover - regression guard
+                raise AssertionError("iter_sections should not be used")
+
+        result = er._get_section_by_name_relaxed(FakeElf(), ".symtab")
+
+        assert result == {"type": "SHT_SYMTAB"}
+
     def test_removes_stale_release_artifacts(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

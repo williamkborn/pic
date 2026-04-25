@@ -29,12 +29,19 @@ class TestPicblobsPackaging:
         assert project["urls"]["Homepage"]
         assert project["urls"]["Documentation"]
         assert project["urls"]["Issues"]
+        dev_deps = project["optional-dependencies"]["dev"]
+        assert any(dep.startswith("lefthook>=") for dep in dev_deps)
+        assert any(dep.startswith("lizard>=") for dep in dev_deps)
+        assert any(dep.startswith("ruff>=") for dep in dev_deps)
 
     def test_library_wheel_excludes_dev_so_tree(self) -> None:
         pyproject = _load_pyproject("python")
         wheel_target = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]
 
         assert wheel_target["packages"] == ["picblobs"]
+        assert (
+            "picblobs/blobs/*.bin" in pyproject["tool"]["hatch"]["build"]["artifacts"]
+        )
         assert "picblobs/_blobs/**" in pyproject["tool"]["hatch"]["build"]["exclude"]
         assert "force-include" not in wheel_target
 
@@ -61,3 +68,19 @@ class TestPicblobsCliPackaging:
 
         assert wheel_target["packages"] == ["picblobs_cli"]
         assert "force-include" not in wheel_target
+
+
+class TestRepoTooling:
+    def test_sourceme_installs_lefthook(self) -> None:
+        content = (REPO_ROOT / "sourceme").read_text()
+
+        assert "lefthook install" in content
+
+    def test_lefthook_covers_repo_quality_entrypoints(self) -> None:
+        content = (REPO_ROOT / "lefthook.yml").read_text()
+
+        assert "pre-commit:" in content
+        assert "pre-push:" in content
+        assert "tools/fmt.py" in content
+        assert "tools/lint.py" in content
+        assert "tools/c_lint_check.sh" in content

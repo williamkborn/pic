@@ -157,6 +157,7 @@ static inline void write16_be(pic_u8 *p, pic_u16 v)
 	p[1] = (pic_u8)v;
 }
 
+#if defined(__x86_64__)
 static pic_u8 *find_prev_mov_eax_imm(
 	pic_u8 *code, pic_size_t start, pic_size_t limit)
 {
@@ -210,7 +211,6 @@ static int signaled(int status)
 
 static int term_signal(int status) { return status & 0x7f; }
 
-#if defined(__x86_64__)
 static void set_freebsd_result(struct x86_64_regs *regs)
 {
 	long ret = (long)regs->rax;
@@ -422,6 +422,19 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 	patch_syscalls_x86_64(code, size);
 }
 #elif defined(__i386__)
+static pic_u8 *find_prev_mov_eax_imm(
+	pic_u8 *code, pic_size_t start, pic_size_t limit)
+{
+	pic_size_t lo = (start > limit) ? (start - limit) : 0;
+	for (pic_size_t i = start; i >= lo + 4; i--) {
+		if (code[i - 4] == 0xb8)
+			return code + i - 4;
+		if (i == lo + 4)
+			break;
+	}
+	return (pic_u8 *)0;
+}
+
 static void patch_syscalls_i386(pic_u8 *code, pic_size_t size)
 {
 	for (pic_size_t i = 0; i + 1 < size; i++) {
@@ -657,9 +670,9 @@ static pic_size_t patch_limit_from_argv(int argc, char **argv, long size)
 	return patch_limit;
 }
 
+#if defined(__x86_64__)
 static void run_x86_64_blob(void *blob)
 {
-#if defined(__x86_64__)
 	long pid = pic_syscall0(__NR_fork);
 	if (pid < 0)
 		pic_exit_group(RUNNER_ERROR);
@@ -671,10 +684,8 @@ static void run_x86_64_blob(void *blob)
 		pic_exit_group(RUNNER_ERROR);
 	}
 	pic_exit_group(trace_child_x86_64(pid));
-#else
-	(void)blob;
-#endif
 }
+#endif
 
 int runner_main(int argc, char **argv)
 {

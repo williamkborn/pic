@@ -6,6 +6,9 @@ tools/
   generate.py          # generates all derived files from registry
   stage_blobs.py       # copies bazel outputs into Python package tree
   fmt.py               # format all C and Python files
+  lint.py              # ruff + lizard repo lint entrypoint
+  quality_paths.py     # shared staged-file filtering for repo quality tools
+  c_lint_check.sh      # clang-tidy wrapper for full C lint
 
 src/
   include/picblobs/
@@ -87,4 +90,5 @@ spec/                  # requirements, architecture decisions, verification spec
 testall                # run the full test suite
 buildall               # build and stage all platforms
 sourceme               # set up dev environment (source this)
+lefthook.yml           # git hook policy for local formatting and lint
 ```

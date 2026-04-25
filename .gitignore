@@ -23,6 +23,8 @@ poetry.toml
 *~
 .idea/
 .vscode/
+lefthook-local.yml
+.lefthook-local.yml
 
 # Core dumps
 *.core
@@ -56,4 +58,3 @@ mbed/blobs/*.h
 mbed/blobs/
 
 build-artifacts/
-
