@@ -29,11 +29,6 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Install system tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
-
       - name: Install Python dev environment
         run: |
           source sourceme

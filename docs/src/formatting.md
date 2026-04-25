@@ -17,9 +17,9 @@ environment, and installs the repo hooks. The hooks are split by cost:
 - `pre-commit`: format staged C/Python files and lint the staged diff
 - `pre-push`: run full-repo formatting, Python lint/complexity, and C `clang-tidy`
 
-The Python-side tools (`lefthook`, `ruff`, `lizard`) come from the repo venv.
-The C-side tools still need to be on your system `PATH`: `clang-format` for
-formatting and `clang-tidy` for the Bazel-backed C lint pass.
+The fast local tooling (`lefthook`, `ruff`, `lizard`, `clang-format`) comes
+from the repo venv. Only `clang-tidy` still needs to be on your system `PATH`
+for the Bazel-backed C lint pass.
 
 ## Formatters and Linters
 

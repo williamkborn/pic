@@ -6,7 +6,6 @@
 - [QEMU user-static](https://www.qemu.org/) for cross-architecture testing
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip/venv
-- `clang-format` for C formatting
 - `clang-tidy` for full C lint (`pre-push` / `tools/c_lint_check.sh`)
 
 Toolchains are fetched automatically via [Bootlin](https://toolchains.bootlin.com/) for

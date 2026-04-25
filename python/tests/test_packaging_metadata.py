@@ -30,6 +30,7 @@ class TestPicblobsPackaging:
         assert project["urls"]["Documentation"]
         assert project["urls"]["Issues"]
         dev_deps = project["optional-dependencies"]["dev"]
+        assert "clang-format==22.1.1" in dev_deps
         assert any(dep.startswith("lefthook>=") for dep in dev_deps)
         assert any(dep.startswith("lizard>=") for dep in dev_deps)
         assert any(dep.startswith("ruff>=") for dep in dev_deps)
