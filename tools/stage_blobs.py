@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Stage built .so blobs, test runners, and verifier fixtures.
 
-Builds all blob and runner targets for all platform configs via Bazel,
-then copies outputs into:
+Builds blob targets and non-Linux runner targets for all platform configs
+via Bazel, then copies outputs into:
   python/picblobs/_blobs/{os}/{arch}/{name}.so
   python_cli/picblobs_cli/_runners/{os}/{arch}/runner
   python_cli/picblobs_cli/_test_binaries/ul_exec/{os}/{arch}/hello_et_exec
@@ -318,6 +318,34 @@ def _build_runner(
     return True
 
 
+def _runner_label_for(
+    runner_type: str,
+    os_name: str,
+    no_runners: bool,
+    debug: bool,
+) -> str:
+    """Return the runner label to build for a platform, or empty string."""
+    if no_runners or debug or os_name == "linux":
+        return ""
+    return RUNNER_LABEL.format(runner_type=runner_type)
+
+
+def _stage_runner_if_built(
+    config_key: str,
+    mode: str,
+    runner_label: str,
+    runner_type: str,
+    arch_name: str,
+    runner_configs: list[str],
+) -> tuple[int, int]:
+    """Build and stage one runner if requested; return (passed, total)."""
+    if not _build_runner(config_key, mode, runner_label, runner_configs):
+        return 0, 0
+    if _stage_runner_output(runner_label, runner_type, arch_name):
+        return 1, 1
+    return 0, 1
+
+
 def _stage_platform(
     config_key: str,
     targets: list[str],
@@ -336,11 +364,7 @@ def _stage_platform(
 
     os_targets = _os_compatible_targets(targets, os_name, arch_name)
     blob_labels = _blob_labels(os_targets)
-    runner_label = (
-        RUNNER_LABEL.format(runner_type=runner_type)
-        if not no_runners and not debug
-        else ""
-    )
+    runner_label = _runner_label_for(runner_type, os_name, no_runners, debug)
     if not blob_labels and not runner_label:
         return 0, 0
 
@@ -354,15 +378,16 @@ def _stage_platform(
         built_blobs,
     )
 
-    if _build_runner(
+    runner_passed, runner_total = _stage_runner_if_built(
         config_key,
         mode,
         runner_label,
+        runner_type,
+        arch_name,
         _runner_build_config(os_name, arch_name, bazel_configs),
-    ):
-        total += 1
-        if _stage_runner_output(runner_label, runner_type, arch_name):
-            passed += 1
+    )
+    passed += runner_passed
+    total += runner_total
 
     test_passed, test_total = _stage_ul_exec_test_binary(
         os_targets,

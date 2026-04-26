@@ -96,12 +96,13 @@ class TestAllocJumpPayload:
             )
 
         runner_type = RUNNER_TYPE[target_os]
-        try:
-            from picblobs.runner import find_runner
+        if runner_type != "linux":
+            try:
+                from picblobs.runner import find_runner
 
-            find_runner(runner_type, target_arch)
-        except FileNotFoundError:
-            pytest.skip(f"No {runner_type} runner for {target_arch}")
+                find_runner(runner_type, target_arch)
+            except FileNotFoundError:
+                pytest.skip(f"No {runner_type} runner for {target_arch}")
 
         exp = EXPECTATIONS["alloc_jump"]
         blob = get_blob("alloc_jump", target_os, target_arch)
@@ -146,13 +147,6 @@ class TestAllocJumpEdgeCases:
 
         if is_arch_skip_rosetta(target_arch):
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
-
-        try:
-            from picblobs.runner import find_runner
-
-            find_runner("linux", target_arch)
-        except FileNotFoundError:
-            pytest.skip(f"No linux runner for {target_arch}")
 
         blob = get_blob("alloc_jump", "linux", target_arch)
         # Request an impossible allocation size.

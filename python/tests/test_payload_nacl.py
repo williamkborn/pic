@@ -92,10 +92,11 @@ class TestNaClPayload:
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
         runner_type = RUNNER_TYPE[target_os]
-        try:
-            find_runner(runner_type, target_arch)
-        except FileNotFoundError:
-            pytest.skip(f"No {runner_type} runner for {target_arch}")
+        if runner_type != "linux":
+            try:
+                find_runner(runner_type, target_arch)
+            except FileNotFoundError:
+                pytest.skip(f"No {runner_type} runner for {target_arch}")
 
         exp = EXPECTATIONS[blob_type]
         blob = get_blob(blob_type, target_os, target_arch)
@@ -153,10 +154,12 @@ class TestNaClE2E:
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
         runner_type = RUNNER_TYPE[target_os]
-        try:
-            runner_path = find_runner(runner_type, target_arch)
-        except FileNotFoundError:
-            pytest.skip(f"No {runner_type} runner for {target_arch}")
+        runner_path = None
+        if runner_type != "linux":
+            try:
+                runner_path = find_runner(runner_type, target_arch)
+            except FileNotFoundError:
+                pytest.skip(f"No {runner_type} runner for {target_arch}")
 
         server_blob = get_blob("nacl_server", target_os, target_arch)
         client_blob = get_blob("nacl_client", target_os, target_arch)

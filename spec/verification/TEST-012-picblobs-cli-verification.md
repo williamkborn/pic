@@ -94,11 +94,15 @@ runner binaries or verifier fixtures and remains usable on its own).
 
 ### Test 12.9: Runner discovery fallback
 
-1. With `picblobs_cli` importable: `picblobs.runner.find_runner("linux", "x86_64")`
+1. With `picblobs_cli` importable: `picblobs.runner.find_runner("windows", "x86_64")`
    returns a path inside the `picblobs_cli._runners` tree.
-2. After removing `picblobs_cli` from `sys.modules` and hiding it on
-   `sys.path`, the same call SHOULD fall back to `bazel-bin/tests/runners/`.
-3. If both locations are missing, the raised `FileNotFoundError` text
+2. `picblobs.runner.find_runner("linux", "x86_64")` SHALL raise
+   `FileNotFoundError`; Linux blobs run through `picblobs.wrap_elf()`
+   rather than a bundled C runner.
+3. After removing `picblobs_cli` from `sys.modules` and hiding it on
+   `sys.path`, non-Linux runner discovery SHOULD fall back to
+   `bazel-bin/tests/runners/`.
+4. If both non-Linux locations are missing, the raised `FileNotFoundError` text
    SHALL mention `picblobs-cli`.
 
 ### Test 12.10: `picblobs` wheel purity

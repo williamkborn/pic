@@ -33,6 +33,7 @@ from picblobs._builder import (
     StagerTcpBuilder,
     UlExecBuilder,
 )
+from picblobs._elf import wrap_elf
 from picblobs._enums import OS, Arch, BlobType, ValidationError
 from picblobs._extractor import BlobData, load_from_sidecar
 from picblobs._introspect import (
@@ -82,6 +83,7 @@ __all__ = [
     "list_blobs",
     "raw_blob",
     "targets",
+    "wrap_elf",
 ]
 
 _PKG_DIR = Path(__file__).parent

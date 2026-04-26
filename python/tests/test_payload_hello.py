@@ -74,12 +74,13 @@ class TestHelloPayload:
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
         runner_type = RUNNER_TYPE[target_os]
-        try:
-            from picblobs.runner import find_runner
+        if runner_type != "linux":
+            try:
+                from picblobs.runner import find_runner
 
-            find_runner(runner_type, target_arch)
-        except FileNotFoundError:
-            pytest.skip(f"No {runner_type} runner for {target_arch}")
+                find_runner(runner_type, target_arch)
+            except FileNotFoundError:
+                pytest.skip(f"No {runner_type} runner for {target_arch}")
 
         exp = EXPECTATIONS[blob_type]
         blob = get_blob(blob_type, target_os, target_arch)

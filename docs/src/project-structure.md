@@ -63,7 +63,7 @@ python/
 python_cli/
   picblobs_cli/
     cli.py             # click command tree for picblobs-cli
-    _runners/          # bundled runner binaries staged by tools/stage_blobs.py
+    _runners/          # bundled FreeBSD/Windows runners
     _test_binaries/    # verifier-only binaries, currently ul_exec fixtures
   tests/
     test_picblobs_cli.py
