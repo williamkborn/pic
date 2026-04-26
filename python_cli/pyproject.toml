@@ -1,16 +1,20 @@
 [project]
 name = "picblobs-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Click CLI + cross-compiled runners and verifier fixtures for picblobs"
+authors = [
+    { name = "William Born", email = "william.born.git@gmail.com" },
+    { name = "Ricardo Rivera", email = "ricardo.rivera@zetier.com" },
+]
 requires-python = ">=3.10"
-license = "MIT"
+license = "Apache-2.0"
 readme = "README.md"
 keywords = ["pic", "shellcode", "security", "qemu"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -26,7 +30,7 @@ classifiers = [
 # dependency is needed to execute them (QEMU is expected to be on the
 # user's PATH at run time).
 dependencies = [
-    "picblobs>=0.1.0",
+    "picblobs>=0.1.1",
     "click>=8.0",
 ]
 

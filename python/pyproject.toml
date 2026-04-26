@@ -1,15 +1,19 @@
 [project]
 name = "picblobs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Position-independent code blob library"
+authors = [
+    { name = "William Born", email = "william.born.git@gmail.com" },
+    { name = "Ricardo Rivera", email = "ricardo.rivera@zetier.com" },
+]
 requires-python = ">=3.10"
-license = "MIT"
+license = "Apache-2.0"
 readme = "README.md"
 keywords = ["pic", "shellcode", "security", "cross-platform"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

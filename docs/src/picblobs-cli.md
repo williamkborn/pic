@@ -33,10 +33,13 @@ editable mode.
 
 ## Commands
 
-```
+```bash
 picblobs-cli --help
 picblobs-cli COMMAND --help
 ```
+
+Top-level commands are `build`, `disasm`, `extract`, `info`, `list`,
+`list-runners`, `listing`, `run`, `test`, and `verify`.
 
 ### `info`
 
@@ -45,16 +48,17 @@ one-line summary of every staged target.
 
 ```bash
 $ picblobs-cli info
-picblobs:     0.1.0
-picblobs-cli: 0.1.0
+picblobs:     0.1.1
+picblobs-cli: 0.1.1
 runner bundle: /.../picblobs_cli/_runners
-qemu found:    aarch64, armv5_arm, ..., x86_64
+qemu found:    aarch64, armv5_arm, armv5_thumb, armv7_thumb, i686, mipsbe32, mipsel32, powerpc, ppc64le, riscv64, s390x, sparcv8, x86_64
 
 Targets:
-  freebsd:aarch64  (15 blob types)
-  freebsd:armv5_arm  (15 blob types)
+  freebsd:aarch64  (14 blob types)
+  freebsd:armv5_arm  (14 blob types)
   ...
-  windows:x86_64  (3 blob types)
+  linux:x86_64  (15 blob types)
+  windows:x86_64  (6 blob types)
 ```
 
 ### `list-runners`
@@ -117,17 +121,19 @@ bytes are written, with a hint listing the options that *are* valid.
 ```bash
 picblobs-cli run hello linux:x86_64
 picblobs-cli run hello linux:aarch64                # cross-arch via QEMU
-picblobs-cli run alloc_jump linux:x86_64 --payload inner.bin
-picblobs-cli run stager_fd linux:x86_64 --stdin payload_stream.bin
+picblobs-cli run stager_fd linux:x86_64 --config-hex 00000000 --stdin payload_stream.bin
 ```
 
 Options:
 
-- `--config-hex HEX` — append the hex bytes as the config struct.
-- `--payload FILE` — append the file contents as the config.
+- `--config-hex HEX` — use the hex bytes as the serialized config struct.
+- `--payload FILE` — read the serialized config struct from a file.
 - `--stdin FILE` — feed file contents to the blob on fd 0.
 - `--timeout SECONDS` (default 30).
+- `--runner-type TYPE` — override the runner type.
+- `--runner-path FILE` — use an explicit runner binary.
 - `--debug` — print command, paths, keep temp files.
+- `--dry-run` — print the runner command without executing it.
 
 #### File mode — execute an already-assembled blob
 
@@ -166,7 +172,7 @@ picblobs-cli verify
 # filters
 picblobs-cli verify --os linux
 picblobs-cli verify --type hello
-picblobs-cli verify --os freebsd --arch aarch64
+picblobs-cli verify --os freebsd --arch x86_64
 ```
 
 Exits non-zero if any blob fails; prints a `PASSED / FAILED / SKIPPED`
@@ -215,8 +221,12 @@ fi
 |---------------------------------------|----------------|
 | Assemble blobs from the Python builder | `picblobs`     |
 | Read blob metadata / config layouts   | `picblobs`     |
-| Run / verify blobs under QEMU         | `picblobs-cli` |
+| Run / verify blobs under bundled runners | `picblobs-cli` |
 | Get cross-compiled runner binaries    | `picblobs-cli` |
+
+The runtime catalog also includes `PIC_PLATFORM_HOSTED` NaCl variants
+(`nacl_client_hosted`, `nacl_server_hosted`). Those are staged artifacts for
+the hosted platform code path, not high-level builder methods.
 
 If you install only `picblobs`, `picblobs.runner.find_runner()` raises
 `FileNotFoundError` with a message pointing at `picblobs-cli`. The

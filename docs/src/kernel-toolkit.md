@@ -41,7 +41,8 @@ All encryption uses embedded TweetNaCl (XSalsa20 + Poly1305). No dependency on t
 
 ## VM tests
 
-7 tests verified on Ubuntu 24.04 (kernel 6.8):
+The Bazel VM suite currently contains seven Ubuntu 24.04 tests plus an Alpine
+3.21 build smoke test:
 
 | Test | What it verifies |
 |------|-----------------|
@@ -52,3 +53,4 @@ All encryption uses embedded TweetNaCl (XSalsa20 + Poly1305). No dependency on t
 | `kshell_ff` | Stealth mode (hidden from lsmod) |
 | `kshell_upload` | File upload + execution through shell |
 | `examples_build` | All example modules compile |
+| `kmod_build_alpine` | Module build smoke test on Alpine |

@@ -18,7 +18,23 @@ def _load_pyproject(package_dir: str) -> dict:
     return tomllib.loads(pyproject.read_text())
 
 
+EXPECTED_AUTHORS = [
+    {"name": "William Born", "email": "william.born.git@gmail.com"},
+    {"name": "Ricardo Rivera", "email": "ricardo.rivera@zetier.com"},
+]
+
+
 class TestPicblobsPackaging:
+    def test_package_versions_are_in_sync(self) -> None:
+        import picblobs
+
+        lib_project = _load_pyproject("python")["project"]
+        cli_project = _load_pyproject("python_cli")["project"]
+
+        assert lib_project["version"] == picblobs.__version__
+        assert cli_project["version"] == picblobs.__version__
+        assert f"picblobs>={picblobs.__version__}" in cli_project["dependencies"]
+
     def test_library_readme_is_not_blank(self) -> None:
         readme = REPO_ROOT / "python" / "README.md"
         assert readme.read_text().strip()
@@ -27,6 +43,7 @@ class TestPicblobsPackaging:
         project = _load_pyproject("python")["project"]
 
         assert project["readme"] == "README.md"
+        assert project["authors"] == EXPECTED_AUTHORS
         assert project["classifiers"]
         assert project["keywords"]
         assert project["urls"]["Homepage"]
@@ -60,6 +77,7 @@ class TestPicblobsCliPackaging:
         project = _load_pyproject("python_cli")["project"]
 
         assert project["readme"] == "README.md"
+        assert project["authors"] == EXPECTED_AUTHORS
         assert project["classifiers"]
         assert project["keywords"]
         assert project["urls"]["Homepage"]

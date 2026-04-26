@@ -6,7 +6,15 @@ from __future__ import annotations
 import argparse
 import tarfile
 import zipfile
+from email.parser import Parser
 from pathlib import Path
+
+_LICENSE_CLASSIFIER = "License :: OSI Approved :: Apache Software License"
+_LICENSE_EXPRESSION = "Apache-2.0"
+_AUTHOR_EMAILS = (
+    "William Born <william.born.git@gmail.com>",
+    "Ricardo Rivera <ricardo.rivera@zetier.com>",
+)
 
 
 def _find_one(dist_dir: Path, pattern: str) -> Path:
@@ -29,6 +37,49 @@ def _check_wheel_tag(names: list[str], wheel: zipfile.ZipFile) -> None:
     _require(dist_info is not None, "wheel metadata file is missing")
     metadata = wheel.read(dist_info).decode()
     _require("Tag: py3-none-any" in metadata, "wheel is not tagged py3-none-any")
+
+
+def _check_license_metadata(metadata_text: str, label: str) -> None:
+    metadata = Parser().parsestr(metadata_text)
+    license_expression = metadata.get("License-Expression")
+    license_field = metadata.get("License")
+    classifiers = metadata.get_all("Classifier", [])
+
+    _require(
+        license_expression == _LICENSE_EXPRESSION,
+        f"{label} should declare License-Expression: {_LICENSE_EXPRESSION}, "
+        f"got {license_expression!r}",
+    )
+    _require(
+        _LICENSE_CLASSIFIER in classifiers,
+        f"{label} is missing classifier {_LICENSE_CLASSIFIER!r}",
+    )
+    mit_values = [license_expression or "", license_field or "", *classifiers]
+    _require(
+        not any("MIT" in value for value in mit_values),
+        f"{label} should not declare MIT license metadata",
+    )
+
+
+def _check_author_metadata(metadata_text: str, label: str) -> None:
+    metadata = Parser().parsestr(metadata_text)
+    author_email = metadata.get("Author-email", "")
+
+    _require(
+        all(author in author_email for author in _AUTHOR_EMAILS),
+        f"{label} should declare authors: {', '.join(_AUTHOR_EMAILS)}",
+    )
+
+
+def _check_wheel_metadata(names: list[str], wheel: zipfile.ZipFile) -> None:
+    metadata_name = next(
+        (name for name in names if name.endswith(".dist-info/METADATA")),
+        None,
+    )
+    _require(metadata_name is not None, "wheel metadata file is missing")
+    metadata_text = wheel.read(metadata_name).decode()
+    _check_license_metadata(metadata_text, "wheel metadata")
+    _check_author_metadata(metadata_text, "wheel metadata")
 
 
 def _check_picblobs(names: list[str]) -> None:
@@ -92,6 +143,13 @@ def _check_sdist(path: Path, package: str, version: str | None) -> None:
     )
     with tarfile.open(path, "r:gz") as sdist:
         names = sdist.getnames()
+        pkg_info = next((name for name in names if name.endswith("/PKG-INFO")), None)
+        _require(pkg_info is not None, "sdist is missing PKG-INFO")
+        pkg_info_file = sdist.extractfile(pkg_info)
+        _require(pkg_info_file is not None, "sdist PKG-INFO cannot be read")
+        metadata_text = pkg_info_file.read().decode()
+        _check_license_metadata(metadata_text, "sdist metadata")
+        _check_author_metadata(metadata_text, "sdist metadata")
     _require(
         any(name.endswith("pyproject.toml") for name in names),
         "sdist is missing pyproject.toml",
@@ -123,6 +181,7 @@ def main() -> int:
     with zipfile.ZipFile(wheel) as built_wheel:
         names = built_wheel.namelist()
         _check_wheel_tag(names, built_wheel)
+        _check_wheel_metadata(names, built_wheel)
         if args.package == "picblobs":
             _check_picblobs(names)
         else:

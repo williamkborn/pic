@@ -34,7 +34,7 @@ tests/runners/
     runner.c           # [hand-written] mock TEB/PEB environment
     start/             # per-arch _start stubs (x86_64, i386, aarch64)
   freebsd/
-    runner.c           # [generated] FreeBSD syscall shim (WIP)
+    runner.c           # [generated] Linux-hosted FreeBSD syscall shim
     start/             # per-arch _start stubs
 
 release/
@@ -50,12 +50,23 @@ python/
     manifest.json      # runtime catalog (authoritative blob index)
   tests/
     conftest.py        # pytest config, fixtures, markers, env filters
-    payload_defs.py    # shared payload expectations and platform mappings
     test_payload_*.py  # payload execution tests (per category)
     test_extractor.py  # sidecar loading tests
+    test_freebsd_syscall_wrapper.py
+    test_packaging_metadata.py
+    test_python_api.py
+    test_quality_paths.py
+    test_release_loading.py
     test_runner.py     # QEMU runner tests
-    test_cli.py        # CLI tests
     test_sync.py       # registry sync/consistency tests
+
+python_cli/
+  picblobs_cli/
+    cli.py             # click command tree for picblobs-cli
+    _runners/          # bundled runner binaries staged by tools/stage_blobs.py
+    _test_binaries/    # verifier-only binaries, currently ul_exec fixtures
+  tests/
+    test_picblobs_cli.py
 
 kernel/                # kernel-mode tools and exercises (red team lab)
   ebpf/
@@ -65,6 +76,7 @@ kernel/                # kernel-mode tools and exercises (red team lab)
     kernel_prog.py     # custom kernel programs (syscall monitor, XDP, keylog)
   kmod/
     pic_kmod.c         # PIC blob loader (kprobes symbol resolution, stealth)
+    pic_kblob.c        # kernel blob loader helpers
     examples/
       kshell.c         # plaintext kernel reverse shell
       kshell_nacl.c    # NaCl-encrypted kernel reverse shell (embedded TweetNaCl)
@@ -80,7 +92,7 @@ kernel/                # kernel-mode tools and exercises (red team lab)
   vm/
     vm_harness.py      # hermetic QEMU VM test harness (Alpine + Ubuntu)
     patch_vermagic.py  # binary vermagic patcher for cross-version loading
-  BUILD.bazel          # bazel test targets (7 tests, ubuntu_suite)
+  BUILD.bazel          # bazel VM test targets (ubuntu_suite, alpine_suite)
   lab.md               # full lab guide with 19+ exercises
 
 spec/                  # requirements, architecture decisions, verification specs
