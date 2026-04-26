@@ -236,14 +236,21 @@ jobs:
           /tmp/picblobs-wheel-smoke/bin/picblobs-cli --help > /dev/null
           /tmp/picblobs-wheel-smoke/bin/python - <<'PY'
           from pathlib import Path
-          from picblobs import get_blob, list_blobs
+          from picblobs import get_blob, list_blobs, wrap_elf
           from picblobs.runner import find_runner
           import picblobs_cli
 
           assert list_blobs()
           blob = get_blob("hello", "linux", "x86_64")
           assert blob.code
-          runner = find_runner("linux", "x86_64")
+          assert wrap_elf(blob.code, "linux", "x86_64").startswith(b"\x7fELF")
+          try:
+              find_runner("linux", "x86_64")
+          except FileNotFoundError:
+              pass
+          else:
+              raise AssertionError("Linux runner should not be bundled")
+          runner = find_runner("windows", "x86_64")
           assert runner.exists(), runner
           assert picblobs_cli.ul_exec_test_binary("linux", "x86_64")
           import picblobs

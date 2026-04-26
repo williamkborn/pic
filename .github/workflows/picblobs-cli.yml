@@ -125,7 +125,15 @@ jobs:
           expected = os.environ["EXPECTED_VERSION"]
           assert picblobs.__version__ == expected
           assert picblobs_cli.__version__ == expected
-          runner = find_runner("linux", "x86_64")
+          blob = picblobs.get_blob("hello", "linux", "x86_64")
+          assert picblobs.wrap_elf(blob.code, "linux", "x86_64").startswith(b"\x7fELF")
+          try:
+              find_runner("linux", "x86_64")
+          except FileNotFoundError:
+              pass
+          else:
+              raise AssertionError("Linux runner should not be bundled")
+          runner = find_runner("windows", "x86_64")
           assert runner.exists(), runner
           PY
 
