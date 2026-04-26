@@ -78,18 +78,13 @@ def _length_prefixed(payload: bytes) -> bytes:
 def _load_blob_data(
     blob_type: str | None,
     target: str,
-    so_path: Path | None,
 ):
-    from picblobs._extractor import extract
-
     os_name, arch = _parse_target(target)
     try:
-        if so_path is not None:
-            return extract(str(so_path))
         if blob_type is None:
-            _fail("a blob type or --so path is required")
+            _fail("a blob type is required")
         return picblobs.get_blob(blob_type, os_name, arch)
-    except (FileNotFoundError, ImportError, ValueError) as e:
+    except (FileNotFoundError, ValueError) as e:
         _fail(str(e))
 
 
@@ -602,22 +597,15 @@ def _emit_blob_info(blob) -> None:
 @main.command()
 @click.argument("blob_type", required=False)
 @click.argument("target", required=False, default=DEFAULT_TARGET)
-@click.option(
-    "--so",
-    "so_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Inspect a direct .so path instead of a staged blob",
-)
 def info(
     blob_type: str | None,
     target: str,
-    so_path: Path | None,
 ) -> None:
-    """Show package info, or blob metadata when TYPE / --so is given."""
-    if blob_type is None and so_path is None:
+    """Show package info, or blob metadata when TYPE is given."""
+    if blob_type is None:
         _emit_package_info()
         return
-    _emit_blob_info(_load_blob_data(blob_type, target, so_path))
+    _emit_blob_info(_load_blob_data(blob_type, target))
 
 
 # ---------------------------------------------------------------------------
@@ -776,22 +764,15 @@ def build(
     type=click.Path(dir_okay=False, path_type=Path),
     help="Output file path",
 )
-@click.option(
-    "--so",
-    "so_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Extract a direct .so path instead of a staged blob",
-)
 @click.option("--config-hex", help="Config bytes as hex, patched into the output")
 def extract(
     blob_type: str | None,
     target: str,
     output_path: Path,
-    so_path: Path | None,
     config_hex: str | None,
 ) -> None:
     """Extract a flat blob image to OUTPUT."""
-    blob = _load_blob_data(blob_type, target, so_path)
+    blob = _load_blob_data(blob_type, target)
     _write_blob_output(blob, output_path, config_hex)
 
 
@@ -857,12 +838,8 @@ def _run_file(
 def _parse_run_mode(
     positional: tuple[str, ...],
     blob_file: Path | None,
-    so_path: Path | None,
 ) -> tuple[str | None, str]:
-    """Return (blob_type, target) for file, so, or registry run modes."""
-    direct_modes = [blob_file is not None, so_path is not None]
-    if sum(direct_modes) > 1:
-        _fail("--file and --so are mutually exclusive")
+    """Return (blob_type, target) for file or registry run modes."""
     if blob_file is not None:
         if len(positional) != 1:
             _fail(
@@ -870,13 +847,6 @@ def _parse_run_mode(
                 "(got: " + " ".join(repr(p) for p in positional) + ")"
             )
         return None, positional[0]
-    if so_path is not None:
-        if len(positional) > 1:
-            _fail(
-                "with --so, supply at most one positional TARGET "
-                "(default: linux:x86_64)"
-            )
-        return None, positional[0] if positional else DEFAULT_TARGET
     if len(positional) != 2:
         _fail(
             "registry mode expects two positionals: "
@@ -920,21 +890,15 @@ def _run_registry_blob(
     runner_type: str,
     runner_path: Path | None,
     dry_run: bool,
-    so_path: Path | None,
 ) -> None:
-    """Run a staged blob or direct .so looked up through picblobs."""
-    from picblobs._extractor import extract
-
+    """Run a staged blob looked up through picblobs."""
     try:
-        if so_path is not None:
-            blob_data = extract(str(so_path))
-        else:
-            if blob_type is None:
-                _fail("blob type is required when --file and --so are not used")
-            blob_data = picblobs.get_blob(blob_type, os_name, arch)
+        if blob_type is None:
+            _fail("blob type is required when --file is not used")
+        blob_data = picblobs.get_blob(blob_type, os_name, arch)
     except FileNotFoundError as e:
         _fail(str(e))
-    except (ImportError, ValueError) as e:
+    except ValueError as e:
         _fail(str(e))
 
     try:
@@ -967,15 +931,8 @@ def _run_registry_blob(
     "blob_file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Run an already-assembled blob file instead of "
-    "looking up by blob type. Bypasses the config / "
-    "extraction pipeline — the file is handed to the "
-    "runner as-is.",
-)
-@click.option(
-    "--so",
-    "so_path",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Run a direct .so path by extracting it first",
+    "looking up by blob type. Bypasses config assembly; "
+    "the file is handed to the runner as-is.",
 )
 @click.option("--config-hex", help="Config bytes as hex (registry mode only)")
 @click.option(
@@ -1002,7 +959,6 @@ def _run_registry_blob(
 def run(
     positional: tuple[str, ...],
     blob_file: Path | None,
-    so_path: Path | None,
     config_hex: str | None,
     payload_file: Path | None,
     stdin_file: Path | None,
@@ -1019,20 +975,19 @@ def run(
     \b
       picblobs-cli run <blob_type> <target>      # registry lookup
       picblobs-cli run --file FILE <target>      # already-assembled blob
-      picblobs-cli run --so FILE [target]        # direct shared object
 
     File mode is what you want after ``picblobs-cli build ... -o out.bin``
     or any other flow that produces a complete (code+config) blob.
     """
-    blob_type, target = _parse_run_mode(positional, blob_file, so_path)
+    blob_type, target = _parse_run_mode(positional, blob_file)
     os_name, arch = _parse_target(target)
     stdin_data = stdin_file.read_bytes() if stdin_file else b""
     selected_runner_type = runner_type or os_name
 
     if blob_file is not None:
-        if config_hex or payload_file or so_path:
+        if config_hex or payload_file:
             _fail(
-                "--config-hex / --payload / --so have no effect with --file; "
+                "--config-hex / --payload have no effect with --file; "
                 "assemble the blob first via 'picblobs-cli build ... -o FILE'"
             )
         _run_file(
@@ -1058,7 +1013,6 @@ def run(
         selected_runner_type,
         runner_path,
         dry_run,
-        so_path,
     )
 
 

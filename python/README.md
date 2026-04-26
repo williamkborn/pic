@@ -22,12 +22,6 @@ you want the CLI commands or bundled runners.
 pip install picblobs
 ```
 
-Optional `.so` extraction support:
-
-```bash
-pip install "picblobs[elf]"
-```
-
 ## Python API
 
 ```python

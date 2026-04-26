@@ -37,15 +37,12 @@ def _blobs_exist() -> bool:
     package_root = PROJECT_ROOT / "python" / "picblobs"
     manifest = package_root / "manifest.json"
     release_blobs = package_root / "blobs"
-    staged_so = package_root / "_blobs"
 
-    if (
+    return (
         manifest.exists()
         and release_blobs.exists()
         and any(release_blobs.glob("*.bin"))
-    ):
-        return True
-    return staged_so.exists() and any(staged_so.rglob("*.so"))
+    )
 
 
 def _has_qemu() -> bool:

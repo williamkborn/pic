@@ -23,27 +23,27 @@ The Python project SHALL be structured as:
 ```
 picblobs/
   __init__.py              # Public API (get_blob, list_blobs, clear_cache)
-  __main__.py              # CLI entry point
-  cli.py                   # CLI commands (list, info, extract, run, verify, test, build)
-  _extractor.py            # Runtime ELF extraction via pyelftools
+  _extractor.py            # Runtime .bin + JSON sidecar loading
   runner.py                # QEMU test runner orchestration
   _qemu.py                 # QEMU binary mappings
   _generated/
     configs.py             # Auto-generated ctypes config structs (future)
-  _blobs/
-    linux/
-      x86_64/hello.so      # Pre-compiled blob as .so (ELF with symtab)
-      i686/hello.so
-      ...
-    freebsd/
-      ...
-    windows/
-      ...
-  _runners/                # Cross-compiled test runners (see ADR-021)
-    linux/
-      x86_64/runner
-      i686/runner
-      ...
+  blobs/
+    hello.linux.x86_64.bin
+    hello.linux.x86_64.json
+    ...
+  manifest.json            # Runtime blob catalog
+```
+
+The companion `picblobs-cli` package SHALL contain the CLI entry point and
+cross-compiled runner bundle:
+
+```
+picblobs_cli/
+  cli.py
+  _runners/
+    linux/x86_64/runner
+    ...
 ```
 
 ### pyproject.toml
@@ -53,9 +53,9 @@ The `pyproject.toml` SHALL:
 1. Use uv-compatible build system configuration.
 2. Declare the package as `picblobs`.
 3. Specify Python version requirement (>= 3.10).
-4. Include `pyelftools` as a runtime dependency (required for .so extraction per ADR-018).
+4. Declare no runtime dependency on `pyelftools`; ELF parsing is build-time only.
 5. Include `pycparser` as a development-only dependency.
-6. Include the `_blobs/` directory as package data.
+6. Include the `blobs/` directory and `manifest.json` as package data.
 7. Include the `_generated/` directory as package data.
 
 ### Wheel Type
@@ -74,8 +74,9 @@ The package version SHALL follow semantic versioning. The version SHALL be incre
 The wheel build process SHALL:
 
 1. Run `picblobs build` (backed by `tools/stage_blobs.py`) which iterates over platform configs, runs `bazel build --config={config}` for each, and stages `.so` files and runner binaries into the package tree.
-2. Run the config codegen tool to produce the Python ctypes bindings (future).
-3. Build the wheel using `uv build` (hatchling backend).
+2. Run `tools/extract_release.py` to convert staged `.so` files into `.bin` + `.json` sidecar artifacts and `manifest.json`.
+3. Run the config codegen tool to produce the Python ctypes bindings (future).
+4. Build the wheel using `uv build` (hatchling backend).
 
 This pipeline MAY be orchestrated by a top-level Makefile, a shell script, or a Bazel-to-Python integration rule.
 
@@ -92,7 +93,7 @@ The wheel build SHALL be tested by:
 2. The installed package contains all blob binaries and metadata for every supported target.
 3. `import picblobs` works on any Python 3.10+ platform.
 4. The wheel is tagged `py3-none-any`.
-5. The only runtime dependency beyond stdlib is `pyelftools` (for .so extraction per ADR-018).
+5. The package has no runtime dependency beyond the Python standard library.
 
 ## Related Decisions
 - ADR-008

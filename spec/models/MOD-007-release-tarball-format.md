@@ -390,7 +390,7 @@ To prepare a blob for execution, a consumer:
 
 ## Flat Binary Production
 
-The `.bin` files in the tarball are produced by extracting code bytes from the linked `.so` ELF files. The extraction process is equivalent to the Python `picblobs._extractor.extract()` function:
+The `.bin` files in the tarball are produced by extracting code bytes from the linked `.so` ELF files. The extraction process is implemented by `tools/extract_release.py`:
 
 1. Parse the ELF `.so` file.
 2. Read `__blob_start` and `__blob_end` symbol addresses from `.symtab`.
@@ -508,7 +508,7 @@ This means:
 - **pyelftools is no longer a runtime dependency.** It remains a build-time dependency (used during the release build to extract `.bin` files from `.so` ELFs and generate sidecar metadata).
 - **`get_blob()`** reads `manifest.json` for discovery, then reads `blobs/{type}.{os}.{arch}.json` for metadata and `blobs/{type}.{os}.{arch}.bin` for code bytes. Results are still LRU-cached.
 - **`list_blobs()`** reads `manifest.json` and enumerates the catalog's platform entries, rather than walking the `_blobs/` directory tree.
-- **`extract(so_path)`** is retained for development use (extracting from a `.so` built locally). This function requires pyelftools and will raise `ImportError` if pyelftools is not installed. It is not used in the normal package workflow.
+- **Runtime `.so` extraction is removed.** Development builds must run `tools/stage_blobs.py` or `tools/extract_release.py` before loading blobs through the Python API.
 - **`BlobData`** is unchanged — same fields, same interface. The construction path changes from "parse ELF at runtime" to "read .bin + .json at runtime."
 
 #### Wheel Tag
@@ -527,7 +527,7 @@ dependencies = []  # No runtime dependencies
 
 [project.optional-dependencies]
 dev = [
-    "pyelftools>=0.31",   # For extract(so_path) during development
+    "pyelftools>=0.31",   # For tools/extract_release.py during development
     "pytest>=8.0",
     "pycparser>=2.22",
 ]
@@ -697,9 +697,9 @@ This specification supersedes ADR-018 ("Ship .so Files in Wheel with Runtime pye
 
 1. **pyelftools moves from runtime to build-time dependency.** The wheel's `[project.dependencies]` drops pyelftools. It remains in `[project.optional-dependencies.dev]` for development use.
 2. **`_blobs/` directory is replaced by `blobs/`.** The wheel ships `.bin` + `.json` pairs instead of `.so` files. The `_blobs/` directory and its `{os}/{arch}/{type}.so` layout are removed.
-3. **`_extractor.py` is rewritten.** Instead of parsing ELF files, it reads `.bin` files and constructs `BlobData` from the sidecar JSON. The `extract(so_path)` function is retained behind an optional pyelftools import for development workflows.
+3. **`_extractor.py` is rewritten.** Instead of parsing ELF files, it reads `.bin` files and constructs `BlobData` from the sidecar JSON. No runtime `.so` extraction API is retained.
 4. **`manifest.json` is added to the package.** `list_blobs()` reads the manifest instead of walking the directory tree.
-5. **Public API is unchanged.** `get_blob()`, `list_blobs()`, `BlobData`, `extract()`, `clear_cache()` retain their signatures and semantics. This is a non-breaking change for Python consumers.
+5. **Public API changes.** `get_blob()`, `list_blobs()`, `BlobData`, and `clear_cache()` retain their signatures and semantics; the public `extract()` runtime API is removed.
 
 ## Derives From
 - MOD-003 (Blob Binary Layout)

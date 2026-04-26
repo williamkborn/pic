@@ -923,55 +923,18 @@ class TestExtractCommand:
         assert out.read_bytes() == picblobs.get_blob("hello", "linux", "x86_64").code
 
 
-class TestRunSoMode:
-    def test_run_so_dry_run_uses_extracted_blob(
+class TestRunSoModeRemoved:
+    def test_run_so_option_is_not_supported(
         self,
         runner: CliRunner,
-        monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        import picblobs_cli.cli as cli
-        from picblobs._extractor import BlobData
-        from picblobs.runner import RunResult
-
         so_path = tmp_path / "blob.so"
         so_path.write_bytes(b"\x7fELF")
 
-        blob = BlobData(
-            code=b"\x90",
-            config_offset=1,
-            entry_offset=0,
-            blob_type="alloc_jump",
-            target_os="windows",
-            target_arch="x86_64",
-            sha256="abc",
-            sections={},
-        )
-        calls: dict[str, object] = {}
-
-        def _extract(path: str) -> BlobData:
-            calls["path"] = path
-            return blob
-
-        def _run_blob(blob_data: BlobData, **kwargs) -> RunResult:
-            calls["blob"] = blob_data
-            calls["kwargs"] = kwargs
-            return RunResult(
-                stdout=b"",
-                stderr=b"",
-                exit_code=0,
-                duration_s=0.0,
-                command=["runner", "blob"],
-            )
-
-        monkeypatch.setattr("picblobs._extractor.extract", _extract)
-        monkeypatch.setattr(cli, "run_blob", _run_blob)
-
         r = runner.invoke(main, ["run", "--so", str(so_path), "--dry-run"])
-        assert r.exit_code == 0, r.output
-        assert "runner blob" in r.output
-        assert calls["path"] == str(so_path)
-        assert calls["blob"] is blob
+        assert r.exit_code != 0
+        assert "No such option" in r.output
 
 
 class TestVerifyNaclE2E:

@@ -43,18 +43,16 @@ release/
 python/
   picblobs/
     __init__.py        # public API: get_blob(), list_blobs(), BlobData
-    _extractor.py      # runtime ELF extraction via pyelftools
+    _extractor.py      # runtime .bin + JSON sidecar loading
     runner.py          # QEMU execution orchestration
-    cli.py             # CLI: list, info, extract, run, verify, test
-    _blobs/            # staged .so files (by os/arch/name.so)
-    _runners/          # staged runner binaries (by runner_type/arch/runner)
-    blobs/             # pre-extracted .bin + .json (release)
-    manifest.json      # release catalog (authoritative blob index)
+    _blobs/            # build-time staged .so files, consumed by extract_release.py
+    blobs/             # runtime .bin + .json sidecar artifacts
+    manifest.json      # runtime catalog (authoritative blob index)
   tests/
     conftest.py        # pytest config, fixtures, markers, env filters
     payload_defs.py    # shared payload expectations and platform mappings
     test_payload_*.py  # payload execution tests (per category)
-    test_extractor.py  # ELF extraction tests
+    test_extractor.py  # sidecar loading tests
     test_runner.py     # QEMU runner tests
     test_cli.py        # CLI tests
     test_sync.py       # registry sync/consistency tests

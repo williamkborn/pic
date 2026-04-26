@@ -1,10 +1,9 @@
 """QEMU test runner orchestration.
 
 Manages the lifecycle of running a PIC blob under QEMU user-static:
-  1. Extract blob code from .so via picblobs._extractor
-  2. Prepare a flat binary (code + config) in a temp file
-  3. Invoke the appropriate C test runner under QEMU
-  4. Capture and return stdout, stderr, exit code
+  1. Prepare a pre-extracted flat blob (code + config) in a temp file
+  2. Invoke the appropriate C test runner under QEMU
+  3. Capture and return stdout, stderr, exit code
 """
 
 from __future__ import annotations
@@ -21,9 +20,12 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from picblobs._extractor import BlobData, extract
 from picblobs._qemu import QEMU_BINARIES
+
+if TYPE_CHECKING:
+    from picblobs._extractor import BlobData
 
 log = logging.getLogger(__name__)
 
@@ -625,33 +627,10 @@ def _execute_blob_command(
     )
 
 
-def run_so(
-    so_path: str | Path,
-    config: bytes = b"",
-    runner_type: str = "",
-    runner_path: Path | None = None,
-    timeout: float = 30.0,
-    debug: bool = False,
-    dry_run: bool = False,
-) -> RunResult:
-    """Extract a .so and run it in one call.
-
-    Convenience for the --so development workflow.
-    """
-    blob = extract(so_path)
-    if not runner_type:
-        runner_type = blob.target_os or "linux"
-    if not blob.target_arch:
-        raise ValueError(
-            f"Cannot determine architecture from {so_path}. "
-            "Pass target info via extract() or use run_blob() directly."
-        )
-    return run_blob(
-        blob,
-        config=config,
-        runner_type=runner_type,
-        runner_path=runner_path,
-        timeout=timeout,
-        debug=debug,
-        dry_run=dry_run,
+def run_so(*_args, **_kwargs) -> RunResult:
+    """Fail explicitly: runtime .so extraction is not supported."""
+    raise RuntimeError(
+        "Runtime .so extraction is not supported. Generate sidecar artifacts "
+        "with tools/stage_blobs.py or tools/extract_release.py, then load blobs "
+        "through picblobs.get_blob()."
     )

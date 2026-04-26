@@ -38,7 +38,7 @@ Planned
 ### T10.5: Debug CLI — Main CLI Parity
 
 1. **All base commands work**: `picblobs-debug list`, `info`, `extract`, `run`, `verify` produce identical output to the main `picblobs` CLI.
-2. **Debug run with logging**: `picblobs-debug run hello linux:x86_64 --so debug/linux/x86_64/hello.so` executes the debug blob and log output appears on stderr.
+2. **Debug run with logging**: after extracting/staging debug sidecar artifacts, `picblobs-debug run hello linux:x86_64` executes the debug blob and log output appears on stderr.
 
 ### T10.6: Toolchain Resolution
 

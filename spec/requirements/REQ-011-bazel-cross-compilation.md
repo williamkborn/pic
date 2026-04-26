@@ -64,7 +64,7 @@ The Bazel build SHALL define:
 2. A `cc_library` target for the PEB/TEB walk and DJB2 resolution (Windows only).
 3. A `cc_binary` (or custom rule) target for each blob type, per OS, per architecture.
 4. A custom Bazel rule or genrule that invokes the linker with the custom linker script (REQ-012) and produces the ELF output.
-5. Extraction happens at runtime via pyelftools when the Python package loads a blob (see ADR-018), not at build time.
+5. Build-time extraction converts linked `.so` files into runtime `.bin` + `.json` sidecar artifacts via `tools/extract_release.py`.
 
 ### Platform Definitions
 

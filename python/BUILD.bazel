@@ -21,9 +21,7 @@ py_library(
     name = "picblobs",
     srcs = glob(["picblobs/**/*.py"]),
     imports = ["."],
-    deps = [
-        requirement("pyelftools"),
-    ],
+    deps = [],
 )
 
 # --- Tests ---
@@ -69,4 +67,3 @@ py_test(
     ],
     data = ["tests/conftest.py"],
 )
-

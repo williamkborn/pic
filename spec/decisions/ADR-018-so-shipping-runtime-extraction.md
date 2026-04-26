@@ -1,7 +1,7 @@
 # ADR-018: Ship .so Files in Wheel with Runtime pyelftools Extraction
 
 ## Status
-Accepted
+Superseded by MOD-007 / REQ-013 sidecar-only runtime loading
 
 ## Context
 

@@ -13,9 +13,6 @@ picblobs-cli run hello linux:aarch64
 # Run hello_windows through the mock TEB/PEB runner
 picblobs-cli run hello_windows windows:x86_64
 
-# Run a .so file directly (development)
-picblobs-cli run --so bazel-bin/src/payload/hello.so linux:mipsel32
-
 # Verify all staged blobs on all architectures
 picblobs-cli verify
 

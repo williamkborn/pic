@@ -1,17 +1,15 @@
-"""Tests for the release loading path (load_from_sidecar + manifest-based list_blobs).
+"""Tests for sidecar loading (load_from_sidecar + manifest-based list_blobs).
 
 Covers:
 - load_from_sidecar: valid load, SHA-256 mismatch, missing fields, malformed sections
 - list_blobs: manifest-based listing
-- get_blob: fallback from release (.bin/.json) to legacy (.so)
+- get_blob: sidecar-only loading
 """
 
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
-import os
 from pathlib import Path
 
 import picblobs
@@ -215,7 +213,6 @@ class TestListBlobsManifest:
 
         monkeypatch.setattr(picblobs, "_MANIFEST_PATH", tmp_path / "nonexistent.json")
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", tmp_path / "blobs")
-        monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "legacy")
         monkeypatch.setattr(picblobs, "_registry_list_blobs", list)
 
         if hasattr(picblobs._load_manifest, "_cache"):
@@ -230,17 +227,17 @@ class TestListBlobsManifest:
 
 
 # ============================================================
-# get_blob fallback
+# get_blob sidecar loading
 # ============================================================
 
 
-class TestGetBlobFallback:
-    """Tests for get_blob() path selection."""
+class TestGetBlobLoading:
+    """Tests for get_blob() sidecar loading."""
 
     def test_loads_from_sidecar(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """get_blob() loads from .bin+.json when no .so exists."""
+        """get_blob() loads from .bin+.json sidecars."""
         import picblobs
 
         code = b"\xcc" * 32
@@ -262,7 +259,6 @@ class TestGetBlobFallback:
         json_path.write_text(json.dumps(meta))
 
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", blobs_dir)
-        monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "no_so")
         picblobs.clear_cache()
 
         try:
@@ -272,52 +268,22 @@ class TestGetBlobFallback:
         finally:
             picblobs.clear_cache()
 
-    def test_release_mode_env_prefers_sidecar_even_in_git_checkout(
+    def test_get_blob_does_not_consult_staged_so(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        original_mode = os.environ.get("PICBLOBS_LOAD_MODE")
-        monkeypatch.setenv("PICBLOBS_LOAD_MODE", "release")
+        """A staged .so without sidecars is not a runtime blob source."""
+        so_dir = tmp_path / "_blobs" / "linux" / "x86_64"
+        so_dir.mkdir(parents=True)
+        (so_dir / "hello.so").write_bytes(b"not an elf")
 
-        reloaded = importlib.reload(picblobs)
+        monkeypatch.setattr(picblobs, "_BLOBS_DIR", tmp_path / "blobs")
+        picblobs.clear_cache()
+
         try:
-            code = b"\xcc" * 16
-            sha = hashlib.sha256(code).hexdigest()
-
-            blobs_dir = tmp_path / "blobs"
-            blobs_dir.mkdir()
-            bin_path = blobs_dir / "hello.linux.x86_64.bin"
-            bin_path.write_bytes(code)
-            json_path = blobs_dir / "hello.linux.x86_64.json"
-            json_path.write_text(
-                json.dumps(
-                    {
-                        "type": "hello",
-                        "os": "linux",
-                        "arch": "x86_64",
-                        "config_offset": 16,
-                        "sha256": sha,
-                        "sections": {},
-                    }
-                )
-            )
-
-            so_dir = tmp_path / "_blobs" / "linux" / "x86_64"
-            so_dir.mkdir(parents=True)
-            so_path = so_dir / "hello.so"
-            so_path.write_bytes(b"not an elf")
-
-            monkeypatch.setattr(reloaded, "_BLOBS_DIR", blobs_dir)
-            monkeypatch.setattr(reloaded, "_SO_BLOB_DIR", tmp_path / "_blobs")
-            reloaded.clear_cache()
-
-            blob = reloaded.get_blob("hello", "linux", "x86_64")
-            assert blob.code == code
-            assert reloaded._DEV_MODE is False
+            with pytest.raises(FileNotFoundError, match="sidecar artifacts"):
+                picblobs.get_blob("hello", "linux", "x86_64")
         finally:
-            monkeypatch.delenv("PICBLOBS_LOAD_MODE", raising=False)
-            if original_mode is not None:
-                monkeypatch.setenv("PICBLOBS_LOAD_MODE", original_mode)
-            importlib.reload(reloaded)
+            picblobs.clear_cache()
 
 
 class TestConfigLayoutSidecarFallback:
@@ -487,7 +453,6 @@ class TestExtractReleaseCleanup:
         import picblobs
 
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", tmp_path / "empty_blobs")
-        monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "empty_legacy")
         picblobs.clear_cache()
 
         try:

@@ -39,8 +39,8 @@ Tests are organized by category:
 | `test_payload_reflective.py` | reflective_pe loader (skips until implemented) |
 | `test_payload_stager.py` | TCP, FD, pipe, mmap stagers with infrastructure fixtures (skips until implemented) |
 | `test_payload_ul_exec.py` | Userland exec: load and run ELF binaries without execve() |
-| `test_extractor.py` | ELF extraction via pyelftools |
-| `test_release_loading.py` | Release loading path (.bin + .json sidecar, manifest) |
+| `test_extractor.py` | Sidecar loading helpers |
+| `test_release_loading.py` | Runtime loading path (.bin + .json sidecar, manifest) |
 | `test_runner.py` | QEMU runner orchestration, blob preparation |
 | `test_picblobs_cli.py` | CLI argument parsing and commands |
 | `test_sync.py` | Registry sync: generated files, platform configs, syscall tables |

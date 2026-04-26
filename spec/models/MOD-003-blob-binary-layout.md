@@ -50,14 +50,14 @@ The linker script discards: `.comment`, `.note.*`, `.eh_frame`, `.eh_frame_hdr`,
 
 ## Stage 2: Extracted Flat Binary
 
-At runtime, `picblobs._extractor.extract()` reads the `.so` via pyelftools and produces a `BlobData` object containing:
+At build time, `tools/extract_release.py` reads the `.so` via pyelftools and writes `.bin` plus JSON sidecar artifacts containing:
 
 - `code`: bytes from `__blob_start` to `__blob_end` (only SHF_ALLOC sections)
 - `config_offset`: `__config_start - __blob_start`
 - `sections`: dict of section names to (offset, size) tuples
 - `sha256`: hash of the code bytes
 
-The extraction reads only allocated sections (SHF_ALLOC flag), skipping `.symtab`/`.strtab` which have `sh_addr=0`.
+The extraction reads only allocated sections (SHF_ALLOC flag), skipping `.symtab`/`.strtab` which have `sh_addr=0`. Runtime loaders consume the sidecar artifacts directly and do not parse `.so` files.
 
 ## Stage 3: Prepared Blob (for execution)
 

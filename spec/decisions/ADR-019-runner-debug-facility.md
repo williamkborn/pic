@@ -5,13 +5,13 @@ Accepted
 
 ## Context
 
-Developers working on picblobs need fast feedback when writing or modifying blob source code. The development cycle is: edit C source, `bazel build`, run the blob, check output. The "run the blob" step requires orchestrating several pieces: extracting code from the .so, writing a flat binary with an optional config struct, selecting the right C test runner, selecting the right QEMU user-static binary for the target architecture, invoking the runner, and capturing output.
+Developers working on picblobs need fast feedback when writing or modifying blob source code. The development cycle is: edit C source, build/stage blobs, run the blob, check output. The "run the blob" step requires orchestrating several pieces: loading sidecar blob bytes, writing a flat binary with an optional config struct, selecting the right C test runner, selecting the right QEMU user-static binary for the target architecture, invoking the runner, and capturing output.
 
 Without a unified facility, developers must manually assemble these steps or write ad-hoc scripts. This slows iteration and creates friction, especially when working across multiple architectures.
 
 ## Decision
 
-The `picblobs` CLI SHALL provide a `run` subcommand that orchestrates the full execution pipeline: .so extraction, flat binary preparation, QEMU invocation of the C test runner, and output capture.
+The `picblobs` CLI SHALL provide a `run` subcommand that orchestrates the full execution pipeline: sidecar blob loading, flat binary preparation, QEMU invocation of the C test runner, and output capture.
 
 ### Target Syntax
 
@@ -28,15 +28,17 @@ picblobs run hello linux:aarch64             # cross-arch via QEMU
 picblobs run alloc_jump freebsd:mipsel32     # FreeBSD shim runner
 ```
 
-### Direct .so Mode
+### Direct File Mode
 
-For development before blobs are packaged into the wheel:
+For development with an already assembled blob file:
 
 ```
-picblobs run --so bazel-bin/src/payload/hello.so
+picblobs-cli run --file out.bin linux:x86_64
 ```
 
-This extracts the .so and runs it without requiring it to be installed in `_blobs/`.
+The CLI does not extract `.so` files at runtime. Developers must run
+`tools/stage_blobs.py` or `tools/extract_release.py` before registry-mode
+execution.
 
 ### Configuration
 
@@ -59,8 +61,8 @@ Config structs are passed via:
 
 ### Execution Pipeline
 
-1. Extract blob code from .so via `picblobs._extractor.extract()`
-2. Write flat binary (code + config at `__config_start` offset) to a temp file
+1. Load pre-extracted blob code and sidecar metadata via `picblobs.get_blob()`
+2. Write flat binary (code + config at `config_offset`) to a temp file
 3. Locate the C test runner for the target OS in `bazel-bin/tests/runners/{os}/runner`
 4. Locate the QEMU user-static binary for the target architecture
 5. Invoke: `qemu-{arch}-static ./runner ./blob.bin`
