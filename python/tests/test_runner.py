@@ -52,7 +52,7 @@ class TestFindRunner:
 
     @pytest.mark.requires_runners
     def test_find_linux_runner(self) -> None:
-        runner = find_runner("linux")
+        runner = find_runner("linux", "x86_64")
         assert runner.exists()
         assert runner.is_file()
 
