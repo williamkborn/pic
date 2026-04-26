@@ -113,8 +113,27 @@ static long set_teb_base(void *teb)
 	return 0;
 }
 
+static void call_blob_with_teb(void *blob, void *teb)
+{
+	__asm__ volatile("mov x18, %0\n"
+			 "blr %1\n"
+		:
+		: "r"(teb), "r"(blob)
+		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9",
+		"x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "x18",
+		"x30", "memory");
+}
+
 #else
 #error "Windows runner: unsupported architecture"
+#endif
+
+#if !defined(__aarch64__)
+static void call_blob_with_teb(void *blob, void *teb)
+{
+	(void)teb;
+	((void (*)(void))blob)();
+}
 #endif
 
 /* ---------- Mock Windows API implementations ---------- */
@@ -441,24 +460,55 @@ static int write_trampoline(pic_u8 *dest, void *target)
 	return 7;
 
 #elif defined(__aarch64__)
+	/*
+	 * Windows AArch64 keeps the TEB pointer in x18, but the host-side mock
+	 * functions are compiled for the Linux AArch64 ABI where x18 is not
+	 * preserved for us. Call through a small thunk so Windows payloads keep
+	 * a stable TEB across imports.
+	 *
+	 *   stp x18, x30, [sp, #-16]!
+	 *   ldr x9, target
+	 *   blr x9
+	 *   ldp x18, x30, [sp], #16
+	 *   ret
+	 *   nop
+	 * target:
+	 *   .quad imm64
+	 */
 	pic_u64 addr = (pic_u64)(pic_uintptr)target;
-	dest[0] = 0x49;
-	dest[1] = 0x00;
-	dest[2] = 0x00;
-	dest[3] = 0x58;
-	dest[4] = 0x20;
-	dest[5] = 0x01;
-	dest[6] = 0x1f;
-	dest[7] = 0xd6;
-	dest[8] = (pic_u8)(addr);
-	dest[9] = (pic_u8)(addr >> 8);
-	dest[10] = (pic_u8)(addr >> 16);
-	dest[11] = (pic_u8)(addr >> 24);
-	dest[12] = (pic_u8)(addr >> 32);
-	dest[13] = (pic_u8)(addr >> 40);
-	dest[14] = (pic_u8)(addr >> 48);
-	dest[15] = (pic_u8)(addr >> 56);
-	return 16;
+	dest[0] = 0xf2;
+	dest[1] = 0x7b;
+	dest[2] = 0xbf;
+	dest[3] = 0xa9;
+	dest[4] = 0xa9;
+	dest[5] = 0x00;
+	dest[6] = 0x00;
+	dest[7] = 0x58;
+	dest[8] = 0x20;
+	dest[9] = 0x01;
+	dest[10] = 0x3f;
+	dest[11] = 0xd6;
+	dest[12] = 0xf2;
+	dest[13] = 0x7b;
+	dest[14] = 0xc1;
+	dest[15] = 0xa8;
+	dest[16] = 0xc0;
+	dest[17] = 0x03;
+	dest[18] = 0x5f;
+	dest[19] = 0xd6;
+	dest[20] = 0x1f;
+	dest[21] = 0x20;
+	dest[22] = 0x03;
+	dest[23] = 0xd5;
+	dest[24] = (pic_u8)(addr);
+	dest[25] = (pic_u8)(addr >> 8);
+	dest[26] = (pic_u8)(addr >> 16);
+	dest[27] = (pic_u8)(addr >> 24);
+	dest[28] = (pic_u8)(addr >> 32);
+	dest[29] = (pic_u8)(addr >> 40);
+	dest[30] = (pic_u8)(addr >> 48);
+	dest[31] = (pic_u8)(addr >> 56);
+	return 32;
 
 #endif
 }
@@ -784,7 +834,7 @@ int runner_main(int argc, char **argv)
 
 	pic_close(fd);
 
-	((void (*)(void))blob)();
+	call_blob_with_teb(blob, teb);
 
 	pic_exit_group(RUNNER_ERROR);
 }

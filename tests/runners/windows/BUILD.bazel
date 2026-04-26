@@ -15,7 +15,10 @@ cc_library(
     copts = [
         "-iquote",
         "tests/runners/windows",
-    ],
+    ] + select({
+        "//platforms:is_cpu_aarch64": ["-ffixed-x18"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//src/include/picblobs:headers",
     ],

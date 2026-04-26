@@ -41,6 +41,13 @@ def _target_os_defines():
         "//conditions:default": [],
     })
 
+def _target_abi_copts():
+    """Return ABI-specific compile flags selected from platform constraints."""
+    return select({
+        "//platforms:is_target_windows_aarch64": ["-ffixed-x18"],
+        "//conditions:default": [],
+    })
+
 def pic_blob(
         name,
         srcs,
@@ -70,7 +77,7 @@ def pic_blob(
     """
     deps = deps or []
     hdrs = hdrs or []
-    copts = copts or []
+    copts = (copts or []) + _target_abi_copts()
     local_defines = (local_defines or []) + _target_os_defines()
     linkopts = linkopts or []
     lib_name = name + "_obj"

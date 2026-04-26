@@ -647,6 +647,13 @@ def _platform_target_os_config_lines() -> list[str]:
             for os_name in OPERATING_SYSTEMS
         ]
     )
+    lines.append(
+        "config_setting(\n"
+        '    name = "is_target_windows_aarch64",\n'
+        '    values = {"define": "PICBLOBS_TARGET_OS=windows"},\n'
+        '    constraint_values = ["@platforms//cpu:aarch64"],\n'
+        ")\n"
+    )
     lines.append("\n")
     return lines
 
@@ -668,6 +675,14 @@ def _platform_custom_cpu_lines() -> list[str]:
         )
     if lines:
         lines.append("\n")
+    lines.extend(
+        [
+            "config_setting(\n"
+            '    name = "is_cpu_aarch64",\n'
+            '    constraint_values = ["@platforms//cpu:aarch64"],\n'
+            ")\n\n",
+        ]
+    )
     return lines
 
 

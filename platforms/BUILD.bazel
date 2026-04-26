@@ -24,6 +24,11 @@ config_setting(
     name = "is_target_windows",
     values = {"define": "PICBLOBS_TARGET_OS=windows"},
 )
+config_setting(
+    name = "is_target_windows_aarch64",
+    values = {"define": "PICBLOBS_TARGET_OS=windows"},
+    constraint_values = ["@platforms//cpu:aarch64"],
+)
 
 constraint_value(name = "armv7", constraint_setting = "@platforms//cpu:cpu")
 constraint_value(name = "mipsel32", constraint_setting = "@platforms//cpu:cpu")
@@ -33,6 +38,11 @@ constraint_value(name = "sparcv8", constraint_setting = "@platforms//cpu:cpu")
 constraint_value(name = "powerpc", constraint_setting = "@platforms//cpu:cpu")
 constraint_value(name = "ppc64le", constraint_setting = "@platforms//cpu:cpu")
 constraint_value(name = "riscv64", constraint_setting = "@platforms//cpu:cpu")
+
+config_setting(
+    name = "is_cpu_aarch64",
+    constraint_values = ["@platforms//cpu:aarch64"],
+)
 
 constraint_setting(
     name = "instruction_mode",
