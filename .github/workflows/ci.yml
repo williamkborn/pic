@@ -140,6 +140,8 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
+    env:
+      PICBLOBS_LOAD_MODE: release
     steps:
       - uses: actions/checkout@v4
 
@@ -176,6 +178,8 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      PICBLOBS_LOAD_MODE: release
     steps:
       - uses: actions/checkout@v4
 

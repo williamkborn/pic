@@ -9,7 +9,9 @@ Covers:
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+import os
 from pathlib import Path
 
 import picblobs
@@ -269,6 +271,53 @@ class TestGetBlobFallback:
             assert blob.blob_type == "hello"
         finally:
             picblobs.clear_cache()
+
+    def test_release_mode_env_prefers_sidecar_even_in_git_checkout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        original_mode = os.environ.get("PICBLOBS_LOAD_MODE")
+        monkeypatch.setenv("PICBLOBS_LOAD_MODE", "release")
+
+        reloaded = importlib.reload(picblobs)
+        try:
+            code = b"\xcc" * 16
+            sha = hashlib.sha256(code).hexdigest()
+
+            blobs_dir = tmp_path / "blobs"
+            blobs_dir.mkdir()
+            bin_path = blobs_dir / "hello.linux.x86_64.bin"
+            bin_path.write_bytes(code)
+            json_path = blobs_dir / "hello.linux.x86_64.json"
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "type": "hello",
+                        "os": "linux",
+                        "arch": "x86_64",
+                        "config_offset": 16,
+                        "sha256": sha,
+                        "sections": {},
+                    }
+                )
+            )
+
+            so_dir = tmp_path / "_blobs" / "linux" / "x86_64"
+            so_dir.mkdir(parents=True)
+            so_path = so_dir / "hello.so"
+            so_path.write_bytes(b"not an elf")
+
+            monkeypatch.setattr(reloaded, "_BLOBS_DIR", blobs_dir)
+            monkeypatch.setattr(reloaded, "_SO_BLOB_DIR", tmp_path / "_blobs")
+            reloaded.clear_cache()
+
+            blob = reloaded.get_blob("hello", "linux", "x86_64")
+            assert blob.code == code
+            assert reloaded._DEV_MODE is False
+        finally:
+            monkeypatch.delenv("PICBLOBS_LOAD_MODE", raising=False)
+            if original_mode is not None:
+                monkeypatch.setenv("PICBLOBS_LOAD_MODE", original_mode)
+            importlib.reload(reloaded)
 
 
 class TestConfigLayoutSidecarFallback:

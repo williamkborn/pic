@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 from pathlib import Path
 
 from picblobs._builder import (
@@ -91,10 +92,21 @@ _BLOBS_DIR = _PKG_DIR / "blobs"
 # .so directory (primary in development, fallback in release).
 _SO_BLOB_DIR = _PKG_DIR / "_blobs"
 
+
+def _detect_dev_mode() -> bool:
+    """Return whether blob loading should prefer development .so artifacts."""
+    mode = os.environ.get("PICBLOBS_LOAD_MODE", "").strip().lower()
+    if mode in {"release", "sidecar", "bin"}:
+        return False
+    if mode in {"dev", "development", "so"}:
+        return True
+    return (_PKG_DIR.parent.parent / ".git").is_dir()
+
+
 # In a git checkout, prefer .so files (always fresh after stage_blobs.py)
-# over pre-extracted .bin files (which may be stale). In an installed
-# package, _blobs/ may not exist so .bin files are the primary path.
-_DEV_MODE = (_PKG_DIR.parent.parent / ".git").is_dir()
+# over pre-extracted .bin files (which may be stale). CI and other callers
+# can force release-mode loading with PICBLOBS_LOAD_MODE=release.
+_DEV_MODE = _detect_dev_mode()
 
 
 def _load_manifest() -> dict | None:
