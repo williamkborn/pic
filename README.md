@@ -17,7 +17,9 @@ write per-architecture assembly.
 
 ```text
 As a cybersecurity developer, I am sick and tired of writing assembly and shellcode.
-It would be amazing if Opus just solved the problem for me and yeeted it into pypi.
+
+I would like prestaged payloads for all targets I touch on a regular basis to enable
+ethical security research.
 ```
 
 ## Platform support
