@@ -39,12 +39,14 @@ python_cli/
     ├── __init__.py
     ├── __main__.py                  # enables `python -m picblobs_cli`
     ├── cli.py                       # click command tree
+    ├── _test_binaries/              # verifier-only ELF fixtures
     └── _runners/
         └── {runner_type}/{arch}/runner
 ```
 
-`_runners/` SHALL be populated by `tools/stage_blobs.py` during the
-build pipeline, identically to how `picblobs/_blobs/` is populated.
+`_runners/` and `_test_binaries/` SHALL be populated by
+`tools/stage_blobs.py` during the build pipeline. Both trees are package
+data for `picblobs-cli`, not for `picblobs`.
 
 ### Runtime Dependencies
 
@@ -155,6 +157,9 @@ include the guidance `"install picblobs-cli or run tools/stage_blobs.py"`.
   execution architecture.
 - The wheel SHALL contain `_runners/` for every
   (runner_type, arch) combination in REQ-018.
+- The wheel SHALL contain `_test_binaries/ul_exec/linux/{arch}/hello_et_exec`
+  for Linux `ul_exec` verification. These ELFs are verifier fixtures and
+  SHALL NOT be included in the `picblobs` wheel.
 - The wheel SHALL NOT contain `.so` blob files — those come through the
   `picblobs` dependency.
 

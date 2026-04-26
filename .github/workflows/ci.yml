@@ -90,6 +90,7 @@ jobs:
             python/picblobs/blobs
             python/picblobs/manifest.json
             python_cli/picblobs_cli/_runners
+            python_cli/picblobs_cli/_test_binaries
 
   tests:
     needs: stage-test-assets
@@ -234,6 +235,7 @@ jobs:
             dist/picblobs-cli/*.whl
           /tmp/picblobs-wheel-smoke/bin/picblobs-cli --help > /dev/null
           /tmp/picblobs-wheel-smoke/bin/python - <<'PY'
+          from pathlib import Path
           from picblobs import get_blob, list_blobs
           from picblobs.runner import find_runner
           import picblobs_cli
@@ -243,5 +245,8 @@ jobs:
           assert blob.code
           runner = find_runner("linux", "x86_64")
           assert runner.exists(), runner
+          assert picblobs_cli.ul_exec_test_binary("linux", "x86_64")
+          import picblobs
+          assert not (Path(picblobs.__file__).parent / "_test_binaries").exists()
           print(picblobs_cli.__version__)
           PY

@@ -25,15 +25,17 @@ bazel build --config=windows_x86_64 //src/payload:hello_windows
 ./buildall
 ```
 
-This runs `tools/stage_blobs.py`, which builds all blobs and runners for
-Linux, FreeBSD, and Windows, then stages build outputs into the package
-trees and regenerates the runtime sidecar catalog:
+This runs `tools/stage_blobs.py`, which builds all blobs, runners, and
+`ul_exec` verifier fixtures for Linux, FreeBSD, and Windows, then stages
+build outputs into the package trees and regenerates the runtime sidecar
+catalog:
 
 ```text
 python/picblobs/_blobs/{os}/{arch}/{name}.so          # build-time input
 python/picblobs/blobs/{name}.{os}.{arch}.{bin,json}  # runtime artifacts
 python/picblobs/manifest.json                        # runtime catalog
 python_cli/picblobs_cli/_runners/{runner_type}/{arch}/runner
+python_cli/picblobs_cli/_test_binaries/ul_exec/linux/{arch}/hello_et_exec
 ```
 
 Build specific targets or platforms:

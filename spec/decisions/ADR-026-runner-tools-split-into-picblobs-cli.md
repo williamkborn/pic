@@ -35,14 +35,16 @@ Python library API, the picblobs wheel has earned its separation.
 
 The project SHALL ship two distinct packages from one source tree:
 
-| Package       | Purpose                                   | Installs binaries? | Ships runners? |
-|---------------|-------------------------------------------|--------------------|----------------|
-| `picblobs`    | Blob data, builder API, introspection     | No (py3-none-any)  | No             |
-| `picblobs-cli`| `click`-based CLI for running/testing     | Yes (runners)      | Yes            |
+| Package       | Purpose                                   | Installs binaries? | Ships runner/test assets? |
+|---------------|-------------------------------------------|--------------------|---------------------------|
+| `picblobs`    | Blob data, builder API, introspection     | No (py3-none-any)  | No                        |
+| `picblobs-cli`| `click`-based CLI for running/testing     | Yes                | Yes                       |
 
 - `picblobs-cli` depends on `picblobs` for blob data and the builder API.
 - `picblobs-cli` carries a `_runners/{runner_type}/{arch}/runner` tree
   identical in structure to what lived inside `picblobs` before.
+- `picblobs-cli` also carries verifier-only `_test_binaries/` assets,
+  including the Linux `ul_exec` input ELFs used by `picblobs-cli verify`.
 - `picblobs.runner.find_runner()` continues to exist as the one-and-only
   runner lookup routine, but it now locates the binary by asking the
   `picblobs_cli` package for its bundled `_runners/` directory via
@@ -96,11 +98,12 @@ package name is just naming it honestly.
 
 - Two `pyproject.toml` files live in the source tree (`python/` and
   `python_cli/`), each producing one wheel.
-- `tools/stage_blobs.py` stages blobs under `python/picblobs/_blobs/`
-  and runners under `python_cli/picblobs_cli/_runners/`. The filesystem
-  layout inside `picblobs_cli` mirrors what used to live inside
-  `picblobs` so no Python code that already uses
-  `find_runner()` needs signature changes.
+- `tools/stage_blobs.py` stages blobs under `python/picblobs/_blobs/`,
+  runners under `python_cli/picblobs_cli/_runners/`, and verifier ELFs
+  under `python_cli/picblobs_cli/_test_binaries/`. The runner layout
+  inside `picblobs_cli` mirrors what used to live inside `picblobs` so
+  no Python code that already uses `find_runner()` needs signature
+  changes.
 - Existing pytest suites for the runner-dependent paths continue to
   work because they import `picblobs.runner.run_blob()` and let it
   locate the binary via the same helper.

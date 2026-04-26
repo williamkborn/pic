@@ -62,6 +62,16 @@ class TestPackageImports:
         assert p.exists(), p
         assert (p / "linux" / "x86_64" / "runner").exists()
 
+    def test_ul_exec_test_binary_resolves(self) -> None:
+        p = picblobs_cli.test_binaries_dir()
+        assert p.exists(), p
+        data = picblobs_cli.ul_exec_test_binary("linux", "x86_64")
+        assert data is not None
+        assert data.startswith(b"\x7fELF")
+
+    def test_ul_exec_test_binary_rejects_path_segments(self) -> None:
+        assert picblobs_cli.ul_exec_test_binary("linux", "../x86_64") is None
+
 
 # ---------------------------------------------------------------------------
 # 12.2 Console script entry point
@@ -834,6 +844,51 @@ class TestVerifyCommand:
         r = runner.invoke(main, ["verify"])
         assert r.exit_code == 0, r.output
         assert "SKIP (Local TCP runtime is unavailable)" in r.output
+
+    def test_ul_exec_uses_staged_test_binary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from picblobs_cli import cli
+
+        captured: dict[str, object] = {}
+
+        monkeypatch.setattr(
+            cli,
+            "ul_exec_test_binary",
+            lambda os_name, arch: b"\x7fELF" + b"\x00" * 12,
+        )
+        monkeypatch.setattr(
+            cli.picblobs,
+            "get_blob",
+            lambda blob_type, os_name, arch: SimpleNamespace(code=b"BLOB"),
+        )
+
+        def _run_blob(blob, **kwargs):
+            captured["blob"] = blob
+            captured["kwargs"] = kwargs
+            return SimpleNamespace(stdout=b"Hello, ul_exec!\n", stderr=b"", exit_code=0)
+
+        monkeypatch.setattr(cli, "run_blob", _run_blob)
+
+        result = cli._verify_ul_exec("linux", "x86_64", 30.0)
+
+        assert result.exit_code == 0
+        kwargs = captured["kwargs"]
+        assert kwargs["runner_type"] == "linux"
+        assert kwargs["timeout"] == 30.0
+        assert b"\x7fELF" in kwargs["config"]
+
+    def test_ul_exec_skips_when_test_binary_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from picblobs_cli import cli
+
+        monkeypatch.setattr(cli, "ul_exec_test_binary", lambda os_name, arch: None)
+
+        with pytest.raises(cli._Skip, match="no staged ul_exec test binary"):
+            cli._verify_ul_exec("linux", "x86_64", 30.0)
 
 
 # ---------------------------------------------------------------------------

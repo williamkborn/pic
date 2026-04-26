@@ -35,14 +35,17 @@ picblobs/
   manifest.json            # Runtime blob catalog
 ```
 
-The companion `picblobs-cli` package SHALL contain the CLI entry point and
-cross-compiled runner bundle:
+The companion `picblobs-cli` package SHALL contain the CLI entry point,
+cross-compiled runner bundle, and verifier-only test binaries:
 
 ```
 picblobs_cli/
   cli.py
   _runners/
     linux/x86_64/runner
+    ...
+  _test_binaries/
+    ul_exec/linux/x86_64/hello_et_exec
     ...
 ```
 
@@ -73,7 +76,7 @@ The package version SHALL follow semantic versioning. The version SHALL be incre
 
 The wheel build process SHALL:
 
-1. Run `picblobs build` (backed by `tools/stage_blobs.py`) which iterates over platform configs, runs `bazel build --config={config}` for each, and stages `.so` files and runner binaries into the package tree.
+1. Run `picblobs build` (backed by `tools/stage_blobs.py`) which iterates over platform configs, runs `bazel build --config={config}` for each, and stages `.so` files, runner binaries, and `ul_exec` verifier fixtures into the package trees.
 2. Run `tools/extract_release.py` to convert staged `.so` files into `.bin` + `.json` sidecar artifacts and `manifest.json`.
 3. Run the config codegen tool to produce the Python ctypes bindings (future).
 4. Build the wheel using `uv build` (hatchling backend).

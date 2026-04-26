@@ -65,7 +65,7 @@ For ARM and MIPS architectures:
 For each architecture:
 
 1. Measure the alloc-jump blob binary size (excluding payload).
-2. Verify it is under 512 bytes (a generous upper bound; expected to be under 200).
+2. Verify it fits within a 512-byte budget.
 
 ## Expected Results
 

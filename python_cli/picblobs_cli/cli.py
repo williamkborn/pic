@@ -31,8 +31,13 @@ from picblobs import (
 )
 from picblobs.runner import find_runner, run_blob
 
-from picblobs_cli import __version__ as cli_version
-from picblobs_cli import runners_dir
+from picblobs_cli import (
+    __version__ as cli_version,
+)
+from picblobs_cli import (
+    runners_dir,
+    ul_exec_test_binary,
+)
 
 DEFAULT_TARGET = "linux:x86_64"
 
@@ -1546,11 +1551,11 @@ def _verify_reflective_pe(os_name: str, arch: str, timeout: float):
 
 
 def _verify_ul_exec(os_name: str, arch: str, timeout: float):
-    from picblobs._cross_compile import build_ul_exec_config, compile_hello_et_exec
+    from picblobs._cross_compile import build_ul_exec_config
 
-    elf_data = compile_hello_et_exec(arch)
+    elf_data = ul_exec_test_binary(os_name, arch)
     if elf_data is None:
-        raise _Skip(f"no cross-compiler for {arch}")
+        raise _Skip(f"no staged ul_exec test binary for {os_name}:{arch}")
     cfg = build_ul_exec_config(elf_data, arch, argv=["verify"])
     blob = picblobs.get_blob("ul_exec", os_name, arch)
     return run_blob(blob, config=cfg, runner_type=os_name, timeout=timeout)

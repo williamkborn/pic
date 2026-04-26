@@ -1,7 +1,7 @@
 [project]
 name = "picblobs-cli"
 version = "0.1.0"
-description = "Click CLI + cross-compiled runners for the picblobs library"
+description = "Click CLI + cross-compiled runners and verifier fixtures for picblobs"
 requires-python = ">=3.10"
 license = "MIT"
 readme = "README.md"
@@ -22,8 +22,9 @@ classifiers = [
 ]
 
 # picblobs brings the blob data + builder API; click is our CLI framework.
-# The runners ship as package data, so no extra dependency is needed to
-# execute them (QEMU is expected to be on the user's PATH at run time).
+# The runners and verifier fixtures ship as package data, so no extra
+# dependency is needed to execute them (QEMU is expected to be on the
+# user's PATH at run time).
 dependencies = [
     "picblobs>=0.1.0",
     "click>=8.0",

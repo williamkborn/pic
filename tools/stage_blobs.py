@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Stage built .so blobs and test runners into the Python package tree.
+"""Stage built .so blobs, test runners, and verifier fixtures.
 
 Builds all blob and runner targets for all platform configs via Bazel,
 then copies outputs into:
   python/picblobs/_blobs/{os}/{arch}/{name}.so
   python_cli/picblobs_cli/_runners/{os}/{arch}/runner
+  python_cli/picblobs_cli/_test_binaries/ul_exec/{os}/{arch}/hello_et_exec
 
 Usage:
     python tools/stage_blobs.py                       # build + stage all
@@ -40,9 +41,15 @@ BLOB_LABEL_TEMPLATE = "//src/payload:{name}"
 RUNNER_LABEL = "//tests/runners/{runner_type}:runner"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PYTHON_ROOT = PROJECT_ROOT / "python"
 BLOB_DIR = PROJECT_ROOT / "python" / "picblobs" / "_blobs"
 RUNNER_DIR = PROJECT_ROOT / "python_cli" / "picblobs_cli" / "_runners"
+TEST_BINARY_DIR = PROJECT_ROOT / "python_cli" / "picblobs_cli" / "_test_binaries"
 DEBUG_BLOB_DIR = PROJECT_ROOT / "debug"
+UL_EXEC_TEST_BINARY_NAME = "hello_et_exec"
+
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
 
 
 def discover_blob_targets() -> list[str]:
@@ -83,6 +90,17 @@ def stage_file(src: Path, dest: Path, executable: bool = False) -> bool:
     if executable:
         dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return True
+
+
+def stage_bytes(data: bytes, dest: Path, executable: bool = False) -> None:
+    """Write a generated artifact, handling read-only destinations."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest.chmod(stat.S_IWUSR | stat.S_IRUSR)
+        dest.unlink()
+    dest.write_bytes(data)
+    if executable:
+        dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
 # Substrings from `file -b` output for architecture validation.
@@ -131,10 +149,28 @@ def find_bazel_output(label: str, extension: str) -> Path:
     return PROJECT_ROOT / "bazel-bin" / pkg / f"{name}{extension}"
 
 
-def _os_compatible_targets(targets: list[str], os_name: str) -> list[str]:
-    """Filter blob targets to those compatible with one OS."""
+def _is_registry_platform(blob_name: str, os_name: str, arch_name: str) -> bool | None:
+    """Return registry platform support, or None for unknown blob targets."""
+    bt = BLOB_TYPES.get(blob_name)
+    if bt is None:
+        return None
+    return arch_name in bt.platforms.get(os_name, [])
+
+
+def _os_compatible_targets(
+    targets: list[str],
+    os_name: str,
+    arch_name: str,
+) -> list[str]:
+    """Filter blob targets to those compatible with one OS/architecture."""
     os_targets = []
     for blob_name in targets:
+        supported = _is_registry_platform(blob_name, os_name, arch_name)
+        if supported is not None:
+            if supported:
+                os_targets.append(blob_name)
+            continue
+
         parts = blob_name.rsplit("_", 1)
         if len(parts) == 2 and parts[1] in ("linux", "freebsd", "windows"):
             if parts[1] != os_name:
@@ -213,6 +249,31 @@ def _stage_runner_output(
     return False
 
 
+def _stage_ul_exec_test_binary(
+    os_targets: list[str],
+    os_name: str,
+    arch_name: str,
+    no_runners: bool,
+    debug: bool,
+) -> tuple[int, int]:
+    """Build and stage the verifier ELF consumed by ``ul_exec`` tests."""
+    if debug or no_runners or os_name != "linux" or "ul_exec" not in os_targets:
+        return 0, 0
+
+    from picblobs._cross_compile import compile_hello_et_exec
+
+    tag = f"    {UL_EXEC_TEST_BINARY_NAME} -> ul_exec/{os_name}/{arch_name}"
+    elf_data = compile_hello_et_exec(arch_name)
+    if elf_data is None:
+        log.error("%-50s BUILD FAIL", tag)
+        return 0, 1
+
+    dest = TEST_BINARY_DIR / "ul_exec" / os_name / arch_name / UL_EXEC_TEST_BINARY_NAME
+    stage_bytes(elf_data, dest, executable=True)
+    log.info("%-50s OK", tag)
+    return 1, 1
+
+
 def _platform_config(config_key: str) -> tuple[str, str, str, str] | None:
     """Return (bazel_config, runner_type, os_name, arch_name) for a key."""
     if config_key not in PLATFORM_CONFIGS:
@@ -273,7 +334,7 @@ def _stage_platform(
     if debug:
         bazel_configs.append("debug")
 
-    os_targets = _os_compatible_targets(targets, os_name)
+    os_targets = _os_compatible_targets(targets, os_name, arch_name)
     blob_labels = _blob_labels(os_targets)
     runner_label = (
         RUNNER_LABEL.format(runner_type=runner_type)
@@ -302,6 +363,16 @@ def _stage_platform(
         total += 1
         if _stage_runner_output(runner_label, runner_type, arch_name):
             passed += 1
+
+    test_passed, test_total = _stage_ul_exec_test_binary(
+        os_targets,
+        os_name,
+        arch_name,
+        no_runners,
+        debug,
+    )
+    passed += test_passed
+    total += test_total
     return passed, total
 
 

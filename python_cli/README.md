@@ -2,8 +2,9 @@
 
 Click-based command-line interface for the
 [picblobs](https://pypi.org/project/picblobs/) library. Bundles the
-cross-compiled test runners so that blobs can be executed under
-`qemu-*-static` without any external setup.
+cross-compiled test runners and verifier-only `ul_exec` test ELFs so
+that blobs can be executed under `qemu-*-static` without any external
+setup.
 
 ```bash
 pip install picblobs-cli

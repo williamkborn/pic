@@ -31,4 +31,39 @@ def runners_dir() -> Path:
     return Path(str(importlib.resources.files(__name__) / "_runners"))
 
 
-__all__ = ["__version__", "runners_dir"]
+def test_binaries_dir() -> Path:
+    """Return the on-disk path to bundled verifier test binaries."""
+    return Path(str(importlib.resources.files(__name__) / "_test_binaries"))
+
+
+def _valid_resource_segment(segment: str) -> bool:
+    return (
+        bool(segment)
+        and segment not in {".", ".."}
+        and "/" not in segment
+        and "\\" not in segment
+    )
+
+
+def ul_exec_test_binary(
+    os_name: str,
+    arch: str,
+    name: str = "hello_et_exec",
+) -> bytes | None:
+    """Return a staged ``ul_exec`` test ELF, or ``None`` if it is absent."""
+    if not all(_valid_resource_segment(s) for s in (os_name, arch, name)):
+        return None
+    resource = importlib.resources.files(__name__).joinpath(
+        "_test_binaries",
+        "ul_exec",
+        os_name,
+        arch,
+        name,
+    )
+    try:
+        return resource.read_bytes()
+    except (FileNotFoundError, IsADirectoryError):
+        return None
+
+
+__all__ = ["__version__", "runners_dir", "test_binaries_dir", "ul_exec_test_binary"]

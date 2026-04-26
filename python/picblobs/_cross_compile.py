@@ -1,8 +1,8 @@
 """Cross-compilation helpers for building test ELFs via Bootlin toolchains.
 
-Used by the CLI verify command and the pytest ul_exec tests to compile
-small architecture-specific test binaries without needing system cross
-compilers installed.
+Used by build/staging tooling and optional developer tests to compile
+small architecture-specific test binaries from the same Bootlin
+toolchains as the blobs.
 """
 
 from __future__ import annotations

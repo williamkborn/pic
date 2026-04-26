@@ -12,8 +12,19 @@ from __future__ import annotations
 import pytest
 from payload_defs import OPERATING_SYSTEMS
 from picblobs import get_blob
-from picblobs._cross_compile import build_ul_exec_config, compile_c_elf, compile_raw_elf
+from picblobs._cross_compile import build_ul_exec_config, compile_c_elf
 from picblobs.runner import find_runner, is_arch_skip_rosetta, run_blob
+
+try:
+    from picblobs_cli import ul_exec_test_binary
+except ImportError:  # pragma: no cover - picblobs-cli is a test dependency
+
+    def ul_exec_test_binary(
+        os_name: str,
+        arch: str,
+        name: str = "hello_et_exec",
+    ) -> bytes | None:
+        return None
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -207,13 +218,11 @@ def _ul_exec_arches() -> list[str]:
 class TestUlExecStatic:
     """Test ul_exec with statically linked ELFs on all architectures.
 
-    Uses raw syscall asm programs (no libc) for maximum compatibility.
-    These are tiny non-PIE ET_EXEC binaries — the self-remap ensures
-    the address space is clean before loading them.
+    Uses staged raw-syscall ET_EXEC fixtures from picblobs-cli so CI can
+    exercise ul_exec without keeping cross-compilers in the test jobs.
     """
 
     @pytest.mark.requires_qemu
-    @pytest.mark.requires_cross_compile
     @pytest.mark.parametrize("target_arch", _ul_exec_arches())
     def test_static_elf_executes(self, target_arch: str) -> None:
         """Load and execute a static non-PIE (ET_EXEC) raw-syscall ELF.
@@ -230,12 +239,9 @@ class TestUlExecStatic:
         except FileNotFoundError:
             pytest.skip(f"No linux runner for {target_arch}")
 
-        asm_src = RAW_SYSCALL_SRCS.get(target_arch)
-        if asm_src is None:
-            pytest.skip(f"No raw syscall test source for {target_arch}")
-        elf_data = compile_raw_elf(target_arch, asm_src, pie=False)
+        elf_data = ul_exec_test_binary("linux", target_arch)
         if elf_data is None:
-            pytest.skip(f"Cannot compile raw test ELF for {target_arch}")
+            pytest.skip(f"No staged ul_exec test ELF for linux:{target_arch}")
 
         blob = get_blob("ul_exec", "linux", target_arch)
         config = build_ul_exec_config(
@@ -250,9 +256,9 @@ class TestUlExecStatic:
             f"stdout={result.stdout!r}, "
             f"stderr={result.stderr!r}"
         )
-        assert b"UL_EXEC_OK" in result.stdout, (
+        assert b"Hello, ul_exec!" in result.stdout, (
             f"ul_exec linux:{target_arch}: "
-            f"stdout={result.stdout!r}, expected 'UL_EXEC_OK'"
+            f"stdout={result.stdout!r}, expected 'Hello, ul_exec!'"
         )
 
     @pytest.mark.requires_qemu

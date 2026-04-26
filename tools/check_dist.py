@@ -54,6 +54,10 @@ def _check_picblobs(names: list[str]) -> None:
         not any(name.startswith("picblobs/_runners/") for name in names),
         "picblobs wheel should not include runner binaries",
     )
+    _require(
+        not any(name.startswith("picblobs/_test_binaries/") for name in names),
+        "picblobs wheel should not include verifier test binaries",
+    )
     print(
         f"picblobs wheel ok: {blob_count} blob artifacts "
         f"({bin_count} .bin, {json_count} .json)"
@@ -62,12 +66,22 @@ def _check_picblobs(names: list[str]) -> None:
 
 def _check_picblobs_cli(names: list[str]) -> None:
     runner_count = sum(name.startswith("picblobs_cli/_runners/") for name in names)
+    test_binary_count = sum(
+        name.startswith("picblobs_cli/_test_binaries/") for name in names
+    )
     _require(runner_count > 0, "picblobs-cli wheel contains no bundled runners")
+    _require(
+        test_binary_count > 0,
+        "picblobs-cli wheel contains no bundled verifier test binaries",
+    )
     _require(
         not any(name.startswith("picblobs_cli/_blobs/") for name in names),
         "picblobs-cli wheel should not include blob payloads",
     )
-    print(f"picblobs-cli wheel ok: {runner_count} runner artifacts")
+    print(
+        f"picblobs-cli wheel ok: {runner_count} runner artifacts, "
+        f"{test_binary_count} verifier test binaries"
+    )
 
 
 def _check_sdist(path: Path, package: str, version: str | None) -> None:

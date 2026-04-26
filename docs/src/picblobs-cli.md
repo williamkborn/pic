@@ -1,10 +1,11 @@
 # picblobs-cli
 
 `picblobs-cli` is a companion package that bundles the cross-compiled test
-runners alongside a `click`-based command-line interface. It depends on
+runners and verifier-only test binaries alongside a `click`-based
+command-line interface. It depends on
 [`picblobs`](https://pypi.org/project/picblobs/) for blob data and the
 builder API. Install `picblobs-cli` when you want to build, run, or
-verify blobs from the shell — if all you need is the blob bytes, stick
+verify blobs from the shell -- if all you need is the blob bytes, stick
 with `picblobs` on its own.
 
 See [ADR-026](../../spec/decisions/ADR-026-runner-tools-split-into-picblobs-cli.md)
@@ -14,7 +15,7 @@ architecture and full contract.
 ## Installation
 
 ```bash
-pip install picblobs-cli      # pulls in picblobs + click, ships runners
+pip install picblobs-cli      # pulls in picblobs + click, ships runners/fixtures
 ```
 
 QEMU user-static must be on `PATH` for cross-architecture execution:
@@ -156,7 +157,7 @@ is caught by click before execution.
 
 Exercise every staged blob end-to-end with the appropriate fixtures
 (TCP server, FIFO, temp file, stdin piping, inner-payload packing for
-`alloc_jump`, paired NaCl handshake).
+`alloc_jump`, staged `ul_exec` ELFs, paired NaCl handshake).
 
 ```bash
 # full sweep

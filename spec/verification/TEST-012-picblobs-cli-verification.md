@@ -12,13 +12,14 @@ Accepted
 Demonstrate that the `picblobs-cli` companion package is correctly
 packaged, that every command in its click tree works, and that the
 separation from `picblobs` is clean (the data library no longer ships
-runner binaries and remains usable on its own).
+runner binaries or verifier fixtures and remains usable on its own).
 
 ## Preconditions
 
 - A source checkout with `tools/stage_blobs.py` already executed so
   blobs live under `python/picblobs/_blobs/` and runners under
-  `python_cli/picblobs_cli/_runners/`.
+  `python_cli/picblobs_cli/_runners/`; `ul_exec` verifier ELFs live
+  under `python_cli/picblobs_cli/_test_binaries/`.
 - QEMU user-static binaries on `PATH` (for execution tests).
 
 ## Procedure
@@ -88,6 +89,8 @@ runner binaries and remains usable on its own).
    successfully (mirrors legacy `python -m picblobs verify`).
 2. Filter flags (`--os`, `--type`, `--arch`) produce a subset of the
    full run.
+3. `ul_exec` verification uses staged `picblobs-cli` test ELFs and does
+   not require cross-compilers in the verification environment.
 
 ### Test 12.9: Runner discovery fallback
 
@@ -102,7 +105,9 @@ runner binaries and remains usable on its own).
 
 1. The `picblobs` wheel (as currently staged) SHALL NOT contain any
    files under a `_runners` directory.
-2. The `picblobs` package SHALL still satisfy every TEST-008 scenario.
+2. The `picblobs` wheel SHALL NOT contain any files under a
+   `_test_binaries` directory.
+3. The `picblobs` package SHALL still satisfy every TEST-008 scenario.
 
 ### Test 12.11: `info`
 

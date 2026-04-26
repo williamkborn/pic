@@ -296,6 +296,10 @@ def _merge_unregistered_blobs(
 ) -> None:
     """Add extracted blobs missing from the canonical registry."""
     for bt_name, os_name, arch in sorted(extracted_set):
+        if bt_name in BLOB_TYPES and not _registry_supports_staged_blob(
+            bt_name, os_name, arch
+        ):
+            continue
         if bt_name not in catalog:
             catalog[bt_name] = {
                 "description": "",
@@ -317,6 +321,81 @@ def _get_version() -> str:
             # version = "0.1.0"
             return line.split("=", 1)[1].strip().strip('"').strip("'")
     return "0.0.0"
+
+
+def _is_release_candidate(blob_type: str, os_name: str, arch: str) -> bool:
+    """Return True if a staged .so belongs in the release catalog."""
+    return _registry_supports_staged_blob(blob_type, os_name, arch)
+
+
+def _registry_supports_staged_blob(blob_type: str, os_name: str, arch: str) -> bool:
+    """Return True if the registry supports one staged/public blob name."""
+    for bt_name, bt in BLOB_TYPES.items():
+        staged_name = bt.staged_name or bt_name
+        if staged_name != blob_type:
+            continue
+        if arch in bt.platforms.get(os_name, []):
+            return True
+    return False
+
+
+def _staged_so_identity(so_path: Path) -> tuple[str, str, str] | None:
+    """Return (blob_type, os, arch) derived from a staged .so path."""
+    parts = so_path.parts
+    try:
+        return so_path.stem, parts[-3], parts[-2]
+    except IndexError:
+        return None
+
+
+def _release_basename(identity: tuple[str, str, str]) -> str:
+    blob_type, os_name, arch = identity
+    return f"{blob_type}.{os_name}.{arch}"
+
+
+def _write_release_artifacts(
+    so_path: Path,
+    blobs_dir: Path,
+    identity: tuple[str, str, str],
+    *,
+    verbose: bool,
+) -> bool:
+    """Extract one staged .so and write its .bin/.json artifacts."""
+    blob_type, os_name, arch = identity
+    basename = _release_basename(identity)
+    try:
+        extracted = _extract_so(so_path)
+    except Exception as e:
+        print(f"  ERROR {so_path}: {e}", file=sys.stderr)
+        return False
+
+    (blobs_dir / f"{basename}.bin").write_bytes(extracted["code"])
+    sidecar = _build_sidecar(blob_type, os_name, arch, extracted)
+    (blobs_dir / f"{basename}.json").write_text(
+        json.dumps(sidecar, indent=2, sort_keys=False) + "\n"
+    )
+
+    if verbose:
+        print(
+            "  "
+            f"{basename}  {extracted['size']} bytes  "
+            f"sha256={extracted['sha256'][:16]}..."
+        )
+    return True
+
+
+def _remove_stale_release_artifacts(
+    blobs_dir: Path,
+    expected_basenames: set[str],
+    *,
+    verbose: bool,
+) -> None:
+    """Remove release artifacts whose staged .so is no longer selected."""
+    for path in list(blobs_dir.glob("*.bin")) + list(blobs_dir.glob("*.json")):
+        if path.stem not in expected_basenames:
+            path.unlink()
+            if verbose:
+                print(f"  removed stale artifact {path.name}")
 
 
 # ============================================================
@@ -347,50 +426,29 @@ def extract_release(
     errors = 0
 
     for so_path in so_files:
-        # Derive type/os/arch from path: _blobs/{os}/{arch}/{type}.so
-        parts = so_path.parts
-        try:
-            blob_type = so_path.stem
-            arch = parts[-2]
-            os_name = parts[-3]
-        except IndexError:
+        identity = _staged_so_identity(so_path)
+        if identity is None:
             print(f"  SKIP {so_path} (unexpected path structure)", file=sys.stderr)
             errors += 1
             continue
 
-        basename = f"{blob_type}.{os_name}.{arch}"
-        expected_basenames.add(basename)
-        bin_path = blobs_dir / f"{basename}.bin"
-        json_path = blobs_dir / f"{basename}.json"
+        blob_type, os_name, arch = identity
+        if not _is_release_candidate(blob_type, os_name, arch):
+            if verbose:
+                print(
+                    f"  SKIP {_release_basename(identity)} "
+                    "(not in registry platform matrix)"
+                )
+            continue
 
-        try:
-            extracted = _extract_so(so_path)
-        except Exception as e:
-            print(f"  ERROR {so_path}: {e}", file=sys.stderr)
+        expected_basenames.add(_release_basename(identity))
+        if not _write_release_artifacts(so_path, blobs_dir, identity, verbose=verbose):
             errors += 1
             continue
 
-        # Write flat binary.
-        bin_path.write_bytes(extracted["code"])
+        extracted_triples.append(identity)
 
-        # Write sidecar JSON.
-        sidecar = _build_sidecar(blob_type, os_name, arch, extracted)
-        json_path.write_text(json.dumps(sidecar, indent=2, sort_keys=False) + "\n")
-
-        extracted_triples.append((blob_type, os_name, arch))
-        if verbose:
-            print(
-                "  "
-                f"{basename}  {extracted['size']} bytes  "
-                f"sha256={extracted['sha256'][:16]}..."
-            )
-
-    # Remove release artifacts for blobs that are no longer staged.
-    for path in list(blobs_dir.glob("*.bin")) + list(blobs_dir.glob("*.json")):
-        if path.stem not in expected_basenames:
-            path.unlink()
-            if verbose:
-                print(f"  removed stale artifact {path.name}")
+    _remove_stale_release_artifacts(blobs_dir, expected_basenames, verbose=verbose)
 
     # Write manifest.json.
     version = _get_version()
@@ -428,6 +486,9 @@ def check_release(so_dir: Path, out_dir: Path) -> bool:
             arch = parts[-2]
             os_name = parts[-3]
         except IndexError:
+            continue
+
+        if not _is_release_candidate(blob_type, os_name, arch):
             continue
 
         basename = f"{blob_type}.{os_name}.{arch}"

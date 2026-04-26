@@ -47,7 +47,10 @@ This model describes the complete build pipeline from C source to staged Python 
 ### Stage 6: Staging
 
 - **Input**: All `.so` blobs and runner binaries from Stages 3 and 5.
-- **Action**: `tools/stage_blobs.py` iterates over all platform configs, runs `bazel build --config={config}` for each, copies outputs into the Python package tree, then regenerates release sidecar artifacts.
+- **Action**: `tools/stage_blobs.py` iterates over all platform configs,
+  runs `bazel build --config={config}` for each, copies outputs into the
+  Python package tree, builds `ul_exec` verifier ELFs from the same
+  Bootlin toolchains, then regenerates release sidecar artifacts.
 - **Output directory structure**:
   ```
   python/picblobs/
@@ -57,6 +60,7 @@ This model describes the complete build pipeline from C source to staged Python 
     manifest.json
   python_cli/picblobs_cli/
     _runners/{os}/{arch}/runner
+    _test_binaries/ul_exec/linux/{arch}/hello_et_exec
   ```
 
 ### Stage 7: Config Codegen (future)
@@ -73,7 +77,11 @@ This model describes the complete build pipeline from C source to staged Python 
 
 ## Parallelism
 
-Stages 2-3 are per-platform and executed sequentially per platform config by `stage_blobs.py` (Bazel parallelizes within each config). Stage 5 runs alongside Stage 3 in the same Bazel invocation. Stage 7 is independent.
+Stages 2-3 are per-platform and executed sequentially per platform config
+by `stage_blobs.py` (Bazel parallelizes within each config). Stage 5 runs
+alongside Stage 3 in the same Bazel invocation. The `ul_exec` verifier
+fixtures are built immediately after the corresponding Linux `ul_exec`
+blob while the Bootlin toolchain is available. Stage 7 is independent.
 
 ## Build Matrix Size
 

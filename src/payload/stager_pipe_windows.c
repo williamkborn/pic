@@ -86,7 +86,7 @@ static int read_all(fn_ReadFile rf, void *h, void *buf, pic_u32 count)
 	return 1;
 }
 
-PIC_ENTRY
+PIC_TEXT
 static void resolve_funcs(struct resolved_funcs *funcs)
 {
 	PIC_SELF_RELOCATE();
@@ -143,7 +143,7 @@ static void *alloc_payload(const struct resolved_funcs *funcs, pic_u32 size)
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 }
 
-PIC_ENTRY
+PIC_TEXT
 static void *load_payload(const struct resolved_funcs *funcs, const char *path)
 {
 	void *h;

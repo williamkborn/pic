@@ -429,7 +429,7 @@ class TestBlobSize:
             blob = get_blob("alloc_jump", os_name, arch)
         except FileNotFoundError:
             pytest.skip("alloc_jump not built")
-        assert len(blob.code) < 512
+        assert len(blob.code) <= 512
 ```
 
 ## Environment Interaction

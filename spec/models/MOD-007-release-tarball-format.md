@@ -479,7 +479,7 @@ picblobs/
   __init__.py                    # Public API: get_blob, list_blobs, BlobData, etc.
   __main__.py                    # CLI entry point
   cli.py                         # CLI subcommands
-  runner.py                      # QEMU execution (uses _runners/)
+  runner.py                      # QEMU execution helpers
   _extractor.py                  # BlobData construction from .bin + .json
   _qemu.py                       # QEMU binary name mapping
   _objdump.py                    # Disassembly support
@@ -489,11 +489,6 @@ picblobs/
     hello.linux.x86_64.json
     hello.linux.aarch64.bin
     hello.linux.aarch64.json
-    ...
-  _runners/                      # Cross-compiled QEMU test runners
-    linux/x86_64/runner
-    linux/aarch64/runner
-    windows/x86_64/runner
     ...
 ```
 
@@ -515,9 +510,13 @@ This means:
 
 The wheel remains `py3-none-any` because the `.bin` files are cross-compiled data assets, not host-native Python extensions. The wheel is platform-independent.
 
-#### Runners
+#### Runners and Verifier Fixtures
 
-Test runners (`_runners/`) are included in the wheel but NOT in the tarballs. Runners are QEMU test harnesses for the `picblobs verify` and `picblobs run` CLI commands. They are not needed by non-Python consumers.
+Test runners (`_runners/`) and verifier-only `ul_exec` test binaries
+(`_test_binaries/`) are included in the companion `picblobs-cli` wheel,
+not in the `picblobs` wheel or release tarballs. They are QEMU test
+harness assets and are not needed by consumers that only assemble blob
+bytes.
 
 #### Wheel-Specific Dependencies
 
@@ -579,7 +578,7 @@ Zstd support is widespread in modern toolchains (Rust, Go, C, system `tar` on Li
 | Contains `manifest.json` | Yes | Yes | Yes |
 | Contains `blobs/` | Yes (identical) | Yes (identical) | Yes (identical) |
 | Contains Python code | Yes | No | No |
-| Contains test runners | Yes (`_runners/`) | No | No |
+| Contains test runners / verifier fixtures | No (`picblobs-cli` only) | No | No |
 | Runtime dependencies | None | N/A | N/A |
 | Primary consumer | Python programs | Rust, Go, C, ... | Rust, Go, C, ... |
 | Wheel tag | `py3-none-any` | N/A | N/A |

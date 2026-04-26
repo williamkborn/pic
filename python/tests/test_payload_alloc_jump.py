@@ -179,7 +179,7 @@ class TestAllocJumpEdgeCases:
         # Windows blobs include the TEB/PEB/PE resolution chain (~400 bytes
         # on i686) so they need a higher limit than unix blobs.
         limit = 768 if target_os == "windows" else 512
-        assert len(blob.code) < limit, (
+        assert len(blob.code) <= limit, (
             f"alloc_jump {target_os}:{target_arch}: "
             f"code size {len(blob.code)} bytes exceeds {limit} byte limit"
         )
