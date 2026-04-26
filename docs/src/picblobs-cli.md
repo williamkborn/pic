@@ -49,8 +49,8 @@ one-line summary of every staged target.
 
 ```bash
 $ picblobs-cli info
-picblobs:     0.1.1
-picblobs-cli: 0.1.1
+picblobs:     0.1.2
+picblobs-cli: 0.1.2
 runner bundle: /.../picblobs_cli/_runners
 qemu found:    aarch64, armv5_arm, armv5_thumb, armv7_thumb, i686, mipsbe32, mipsel32, powerpc, ppc64le, riscv64, s390x, sparcv8, x86_64
 
