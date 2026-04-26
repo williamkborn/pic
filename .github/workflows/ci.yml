@@ -43,40 +43,9 @@ jobs:
       - name: Check lint
         run: python tools/lint.py --check
 
-  tests:
+  stage-test-assets:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.10"
-          - "3.12"
-          - "3.13"
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - uses: astral-sh/setup-uv@v5
-
-      - name: Install Python dev environment
-        run: |
-          source sourceme
-          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
-
-      - name: Run picblobs unit suite
-        run: ./testall --unit-only -q
-
-      - name: Run picblobs-cli suite
-        run: python -m pytest python_cli/tests -q
-
-  build-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
     env:
@@ -95,13 +64,137 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Install Bazel and runtime tools
+      - name: Install Bazel
         run: |
           BAZEL_VERSION="$(cat .bazelversion)"
           curl -fsSL \
             "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
             -o /tmp/bazel
           sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
+
+      - name: Install Python dev environment
+        run: |
+          source sourceme
+          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Stage test assets
+        run: python tools/stage_blobs.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staged-test-assets
+          compression-level: 0
+          if-no-files-found: error
+          path: |
+            python/picblobs/_blobs
+            python/picblobs/blobs
+            python/picblobs/manifest.json
+            python_cli/picblobs_cli/_runners
+
+  tests:
+    needs: stage-test-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.12"
+          - "3.13"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: staged-test-assets
+          path: ${{ github.workspace }}
+
+      - name: Restore runner execute bits
+        run: find python_cli/picblobs_cli/_runners -type f -name runner -exec chmod +x {} +
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Install Python dev environment
+        run: |
+          source sourceme
+          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run full test suite
+        run: ./testall -q
+
+  verify-e2e:
+    needs: stage-test-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: staged-test-assets
+          path: ${{ github.workspace }}
+
+      - name: Restore runner execute bits
+        run: find python_cli/picblobs_cli/_runners -type f -name runner -exec chmod +x {} +
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Install Python dev environment
+        run: |
+          source sourceme
+          echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Run picblobs-cli verify
+        run: picblobs-cli verify
+
+  build-smoke:
+    needs: stage-test-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: staged-test-assets
+          path: ${{ github.workspace }}
+
+      - name: Restore runner execute bits
+        run: find python_cli/picblobs_cli/_runners -type f -name runner -exec chmod +x {} +
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install runtime tools
+        run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
@@ -110,9 +203,6 @@ jobs:
           source sourceme
           uv pip install twine
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
-
-      - name: Build a representative staged target
-        run: python tools/stage_blobs.py --targets hello --configs linux:x86_64
 
       - name: Run targeted execution smoke
         run: |

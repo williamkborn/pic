@@ -91,9 +91,11 @@ class TestPlatformConfigSync:
     """Verify platform configs are consistent across all locations."""
 
     def test_freebsd_ul_exec_is_x86_64_only(self) -> None:
-        manifest = json.loads(_read_file("python/picblobs/manifest.json"))
         assert BLOB_TYPES["ul_exec"].platforms["freebsd"] == ["x86_64"]
-        assert manifest["catalog"]["ul_exec"]["platforms"]["freebsd"] == ["x86_64"]
+        manifest_path = PROJECT_ROOT / "python" / "picblobs" / "manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            assert manifest["catalog"]["ul_exec"]["platforms"]["freebsd"] == ["x86_64"]
 
     def test_stage_blobs_uses_registry(self) -> None:
         content = _read_file("tools/stage_blobs.py")

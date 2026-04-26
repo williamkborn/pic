@@ -107,6 +107,29 @@ def _load_manifest() -> dict | None:
     return _load_manifest._cache
 
 
+def _registry_list_blobs() -> list[tuple[str, str, str]]:
+    """Return registry-declared blobs for source-tree introspection.
+
+    This is only used as a last-resort development fallback when neither
+    a manifest nor any staged blob files are present. It keeps the support
+    matrix and config-layout APIs usable in a clean checkout without
+    pretending that raw blob bytes are available.
+    """
+    from picblobs._introspect import _registry_blob_types
+
+    registry = _registry_blob_types()
+    if registry is None:
+        return []
+
+    results = {
+        ((bt.staged_name or bt.name), os_name, arch_name)
+        for bt in registry.values()
+        for os_name, arches in bt.platforms.items()
+        for arch_name in arches
+    }
+    return sorted(results)
+
+
 @functools.lru_cache(maxsize=64)
 def get_blob(blob_type: str, target_os: str, target_arch: str) -> BlobData:
     """Load and extract a blob by type, OS, and architecture.
@@ -168,7 +191,9 @@ def list_blobs() -> list[tuple[str, str, str]]:
     against the filesystem; get_blob() is the point of failure for missing
     files).
 
-    Fallback: walks the legacy _blobs/ directory.
+    Development fallback: walks staged .so/.bin directories. If those are
+    also absent in a source checkout, fall back to the canonical registry so
+    introspection APIs still expose the declared support matrix.
     """
     manifest = _load_manifest()
     if manifest is not None:
@@ -215,5 +240,8 @@ def list_blobs() -> list[tuple[str, str, str]]:
     else:
         _scan_bin_dir()
         _scan_so_dir()
+
+    if not results:
+        return _registry_list_blobs()
 
     return sorted(results)

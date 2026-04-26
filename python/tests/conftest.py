@@ -20,7 +20,7 @@ from payload_defs import all_payload_combos
 from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms
 
 BAZEL_BIN = PROJECT_ROOT / "bazel-bin"
-_PACKAGE_RUNNERS = PROJECT_ROOT / "python" / "picblobs" / "_runners"
+_PACKAGE_RUNNERS = PROJECT_ROOT / "python_cli" / "picblobs_cli" / "_runners"
 _BAZEL_RUNNER_PATHS = (
     BAZEL_BIN / "tests" / "runners" / "linux" / "runner.bin",
     BAZEL_BIN / "tests" / "runners" / "linux" / "runner",
@@ -31,6 +31,21 @@ def _runners_exist() -> bool:
     if any(_PACKAGE_RUNNERS.rglob("runner")):
         return True
     return any(p.exists() for p in _BAZEL_RUNNER_PATHS)
+
+
+def _blobs_exist() -> bool:
+    package_root = PROJECT_ROOT / "python" / "picblobs"
+    manifest = package_root / "manifest.json"
+    release_blobs = package_root / "blobs"
+    staged_so = package_root / "_blobs"
+
+    if (
+        manifest.exists()
+        and release_blobs.exists()
+        and any(release_blobs.glob("*.bin"))
+    ):
+        return True
+    return staged_so.exists() and any(staged_so.rglob("*.so"))
 
 
 def _has_qemu() -> bool:
@@ -231,6 +246,7 @@ def pytest_collection_modifyitems(
 def _capability_state() -> dict[str, bool]:
     """Return the environment capabilities relevant to pytest skips."""
     return {
+        "requires_blobs": _blobs_exist(),
         "requires_runners": _runners_exist(),
         "requires_qemu": _has_qemu(),
         "requires_local_tcp": _can_bind_localhost(),
@@ -251,6 +267,9 @@ def _collection_filters() -> dict[str, str]:
 def _skip_marker_reason(keyword: str) -> str:
     """Return the human-facing skip reason for one capability marker."""
     reasons = {
+        "requires_blobs": (
+            "Blob assets are not staged. Run: python tools/stage_blobs.py"
+        ),
         "requires_runners": (
             "Test runners not built. Run: bazel build //tests/runners/..."
         ),

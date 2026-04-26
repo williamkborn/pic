@@ -208,12 +208,13 @@ class TestListBlobsManifest:
     def test_no_manifest_falls_back(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """list_blobs() falls back to filesystem when no manifest exists."""
+        """Return [] when manifest, filesystem, and registry are all absent."""
         import picblobs
 
         monkeypatch.setattr(picblobs, "_MANIFEST_PATH", tmp_path / "nonexistent.json")
         monkeypatch.setattr(picblobs, "_BLOBS_DIR", tmp_path / "blobs")
         monkeypatch.setattr(picblobs, "_SO_BLOB_DIR", tmp_path / "legacy")
+        monkeypatch.setattr(picblobs, "_registry_list_blobs", list)
 
         if hasattr(picblobs._load_manifest, "_cache"):
             del picblobs._load_manifest._cache

@@ -40,6 +40,7 @@ dev = [
     "pytest>=8.0",
     "pycparser>=2.22",
     "ruff>=0.9",
+    "tomli>=2; python_version < '3.11'",
 ]
 
 [build-system]

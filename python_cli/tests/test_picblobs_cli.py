@@ -755,6 +755,86 @@ class TestVerifyCommand:
         r = runner.invoke(main, ["verify", "--type", "nothing_matches"])
         assert r.exit_code != 0
 
+    def test_skips_freebsd_when_ptrace_unavailable(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from picblobs_cli import cli
+
+        monkeypatch.setattr(
+            cli.picblobs,
+            "list_blobs",
+            lambda: [("hello", "freebsd", "x86_64")],
+        )
+        monkeypatch.setattr(cli, "_can_ptrace_traceme", lambda: False)
+
+        def _unexpected_verify(*_args, **_kwargs):
+            raise AssertionError("unexpected")
+
+        monkeypatch.setattr(
+            cli,
+            "_verify_one",
+            _unexpected_verify,
+        )
+
+        r = runner.invoke(main, ["verify", "--os", "freebsd"])
+        assert r.exit_code == 0, r.output
+        assert "SKIP (FreeBSD verify requires ptrace" in r.output
+
+    def test_skips_stager_tcp_when_loopback_runtime_unavailable(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from picblobs_cli import cli
+
+        monkeypatch.setattr(
+            cli.picblobs,
+            "list_blobs",
+            lambda: [("stager_tcp", "linux", "x86_64")],
+        )
+        monkeypatch.setattr(cli, "_can_bind_localhost", lambda: True)
+        monkeypatch.setattr(
+            cli,
+            "_verify_one",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                PermissionError(1, "Operation not permitted")
+            ),
+        )
+
+        r = runner.invoke(main, ["verify", "--type", "stager_tcp"])
+        assert r.exit_code == 0, r.output
+        assert "SKIP (Local TCP runtime is unavailable)" in r.output
+
+    def test_skips_nacl_e2e_when_loopback_runtime_unavailable(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from picblobs_cli import cli
+
+        monkeypatch.setattr(
+            cli.picblobs,
+            "list_blobs",
+            lambda: [
+                ("nacl_client", "linux", "x86_64"),
+                ("nacl_server", "linux", "x86_64"),
+            ],
+        )
+        monkeypatch.setattr(cli, "_can_bind_localhost", lambda: True)
+        monkeypatch.setattr(
+            cli,
+            "_verify_nacl_e2e",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                PermissionError(1, "Operation not permitted")
+            ),
+        )
+
+        r = runner.invoke(main, ["verify"])
+        assert r.exit_code == 0, r.output
+        assert "SKIP (Local TCP runtime is unavailable)" in r.output
+
 
 # ---------------------------------------------------------------------------
 # 12.9 Runner discovery contract

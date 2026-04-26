@@ -8,8 +8,10 @@ Implements REQ-020: ``run``, ``verify``, ``build``, ``list-runners``,
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import os as _os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -189,6 +191,64 @@ def _pytest_env(
     if blob_type:
         env["PICBLOBS_TEST_TYPE"] = blob_type
     return env
+
+
+def _can_bind_localhost() -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", 0))
+    except OSError:
+        return False
+    else:
+        return True
+
+
+def _can_ptrace_traceme() -> bool:
+    """Return True if this environment permits a basic PTRACE_TRACEME flow."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    ptrace = getattr(libc, "ptrace", None)
+    if ptrace is None:
+        return False
+    ptrace.argtypes = [ctypes.c_long, ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p]
+    ptrace.restype = ctypes.c_long
+    PTRACE_TRACEME = 0
+    PTRACE_CONT = 7
+
+    pid = _os.fork()
+    if pid == 0:
+        try:
+            ret = ptrace(PTRACE_TRACEME, 0, None, None)
+            if ret != 0:
+                _os._exit(1)
+            _os.kill(_os.getpid(), signal.SIGSTOP)
+            _os._exit(0)
+        except BaseException:
+            _os._exit(1)
+
+    try:
+        child_pid, status = _os.waitpid(pid, 0)
+        if child_pid != pid or not _os.WIFSTOPPED(status):
+            return False
+        if ptrace(PTRACE_CONT, pid, None, None) != 0:
+            return False
+        _os.waitpid(pid, 0)
+    except OSError:
+        return False
+    else:
+        return True
+
+
+def _verify_group_skip_reason(os_name: str, blob_type: str) -> str | None:
+    if os_name == "freebsd" and not _can_ptrace_traceme():
+        return "FreeBSD verify requires ptrace, which is unavailable"
+    if blob_type == "stager_tcp" and not _can_bind_localhost():
+        return "Local TCP sockets are unavailable"
+    return None
+
+
+def _is_local_tcp_verify_error(exc: OSError) -> bool:
+    return exc.errno in {1, 13}
 
 
 def _iter_runner_binaries(
@@ -1292,6 +1352,28 @@ def _record_verify_result(
     summary.fail(blob_type, label, f"FAIL exit={result.exit_code:<4d} {out!r}")
 
 
+def _skip_verify_arches(
+    summary: _VerifySummary,
+    os_name: str,
+    arches: list[str],
+    reason: str,
+) -> None:
+    for arch in sorted(arches):
+        summary.skip(f"{os_name}:{arch}", reason)
+
+
+def _record_nacl_verify_oserror(
+    summary: _VerifySummary,
+    label: str,
+    error: OSError,
+) -> bool:
+    if _is_local_tcp_verify_error(error):
+        summary.skip(label, "Local TCP runtime is unavailable")
+        return True
+    summary.fail("nacl_e2e", label, f"FAIL {error}")
+    return False
+
+
 def _run_verify_group(
     os_name: str,
     blob_type: str,
@@ -1301,6 +1383,10 @@ def _run_verify_group(
 ) -> None:
     """Run one grouped verify section for a single blob type."""
     click.echo(f"[{os_name}] {blob_type}")
+    skip_reason = _verify_group_skip_reason(os_name, blob_type)
+    if skip_reason is not None:
+        _skip_verify_arches(summary, os_name, arches, skip_reason)
+        return
     for arch in sorted(arches):
         label = f"{os_name}:{arch}"
         try:
@@ -1308,8 +1394,21 @@ def _run_verify_group(
             _record_verify_result(blob_type, os_name, arch, result, summary)
         except _Skip as e:
             summary.skip(label, str(e))
+        except OSError as e:
+            if blob_type == "stager_tcp" and _is_local_tcp_verify_error(e):
+                summary.skip(label, "Local TCP runtime is unavailable")
+                continue
+            summary.fail(blob_type, label, f"ERROR {e}")
         except Exception as e:
             summary.fail(blob_type, label, f"ERROR {e}")
+
+
+def _nacl_verify_group_skip_reason(os_name: str) -> str | None:
+    if os_name == "freebsd" and not _can_ptrace_traceme():
+        return "FreeBSD verify requires ptrace, which is unavailable"
+    if not _can_bind_localhost():
+        return "Local TCP sockets are unavailable"
+    return None
 
 
 def _run_nacl_verify_group(
@@ -1321,7 +1420,11 @@ def _run_nacl_verify_group(
 ) -> None:
     """Run one grouped NaCl pair verify section."""
     click.echo(f"[{os_name}] nacl e2e")
-    for arch in arches:
+    skip_reason = _nacl_verify_group_skip_reason(os_name)
+    if skip_reason is not None:
+        _skip_verify_arches(summary, os_name, arches, skip_reason)
+        return
+    for arch in sorted(arches):
         label = f"{os_name}:{arch}"
         try:
             detail = _verify_nacl_e2e(
@@ -1333,6 +1436,9 @@ def _run_nacl_verify_group(
             summary.ok(label, detail)
         except _Skip as e:
             summary.skip(label, str(e))
+        except OSError as e:
+            if _record_nacl_verify_oserror(summary, label, e):
+                continue
         except Exception as e:
             summary.fail("nacl_e2e", label, f"FAIL {e}")
 

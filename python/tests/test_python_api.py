@@ -24,6 +24,8 @@ from picblobs import (
     ValidationError,
 )
 
+requires_blobs = pytest.mark.requires_blobs
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -149,6 +151,7 @@ class TestSupportMatrix:
 # ---------------------------------------------------------------------------
 
 
+@requires_blobs
 class TestBuilderAllocJump:
     def test_basic_build(self) -> None:
         out = Blob("linux", "x86_64").alloc_jump().payload(b"\xcc").build()
@@ -207,6 +210,7 @@ class TestBuilderAllocJump:
 # ---------------------------------------------------------------------------
 
 
+@requires_blobs
 class TestBuilderStagerTcp:
     def test_basic_build(self) -> None:
         out = (
@@ -233,6 +237,7 @@ class TestBuilderStagerTcp:
 # ---------------------------------------------------------------------------
 
 
+@requires_blobs
 class TestBuilderReflectivePe:
     def test_basic_build(self) -> None:
         dummy = b"MZ" + b"\x00" * 126
@@ -344,12 +349,14 @@ class TestBuilderValidation:
 
 
 class TestBuilderImmutability:
+    @requires_blobs
     def test_partial_builder_reusable_as_template(self) -> None:
         template = Blob("linux", "x86_64").stager_tcp().port(4444)
         a = template.address("10.0.0.1").build()
         b = template.address("10.0.0.2").build()
         assert a != b
 
+    @requires_blobs
     def test_template_not_mutated(self) -> None:
         template = Blob("linux", "x86_64").stager_tcp().port(4444)
         # Calling .address returns a new builder; template still missing address.
@@ -374,6 +381,7 @@ def dataclasses_error() -> type[Exception]:
 # ---------------------------------------------------------------------------
 
 
+@requires_blobs
 class TestStringEnumParity:
     def test_alloc_jump_parity(self) -> None:
         a = Blob("linux", "x86_64").alloc_jump().payload(b"XYZ").build()
@@ -401,10 +409,12 @@ class TestStringEnumParity:
 
 
 class TestMetadata:
+    @requires_blobs
     def test_blob_size_matches_raw(self) -> None:
         raw = picblobs.raw_blob("linux", "x86_64", "alloc_jump")
         assert len(raw) == picblobs.blob_size("linux", "x86_64", "alloc_jump")
 
+    @requires_blobs
     def test_build_hash_matches_sha256(self) -> None:
         raw = picblobs.raw_blob("linux", "x86_64", "alloc_jump")
         expected = hashlib.sha256(raw).hexdigest()
@@ -474,7 +484,7 @@ class TestDjb2:
 
 class TestSourceStructure:
     def test_blobs_staged_per_target(self) -> None:
-        """Every listed target should have at least one blob staged."""
+        """Every known target should expose at least one blob type."""
         for t in picblobs.targets():
             types = picblobs.blob_types(t.os, t.arch)
             assert len(types) > 0, t

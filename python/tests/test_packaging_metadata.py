@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    import tomli as tomllib
 
 try:
     from ._test_env import PROJECT_ROOT as REPO_ROOT
@@ -33,6 +36,7 @@ class TestPicblobsPackaging:
         assert "clang-format==22.1.1" in dev_deps
         assert any(dep.startswith("lefthook>=") for dep in dev_deps)
         assert any(dep.startswith("lizard>=") for dep in dev_deps)
+        assert any(dep.startswith("tomli>=") for dep in dev_deps)
         assert any(dep.startswith("ruff>=") for dep in dev_deps)
 
     def test_library_wheel_excludes_dev_so_tree(self) -> None:
