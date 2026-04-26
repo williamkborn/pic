@@ -68,6 +68,7 @@ class TestImportAndBasicAPI:
             "blob_types",
             "is_supported",
             "raw_blob",
+            "wrap_elf",
             "config_layout",
             "djb2",
             "djb2_dll",
@@ -174,31 +175,25 @@ class TestBuilderAllocJump:
             pytest.skip("test_pass not staged")
 
         inner = picblobs.get_blob("test_pass", "linux", "x86_64").code
-        final = Blob("linux", "x86_64").alloc_jump().payload(inner).build()
+        final = Blob("linux", "x86_64").alloc_jump().payload(inner).build_elf()
 
         import tempfile
         from pathlib import Path
 
-        from picblobs.runner import find_runner
+        from picblobs.runner import build_linux_elf_command
 
-        try:
-            find_runner("linux", "x86_64")
-        except FileNotFoundError:
-            pytest.skip("linux runner not built")
-
-        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".elf", delete=False) as f:
             f.write(final)
             path = Path(f.name)
+        path.chmod(path.stat().st_mode | 0o700)
         try:
             import subprocess
 
-            runner = find_runner("linux", "x86_64")
-            r = subprocess.run(
-                [str(runner), str(path)],
-                capture_output=True,
-                check=False,
-                timeout=10,
-            )
+            try:
+                cmd = build_linux_elf_command(path, "x86_64")
+            except FileNotFoundError:
+                pytest.skip("qemu-x86_64-static not installed")
+            r = subprocess.run(cmd, capture_output=True, check=False, timeout=10)
             assert r.returncode == 0, r.stderr
             assert r.stdout == b"PASS"
         finally:

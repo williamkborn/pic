@@ -51,8 +51,8 @@ class TestFindRunner:
             find_runner("linux", search_paths=[Path("/nonexistent")])
 
     @pytest.mark.requires_runners
-    def test_find_linux_runner(self) -> None:
-        runner = find_runner("linux", "x86_64")
+    def test_find_windows_runner(self) -> None:
+        runner = find_runner("windows", "x86_64")
         assert runner.exists()
         assert runner.is_file()
 
@@ -165,24 +165,17 @@ class TestRunBlobDryRun:
             sections={},
         )
 
-        monkeypatch.setattr("picblobs.runner.find_runner", lambda *_: Path("/runner"))
-        monkeypatch.setattr(
-            "picblobs.runner._build_command",
-            lambda runner_path, blob_file, arch, extra=None: [
-                str(runner_path),
-                str(blob_file),
-            ],
-        )
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda arch: True)
 
         def _boom(*args, **kwargs):
-            raise AssertionError("prepare_blob should not be called in dry_run")
+            raise AssertionError("prepare_linux_elf should not be called in dry_run")
 
-        monkeypatch.setattr("picblobs.runner.prepare_blob", _boom)
+        monkeypatch.setattr("picblobs.runner.prepare_linux_elf", _boom)
 
         result = run_blob(blob, dry_run=True)
         assert result.exit_code == 0
-        assert result.command == ["/runner", "test_linux_x86_64.bin"]
-        assert result.blob_file == "test_linux_x86_64.bin"
+        assert result.command == ["test_linux_x86_64.elf"]
+        assert result.blob_file == "test_linux_x86_64.elf"
 
 
 class TestBuildBlobCommand:

@@ -78,6 +78,15 @@ class _BaseTypedBuilder:
     def _replace(self, **kwargs) -> _BaseTypedBuilder:
         return dataclasses.replace(self, **kwargs)
 
+    def build_elf(self, **kwargs) -> bytes:
+        """Build this blob and wrap it in a minimal Linux ELF executable.
+
+        Keyword arguments are forwarded to :func:`picblobs.wrap_elf`.
+        """
+        from picblobs._elf import wrap_elf
+
+        return wrap_elf(self.build(), self._os, self._arch, **kwargs)
+
 
 @dataclasses.dataclass(frozen=True)
 class HelloBuilder(_BaseTypedBuilder):

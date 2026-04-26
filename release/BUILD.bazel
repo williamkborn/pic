@@ -16,7 +16,6 @@ filegroup(
     srcs = select({
         "//platforms:linux": [
             "//src/payload:hello",
-            "//tests/runners/linux:runner",
             "//tests/runners/windows:runner",
             "//tests/runners/freebsd:runner",
         ],

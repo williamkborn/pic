@@ -8,6 +8,7 @@ the Bazel build tree).
 from __future__ import annotations
 
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -60,7 +61,9 @@ class TestPackageImports:
     def test_runners_dir_resolves(self) -> None:
         p = picblobs_cli.runners_dir()
         assert p.exists(), p
-        assert (p / "linux" / "x86_64" / "runner").exists()
+        assert not (p / "linux").exists()
+        assert (p / "freebsd" / "x86_64" / "runner").exists()
+        assert (p / "windows" / "x86_64" / "runner").exists()
 
     def test_ul_exec_test_binary_resolves(self) -> None:
         p = picblobs_cli.test_binaries_dir()
@@ -126,23 +129,19 @@ class TestListRunners:
     def test_lists_all_runners(self, runner: CliRunner) -> None:
         r = runner.invoke(main, ["list-runners"])
         assert r.exit_code == 0
-        # At least linux + freebsd + windows entries.
-        for kind in ("linux", "freebsd", "windows"):
+        for kind in ("freebsd", "windows"):
             assert kind in r.output
-
-    def test_os_filter_limits_output(self, runner: CliRunner) -> None:
-        r = runner.invoke(main, ["list-runners", "--os", "linux"])
-        assert r.exit_code == 0
-        assert "linux" in r.output
-        # With filter, non-linux runners shouldn't show as rows (the header
-        # mentions RUNNER/ARCH/PATH but those aren't runner types).
-        lines = [
+        rows = [
             line
             for line in r.output.splitlines()
             if line and not line.startswith(("RUNNER", "-"))
         ]
-        for line in lines:
-            assert line.startswith("linux"), line
+        assert not any(line.startswith("linux") for line in rows)
+
+    def test_linux_filter_reports_no_packaged_runners(self, runner: CliRunner) -> None:
+        r = runner.invoke(main, ["list-runners", "--os", "linux"])
+        assert r.exit_code != 0
+        assert "no runners found" in r.output
 
     def test_arch_filter(self, runner: CliRunner) -> None:
         r = runner.invoke(main, ["list-runners", "--arch", "x86_64"])
@@ -311,6 +310,74 @@ class TestBuildCommand:
         assert r.exit_code == 0, r.output
         expected = picblobs.Blob("windows", "x86_64").hello_windows().build()
         assert out.read_bytes() == expected
+
+    def test_elf_format_wraps_linux_output(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "hello"
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello",
+                "linux:x86_64",
+                "--format",
+                "elf",
+                "-o",
+                str(out),
+            ],
+        )
+        assert r.exit_code == 0, r.output
+        expected = picblobs.wrap_elf(
+            picblobs.Blob("linux", "x86_64").hello().build(),
+            "linux",
+            "x86_64",
+        )
+        assert out.read_bytes() == expected
+        assert out.stat().st_mode & stat.S_IXUSR
+
+    def test_elf_format_rejects_windows(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "hello.exe"
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello_windows",
+                "windows:x86_64",
+                "--format",
+                "elf",
+                "-o",
+                str(out),
+            ],
+        )
+        assert r.exit_code != 0
+        assert "linux" in r.output.lower()
+
+    def test_wrap_elf_flag_wraps_linux_output(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        out = tmp_path / "hello"
+        r = runner.invoke(
+            main,
+            [
+                "build",
+                "hello",
+                "linux:x86_64",
+                "--wrap-elf",
+                "-o",
+                str(out),
+            ],
+        )
+        assert r.exit_code == 0, r.output
+        expected = picblobs.wrap_elf(
+            picblobs.Blob("linux", "x86_64").hello().build(),
+            "linux",
+            "x86_64",
+        )
+        assert out.read_bytes() == expected
+        assert out.stat().st_mode & stat.S_IXUSR
 
     # --- Negative / validation ---
 
@@ -900,7 +967,7 @@ class TestRunnerDiscovery:
     def test_prefers_picblobs_cli_bundle(self) -> None:
         from picblobs.runner import find_runner
 
-        p = find_runner("linux", "x86_64")
+        p = find_runner("windows", "x86_64")
         # Path points inside picblobs_cli/_runners.
         assert "/picblobs_cli/_runners/" in str(p), p
 

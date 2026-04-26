@@ -1,8 +1,9 @@
 # picblobs-cli
 
-`picblobs-cli` is a companion package that bundles the cross-compiled test
-runners and verifier-only test binaries alongside a `click`-based
-command-line interface. It depends on
+`picblobs-cli` is a companion package that bundles the non-Linux
+cross-compiled test runners and verifier-only test binaries alongside a
+`click`-based command-line interface. Linux payloads run as temporary ELF
+executables produced by `picblobs` itself. It depends on
 [`picblobs`](https://pypi.org/project/picblobs/) for blob data and the
 builder API. Install `picblobs-cli` when you want to build, run, or
 verify blobs from the shell -- if all you need is the blob bytes, stick
@@ -15,7 +16,7 @@ architecture and full contract.
 ## Installation
 
 ```bash
-pip install picblobs-cli      # pulls in picblobs + click, ships runners/fixtures
+pip install picblobs-cli      # pulls in picblobs + click, ships non-Linux runners/fixtures
 ```
 
 QEMU user-static must be on `PATH` for cross-architecture execution:
@@ -63,22 +64,24 @@ Targets:
 
 ### `list-runners`
 
-List every bundled `(runner_type, arch)` runner binary.
+List every bundled `(runner_type, arch)` runner binary. Linux has no bundled
+runner; `run` wraps Linux blobs into ELF executables instead.
 
 ```bash
 picblobs-cli list-runners
-picblobs-cli list-runners --os linux
+picblobs-cli list-runners --os windows
 picblobs-cli list-runners --arch x86_64
 ```
 
 ### `build`
 
 Use the `picblobs.Blob(...)` builder API to assemble a ready-to-run
-blob and write it as raw bytes.
+blob and write it as raw bytes, or wrap Linux output as an ELF executable.
 
 ```bash
 # hello (no config)
 picblobs-cli build hello linux:x86_64 -o hello.bin
+picblobs-cli build hello linux:x86_64 --wrap-elf -o hello
 
 # alloc_jump with an inner payload
 picblobs-cli build alloc_jump linux:x86_64 \

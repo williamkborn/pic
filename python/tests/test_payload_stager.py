@@ -76,12 +76,13 @@ def _check_skip(
         pytest.skip(f"Test payload not staged: {test_payload}/{inner_os}/{target_arch}")
 
     runner_type = RUNNER_TYPE[target_os]
-    try:
-        from picblobs.runner import find_runner
+    if runner_type != "linux":
+        try:
+            from picblobs.runner import find_runner
 
-        find_runner(runner_type, target_arch)
-    except FileNotFoundError:
-        pytest.skip(f"No {runner_type} runner for {target_arch}")
+            find_runner(runner_type, target_arch)
+        except FileNotFoundError:
+            pytest.skip(f"No {runner_type} runner for {target_arch}")
 
 
 def _length_prefixed_payload(payload_bytes: bytes) -> bytes:

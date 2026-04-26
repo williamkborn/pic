@@ -1,9 +1,10 @@
-"""QEMU test runner orchestration.
+"""Blob execution orchestration.
 
-Manages the lifecycle of running a PIC blob under QEMU user-static:
-  1. Prepare a pre-extracted flat blob (code + config) in a temp file
-  2. Invoke the appropriate C test runner under QEMU
-  3. Capture and return stdout, stderr, exit code
+Manages the lifecycle of running a PIC blob:
+  1. Prepare a pre-extracted flat blob (code + config)
+  2. For Linux, wrap it as a temporary ELF and run it directly/QEMU
+  3. For non-Linux, invoke the appropriate C test runner under QEMU
+  4. Capture and return stdout, stderr, exit code
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from picblobs._elf import wrap_elf
 from picblobs._qemu import QEMU_BINARIES
 
 if TYPE_CHECKING:
@@ -158,9 +160,16 @@ def find_runner(
         search_paths: Override search directories.
 
     Raises:
-        FileNotFoundError: If runner binary is not found. The error text
-            mentions ``picblobs-cli`` so installation guidance is visible.
+        FileNotFoundError: If runner binary is not found. Non-Linux errors
+            mention ``picblobs-cli`` so installation guidance is visible.
     """
+    if runner_type == "linux":
+        raise FileNotFoundError(
+            "Linux test runner not found: Linux blobs run via direct ELF "
+            "wrapping now. Use picblobs.wrap_elf() or run_blob(); pass "
+            "runner_path explicitly if you need a custom legacy runner."
+        )
+
     embedded = _find_embedded_runner(runner_type, arch)
     if embedded is not None:
         return embedded
@@ -198,22 +207,51 @@ def prepare_blob(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     blob_file = output_dir / _blob_filename(blob)
+    blob_file.write_bytes(_blob_bytes(blob, config))
+    return blob_file
 
+
+def prepare_linux_elf(
+    blob: BlobData,
+    config: bytes = b"",
+    output_dir: Path | None = None,
+) -> Path:
+    """Write blob code + config as a minimal executable Linux ELF."""
+    if output_dir is None:
+        output_dir = Path(tempfile.mkdtemp(prefix="picblobs_"))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    elf_file = output_dir / _linux_elf_filename(blob)
+    elf_file.write_bytes(
+        wrap_elf(
+            _blob_bytes(blob, config),
+            blob.target_os,
+            blob.target_arch,
+            entry_offset=blob.entry_offset,
+        )
+    )
+    elf_file.chmod(elf_file.stat().st_mode | 0o700)
+    return elf_file
+
+
+def _blob_bytes(blob: BlobData, config: bytes = b"") -> bytes:
+    """Return finalized flat blob bytes with config patched in."""
     data = bytearray(blob.code)
-
-    # Append config at config_offset if provided.
     if config:
         if blob.config_offset > len(data):
             data.extend(b"\x00" * (blob.config_offset - len(data)))
         data[blob.config_offset : blob.config_offset + len(config)] = config
-
-    blob_file.write_bytes(bytes(data))
-    return blob_file
+    return bytes(data)
 
 
 def _blob_filename(blob: BlobData) -> str:
     """Return the standard on-disk filename for a prepared blob."""
     return f"{blob.blob_type}_{blob.target_os}_{blob.target_arch}.bin"
+
+
+def _linux_elf_filename(blob: BlobData) -> str:
+    """Return the standard filename for a Linux ELF-wrapped blob."""
+    return f"{blob.blob_type}_{blob.target_os}_{blob.target_arch}.elf"
 
 
 # Architectures whose PIC blobs write to the GOT at runtime.
@@ -275,6 +313,17 @@ def _build_command(
         return [str(runner_path), *args]
     qemu = find_qemu(arch)
     return [str(qemu), str(runner_path), *args]
+
+
+def build_linux_elf_command(
+    elf_file: Path,
+    arch: str,
+) -> list[str]:
+    """Build the native/QEMU command line for a Linux ELF-wrapped blob."""
+    if _is_native_arch(arch):
+        return [str(elf_file)]
+    qemu = find_qemu(arch)
+    return [str(qemu), str(elf_file)]
 
 
 def build_blob_command(
@@ -362,12 +411,25 @@ def reserve_tcp_port(host: str = "127.0.0.1") -> int:
 def _pair_commands(
     server_blob: BlobData,
     client_blob: BlobData,
-    runner_path: Path,
+    runner_path: Path | None,
     runner_type: str,
     server_config: bytes,
     client_config: bytes,
 ) -> tuple[Path, Path, list[str], list[str]]:
     """Prepare pair temp files and commands."""
+    if runner_type == "linux" and runner_path is None:
+        server_bin = prepare_linux_elf(server_blob, config=server_config)
+        client_bin = prepare_linux_elf(client_blob, config=client_config)
+        return (
+            server_bin,
+            client_bin,
+            build_linux_elf_command(server_bin, server_blob.target_arch),
+            build_linux_elf_command(client_bin, client_blob.target_arch),
+        )
+
+    if runner_path is None:
+        runner_path = find_runner(runner_type, server_blob.target_arch)
+
     server_bin = prepare_blob(server_blob, config=server_config)
     client_bin = prepare_blob(client_blob, config=client_config)
     return (
@@ -453,7 +515,7 @@ def _pair_run_attempt(
 def run_blob_pair(
     server_blob: BlobData,
     client_blob: BlobData,
-    runner_path: Path,
+    runner_path: Path | None = None,
     runner_type: str = "",
     *,
     server_config: bytes = b"",
@@ -530,6 +592,39 @@ def run_blob(
     if not runner_type:
         runner_type = blob.target_os
 
+    if runner_type == "linux" and runner_path is None:
+        return _run_linux_elf_blob(
+            blob,
+            config,
+            timeout,
+            debug,
+            dry_run,
+            stdin_data,
+        )
+
+    return _run_blob_with_runner(
+        blob,
+        config,
+        runner_type,
+        runner_path,
+        timeout,
+        debug,
+        dry_run,
+        stdin_data,
+    )
+
+
+def _run_blob_with_runner(
+    blob: BlobData,
+    config: bytes,
+    runner_type: str,
+    runner_path: Path | None,
+    timeout: float,
+    debug: bool,
+    dry_run: bool,
+    stdin_data: bytes,
+) -> RunResult:
+    """Prepare and execute a blob through a C runner binary."""
     if runner_path is None:
         runner_path = find_runner(runner_type, blob.target_arch)
 
@@ -560,15 +655,74 @@ def run_blob(
 def _log_run_blob_start(
     blob: BlobData,
     config: bytes,
-    runner_path: Path,
+    runner_path: Path | None,
     blob_file: Path,
 ) -> None:
     """Emit debug logging before executing a blob."""
     log.debug("blob:       %s %s:%s", blob.blob_type, blob.target_os, blob.target_arch)
     log.debug("code size:  %d bytes", len(blob.code))
     log.debug("config:     %d bytes at offset %d", len(config), blob.config_offset)
-    log.debug("runner:     %s", runner_path)
+    if runner_path is None:
+        log.debug("runner:     direct Linux ELF")
+    else:
+        log.debug("runner:     %s", runner_path)
     log.debug("blob file:  %s", blob_file)
+
+
+def _run_linux_elf_blob(
+    blob: BlobData,
+    config: bytes,
+    timeout: float,
+    debug: bool,
+    dry_run: bool,
+    stdin_data: bytes,
+) -> RunResult:
+    """Prepare and execute a Linux blob as a temporary ELF executable."""
+    if dry_run:
+        return _run_linux_elf_blob_dry(blob, config, debug)
+
+    blob_file = prepare_linux_elf(blob, config)
+
+    if debug:
+        _log_run_blob_start(blob, config, None, blob_file)
+
+    cmd = build_linux_elf_command(blob_file, blob.target_arch)
+
+    if debug:
+        log.debug("command:    %s", " ".join(cmd))
+
+    try:
+        return _execute_blob_command(cmd, blob_file, timeout, debug, stdin_data)
+    except subprocess.TimeoutExpired:
+        if not debug:
+            _cleanup_blob_file(blob_file)
+        raise
+    finally:
+        if not debug:
+            _cleanup_blob_file(blob_file)
+
+
+def _run_linux_elf_blob_dry(
+    blob: BlobData,
+    config: bytes,
+    debug: bool,
+) -> RunResult:
+    """Build a Linux ELF dry-run command without creating temp files."""
+    blob_file = Path(_linux_elf_filename(blob))
+    cmd = build_linux_elf_command(blob_file, blob.target_arch)
+    if debug:
+        _log_run_blob_start(blob, config, None, blob_file)
+        log.debug("blob file:  %s (dry-run placeholder)", blob_file)
+        log.debug("command:    %s", " ".join(cmd))
+        log.debug("dry run — not executing")
+    return RunResult(
+        stdout=b"",
+        stderr=b"",
+        exit_code=0,
+        duration_s=0.0,
+        command=cmd,
+        blob_file=str(blob_file),
+    )
 
 
 def _run_blob_dry(

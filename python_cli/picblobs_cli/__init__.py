@@ -1,9 +1,9 @@
-"""picblobs-cli — click-based CLI + bundled runner binaries.
+"""picblobs-cli — click-based CLI + non-Linux bundled runner binaries.
 
 This package is a companion to ``picblobs``: the latter carries the blob
-data and Python builder API, the former carries the cross-compiled test
-runners and the ``picblobs-cli`` console script that puts them all
-together under QEMU.
+data and Python builder API, the former carries the FreeBSD/Windows
+cross-compiled test runners, verifier fixtures, and the ``picblobs-cli``
+console script that puts them all together under QEMU.
 
 See ADR-026 and REQ-020 for the design rationale.
 """

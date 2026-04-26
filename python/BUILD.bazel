@@ -49,10 +49,7 @@ py_test(
         ":picblobs",
         requirement("pytest"),
     ],
-    data = [
-        "tests/conftest.py",
-        "//tests/runners/linux:runner",
-    ],
+    data = ["tests/conftest.py"],
 )
 
 py_test(

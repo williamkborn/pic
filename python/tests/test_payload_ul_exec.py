@@ -13,7 +13,7 @@ import pytest
 from payload_defs import OPERATING_SYSTEMS
 from picblobs import get_blob
 from picblobs._cross_compile import build_ul_exec_config, compile_c_elf
-from picblobs.runner import find_runner, is_arch_skip_rosetta, run_blob
+from picblobs.runner import is_arch_skip_rosetta, run_blob
 
 try:
     from picblobs_cli import ul_exec_test_binary
@@ -234,11 +234,6 @@ class TestUlExecStatic:
         if is_arch_skip_rosetta(target_arch):
             pytest.skip(f"QEMU {target_arch} crashes under Rosetta")
 
-        try:
-            find_runner("linux", target_arch)
-        except FileNotFoundError:
-            pytest.skip(f"No linux runner for {target_arch}")
-
         elf_data = ul_exec_test_binary("linux", target_arch)
         if elf_data is None:
             pytest.skip(f"No staged ul_exec test ELF for linux:{target_arch}")
@@ -267,11 +262,6 @@ class TestUlExecStatic:
         """Static glibc binary on x86_64 (non-PIE, ET_EXEC)."""
         if not _blob_exists("ul_exec", "linux", "x86_64"):
             pytest.skip("ul_exec not staged for linux/x86_64")
-        try:
-            find_runner("linux", "x86_64")
-        except FileNotFoundError:
-            pytest.skip("No linux runner for x86_64")
-
         elf_data = compile_c_elf("x86_64", STATIC_LIBC_SRC, static=True)
         if elf_data is None:
             pytest.skip("Cannot compile static libc ELF for x86_64")
@@ -301,11 +291,6 @@ class TestUlExecDynamic:
     def test_dynamic_elf_executes_x86_64(self) -> None:
         if not _blob_exists("ul_exec", "linux", "x86_64"):
             pytest.skip("ul_exec not staged for linux/x86_64")
-
-        try:
-            find_runner("linux", "x86_64")
-        except FileNotFoundError:
-            pytest.skip("No linux runner for x86_64")
 
         elf_data = compile_c_elf("x86_64", DYNAMIC_TEST_SRC, static=False)
         if elf_data is None:
@@ -343,11 +328,6 @@ class TestUlExecEdgeCases:
         if not _blob_exists("ul_exec", "linux", "x86_64"):
             pytest.skip("ul_exec not staged for linux/x86_64")
 
-        try:
-            find_runner("linux", "x86_64")
-        except FileNotFoundError:
-            pytest.skip("No linux runner for x86_64")
-
         blob = get_blob("ul_exec", "linux", "x86_64")
         config = build_ul_exec_config(b"\x00" * 64, target_arch="x86_64", argv=["bad"])
 
@@ -359,11 +339,6 @@ class TestUlExecEdgeCases:
     def test_truncated_elf_exits_cleanly(self) -> None:
         if not _blob_exists("ul_exec", "linux", "x86_64"):
             pytest.skip("ul_exec not staged for linux/x86_64")
-
-        try:
-            find_runner("linux", "x86_64")
-        except FileNotFoundError:
-            pytest.skip("No linux runner for x86_64")
 
         blob = get_blob("ul_exec", "linux", "x86_64")
         # Valid ELF magic but truncated

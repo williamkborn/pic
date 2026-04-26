@@ -659,6 +659,20 @@ def list_runners(os_filter: str | None, arch_filter: str | None) -> None:
     help="Output file (written as raw bytes)",
 )
 @click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["raw", "elf"]),
+    default="raw",
+    show_default=True,
+    help="Output container format. ELF is Linux-only.",
+)
+@click.option(
+    "--wrap-elf",
+    "wrap_elf_output",
+    is_flag=True,
+    help="Wrap output as a minimal Linux ELF executable.",
+)
+@click.option(
     "--payload",
     "payload_file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -693,6 +707,8 @@ def build(
     blob_type: str,
     target: str,
     output_path: Path,
+    output_format: str,
+    wrap_elf_output: bool,
     payload_file: Path | None,
     address: str | None,
     port: int | None,
@@ -749,7 +765,18 @@ def build(
     except ValidationError as e:
         _fail(str(e))
 
+    if wrap_elf_output:
+        output_format = "elf"
+
+    if output_format == "elf":
+        try:
+            out = picblobs.wrap_elf(out, os_name, arch)
+        except ValidationError as e:
+            _fail(str(e))
+
     output_path.write_bytes(out)
+    if output_format == "elf":
+        output_path.chmod(output_path.stat().st_mode | 0o111)
     click.echo(f"wrote {len(out)} bytes to {output_path}")
 
 
@@ -800,9 +827,14 @@ def _run_file(
 
     Unlike the registry path, we don't construct a ``BlobData`` or
     append a config — the file is assumed to be a complete blob image
-    and is passed straight to the runner binary.
+    and is passed straight to the runner binary. Linux file-mode blobs
+    are wrapped into a temporary ELF when no explicit runner is supplied.
     """
     from picblobs.runner import _build_command
+
+    if runner_type == "linux" and runner_path is None:
+        _run_linux_file(blob_file, arch, stdin_data, timeout, debug, dry_run)
+        return
 
     resolved_runner = runner_path
     if resolved_runner is None:
@@ -811,7 +843,10 @@ def _run_file(
         except FileNotFoundError as e:
             _fail(str(e))
 
-    cmd = _build_command(resolved_runner, blob_file, arch)
+    try:
+        cmd = _build_command(resolved_runner, blob_file, arch)
+    except FileNotFoundError as e:
+        _fail(str(e))
 
     if debug:
         click.echo(f"runner:    {resolved_runner}", err=True)
@@ -838,6 +873,117 @@ def _run_file(
     sys.stdout.flush()
     sys.stderr.flush()
     sys.exit(result.returncode)
+
+
+def _run_linux_file(
+    blob_file: Path,
+    arch: str,
+    stdin_data: bytes,
+    timeout: float,
+    debug: bool,
+    dry_run: bool,
+) -> None:
+    """Run a raw or ELF Linux payload file without a packaged C runner."""
+    if dry_run:
+        _run_linux_file_dry(blob_file, arch, debug)
+        return
+    _run_linux_file_exec(blob_file, arch, stdin_data, timeout, debug)
+
+
+def _run_linux_file_dry(blob_file: Path, arch: str, debug: bool) -> None:
+    """Print the direct Linux ELF file-mode command without executing."""
+    from picblobs.runner import build_linux_elf_command
+
+    try:
+        cmd = build_linux_elf_command(_linux_file_placeholder(blob_file), arch)
+    except FileNotFoundError as e:
+        _fail(str(e))
+    if debug:
+        click.echo("runner:    direct Linux ELF", err=True)
+        click.echo(
+            f"blob file: {blob_file} ({blob_file.stat().st_size} B)",
+            err=True,
+        )
+        click.echo(f"command:   {' '.join(cmd)}", err=True)
+    click.echo(" ".join(cmd))
+    sys.exit(0)
+
+
+def _run_linux_file_exec(
+    blob_file: Path,
+    arch: str,
+    stdin_data: bytes,
+    timeout: float,
+    debug: bool,
+) -> None:
+    """Prepare and execute Linux file-mode payload bytes as an ELF."""
+    from picblobs.runner import build_linux_elf_command
+
+    exec_file: Path | None = None
+    try:
+        exec_file = _prepare_linux_file(blob_file, arch)
+        cmd = build_linux_elf_command(exec_file, arch)
+    except (FileNotFoundError, ValidationError) as e:
+        if exec_file is not None:
+            _cleanup_prepared_linux_file(exec_file)
+        _fail(str(e))
+
+    if debug:
+        click.echo("runner:    direct Linux ELF", err=True)
+        click.echo(f"blob file: {exec_file} ({exec_file.stat().st_size} B)", err=True)
+        click.echo(f"command:   {' '.join(cmd)}", err=True)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            check=False,
+            input=stdin_data or None,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        _fail(f"blob timed out after {timeout}s")
+    finally:
+        if exec_file is not None:
+            _cleanup_prepared_linux_file(exec_file)
+
+    sys.stdout.buffer.write(result.stdout)
+    sys.stderr.buffer.write(result.stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(result.returncode)
+
+
+def _linux_file_placeholder(blob_file: Path) -> Path:
+    """Return a dry-run placeholder for Linux file-mode execution."""
+    if _file_is_elf(blob_file):
+        return Path(blob_file.name)
+    return Path(f"{blob_file.stem}.elf")
+
+
+def _prepare_linux_file(blob_file: Path, arch: str) -> Path:
+    """Copy or wrap a Linux file-mode payload into an executable temp ELF."""
+    data = blob_file.read_bytes()
+    temp_dir = Path(tempfile.mkdtemp(prefix="picblobs_"))
+    if data.startswith(b"\x7fELF"):
+        exec_file = temp_dir / blob_file.name
+        exec_file.write_bytes(data)
+    else:
+        exec_file = temp_dir / f"{blob_file.stem}.elf"
+        exec_file.write_bytes(picblobs.wrap_elf(data, "linux", arch))
+    exec_file.chmod(exec_file.stat().st_mode | 0o700)
+    return exec_file
+
+
+def _file_is_elf(path: Path) -> bool:
+    with path.open("rb") as f:
+        return f.read(4) == b"\x7fELF"
+
+
+def _cleanup_prepared_linux_file(path: Path) -> None:
+    path.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        path.parent.rmdir()
 
 
 def _parse_run_mode(
@@ -1586,7 +1732,7 @@ def _verify_nacl_e2e(
     )
 
     _check_nacl_e2e_speed(arch, force_slow)
-    runner_path = find_runner(os_name, arch)
+    runner_path = None if os_name == "linux" else find_runner(os_name, arch)
     server_blob = picblobs.get_blob("nacl_server", os_name, arch)
     client_blob = picblobs.get_blob("nacl_client", os_name, arch)
     port = reserve_tcp_port()
@@ -1600,34 +1746,42 @@ def _verify_nacl_e2e(
         client_config=config,
         timeout=timeout,
     )
-    server_out = result.server_stdout
-    server_err = result.server_stderr
-    client_out = result.client_stdout
-    client_err = result.client_stderr
+    _require_nacl_pair_success(result)
+    return _nacl_pair_detail(result.server_stdout, result.client_stdout)
 
+
+def _require_nacl_pair_success(result) -> None:
+    """Raise with context if a NaCl e2e pair did not complete correctly."""
+    server_out = result.server_stdout
+    client_out = result.client_stdout
     if result.server_exit != 0:
-        raise RuntimeError(f"server exit={result.server_exit} stderr={server_err!r}")
+        raise RuntimeError(
+            f"server exit={result.server_exit} stderr={result.server_stderr!r}"
+        )
     if result.client_exit != 0:
-        raise RuntimeError(f"client exit={result.client_exit} stderr={client_err!r}")
+        raise RuntimeError(
+            f"client exit={result.client_exit} stderr={result.client_stderr!r}"
+        )
 
     if b"Hello from NaCl PIC blob!" not in server_out:
         raise RuntimeError(f"server did not decrypt expected plaintext: {server_out!r}")
     if b"secure channel OK" not in server_out or b"secure channel OK" not in client_out:
         raise RuntimeError("peers did not confirm channel")
 
-    s = server_out.decode(errors="replace")
-    c = client_out.decode(errors="replace")
-    decrypted = ""
-    for line in s.splitlines():
-        if "decrypted:" in line:
-            decrypted = line.split("decrypted:", 1)[1].strip()
-            break
-    ack = ""
-    for line in c.splitlines():
-        if "decrypted ACK:" in line:
-            ack = line.split("decrypted ACK:", 1)[1].strip()
-            break
+
+def _nacl_pair_detail(server_out: bytes, client_out: bytes) -> str:
+    """Return a compact success summary from NaCl pair stdout."""
+    decrypted = _line_suffix(server_out, "decrypted:")
+    ack = _line_suffix(client_out, "decrypted ACK:")
     return f"encrypt->send->decrypt {decrypted!r}, ACK {ack!r}"
+
+
+def _line_suffix(output: bytes, marker: str) -> str:
+    """Return the stripped suffix after marker in decoded line output."""
+    for line in output.decode(errors="replace").splitlines():
+        if marker in line:
+            return line.split(marker, 1)[1].strip()
+    return ""
 
 
 class _Skip(Exception):
