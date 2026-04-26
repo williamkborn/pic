@@ -96,7 +96,7 @@ jobs:
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.expected }}
         run: |
-          uv build python --wheel --sdist --out-dir dist/picblobs --no-build-isolation
+          uv build python --wheel --sdist --out-dir dist/picblobs
           python tools/check_dist.py picblobs --dist-dir dist/picblobs --expected-version "${EXPECTED_VERSION}"
           python -m twine check dist/picblobs/*
 

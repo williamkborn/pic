@@ -125,8 +125,8 @@ jobs:
 
       - name: Build distributions
         run: |
-          uv build python --wheel --sdist --out-dir dist/picblobs --no-build-isolation
-          uv build python_cli --wheel --sdist --out-dir dist/picblobs-cli --no-build-isolation
+          uv build python --wheel --sdist --out-dir dist/picblobs
+          uv build python_cli --wheel --sdist --out-dir dist/picblobs-cli
           python tools/check_dist.py picblobs --dist-dir dist/picblobs
           python tools/check_dist.py picblobs-cli --dist-dir dist/picblobs-cli
           python -m twine check dist/picblobs/* dist/picblobs-cli/*
