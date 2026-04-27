@@ -2,7 +2,7 @@
 
 Position-independent code blobs for multiple OS/arch targets. Bazel 9 + bzlmod build system with Bootlin cross-compilation toolchains.
 
-**Version**: 0.1.2 | **License**: Apache-2.0 | **Python**: 3.10+
+**Version**: 0.1.3 | **License**: Apache-2.0 | **Python**: 3.10+
 
 ## Dev setup
 
@@ -99,7 +99,7 @@ bazel build --config=lint //src/... //tests/...   # clang-tidy
 
 #### Module Constants
 
-- `__version__: str` — "0.1.2"
+- `__version__: str` — "0.1.3"
 - `__all__: list[str]` — Public API exports: ["get_blob", "list_blobs", "BlobData", "extract", "clear_cache"]
 
 ---
@@ -603,7 +603,7 @@ bazel build //release:full --config=linux_x86_64
 ```toml
 [project]
 name = "picblobs"
-version = "0.1.2"
+version = "0.1.3"
 requires-python = ">=3.10"
 dependencies = ["pyelftools>=0.31"]
 

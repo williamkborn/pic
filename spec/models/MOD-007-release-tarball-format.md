@@ -66,7 +66,7 @@ The manifest is the entry point for all consumers. It provides:
 ```json
 {
   "schema_version": 1,
-  "picblobs_version": "0.1.2",
+  "picblobs_version": "0.1.3",
   "architectures": { ... },
   "catalog": { ... }
 }

@@ -10,15 +10,17 @@ See ADR-026 and REQ-020 for the design rationale.
 
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.resources
 from pathlib import Path
 
 try:
-    from picblobs import __version__ as __picblobs_version__
-except ImportError:  # pragma: no cover — picblobs is a hard dep
-    __picblobs_version__ = "unknown"
-
-__version__ = __picblobs_version__
+    __version__ = importlib.metadata.version("picblobs-cli")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover - source fallback
+    try:
+        from picblobs import __version__ as __version__
+    except ImportError:
+        __version__ = "unknown"
 
 
 def runners_dir() -> Path:

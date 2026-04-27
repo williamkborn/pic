@@ -12,6 +12,7 @@ import stat
 import struct
 import subprocess
 import sys
+from importlib import metadata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -50,8 +51,8 @@ class TestPackageImports:
     def test_picblobs_cli_importable(self) -> None:
         assert picblobs_cli.__version__
 
-    def test_version_matches_picblobs(self) -> None:
-        assert picblobs_cli.__version__ == picblobs.__version__
+    def test_version_matches_cli_distribution(self) -> None:
+        assert picblobs_cli.__version__ == metadata.version("picblobs-cli")
 
     def test_main_is_click_command(self) -> None:
         import click

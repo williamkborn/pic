@@ -56,7 +56,7 @@ data for `picblobs-cli`, not for `picblobs`.
 [project]
 name = "picblobs-cli"
 dependencies = [
-  "picblobs>=0.1.2",
+  "picblobs>=0.1.3",
   "click>=8.0",
 ]
 
