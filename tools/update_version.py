@@ -118,12 +118,12 @@ VERSION_TARGETS: tuple[VersionTarget, ...] = (
         re.compile(r'(?m)^(version = ")([^"]+)(")$'),
     ),
     VersionTarget(
-        Path("docs/src/picblobs-cli.md"),
+        Path("docs/guide/picblobs-cli.html"),
         "picblobs-cli info example, library version",
         re.compile(r"(?m)^(picblobs:\s+)(\S+)()$"),
     ),
     VersionTarget(
-        Path("docs/src/picblobs-cli.md"),
+        Path("docs/guide/picblobs-cli.html"),
         "picblobs-cli info example, CLI version",
         re.compile(r"(?m)^(picblobs-cli:\s+)(\S+)()$"),
     ),

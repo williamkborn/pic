@@ -20,7 +20,7 @@ def test_collect_files_filters_by_extension() -> None:
     from tools.quality_paths import collect_files
 
     files = collect_files(
-        ["python/picblobs/__init__.py", "docs/src/formatting.md"],
+        ["python/picblobs/__init__.py", "README.md"],
         roots=["python", "tools"],
         extensions={".py"},
         exclude={"bazel-bin", "bazel-out", ".venv", "__pycache__"},

@@ -103,36 +103,32 @@ Linux-hosted verification matrix. `ul_exec` is only built for
 
 ## Documentation
 
-Full documentation is available as an [mdbook](https://rust-lang.github.io/mdBook/) in the [`docs/`](docs/) directory:
-
-```bash
-# Serve locally
-mdbook serve docs/
-
-# Or build static HTML
-mdbook build docs/
-```
+Full documentation is a static HTML site under [`docs/`](docs/). It is
+published to GitHub Pages on push to `main` and can also be opened
+locally by pointing a browser at [`docs/index.html`](docs/index.html).
 
 ### User Guide
 
-- [Getting Started](docs/src/getting-started.md) -- prerequisites, setup, Docker
-- [Building](docs/src/building.md) -- Bazel build system, platform configs, staging
-- [Running Blobs](docs/src/running.md) -- CLI usage
-- [picblobs-cli](docs/src/picblobs-cli.md) -- click CLI companion package (build / run / verify)
-- [Testing](docs/src/testing.md) -- test suite, filtered runs, test architecture
+- [Introduction](docs/guide/introduction.html) -- what picblobs is and what it ships
+- [How PIC extraction works](docs/guide/how-it-works.html) -- plain-language tour with diagrams
+- [Getting Started](docs/guide/getting-started.html) -- prerequisites, setup, Docker
+- [Building](docs/guide/building.html) -- Bazel build system, platform configs, staging
+- [Running Blobs](docs/guide/running.html) -- CLI usage
+- [picblobs-cli](docs/guide/picblobs-cli.html) -- click CLI companion package (build / run / verify)
+- [Testing](docs/guide/testing.html) -- test suite, filtered runs, test architecture
 
 ### Development
 
-- [Writing a Blob](docs/src/writing-blobs.md) -- Linux and Windows blob examples
-- [Code Generation](docs/src/code-generation.md) -- registry and generated files
-- [Adding an Architecture](docs/src/adding-architecture.md) -- step-by-step guide
-- [Adding a Syscall](docs/src/adding-syscall.md) -- step-by-step guide
-- [Formatting and Linting](docs/src/formatting.md) -- clang-format, ruff, lizard
+- [Writing a Blob](docs/guide/writing-blobs.html) -- Linux and Windows blob examples
+- [Code Generation](docs/guide/code-generation.html) -- registry and generated files
+- [Adding an Architecture](docs/guide/adding-architecture.html) -- step-by-step guide
+- [Adding a Syscall](docs/guide/adding-syscall.html) -- step-by-step guide
+- [Formatting and Linting](docs/guide/formatting.html) -- clang-format, ruff, lizard
 
 ### Reference
 
-- [Platform Support](docs/src/platform-support.md) -- architectures, traits, OS details
-- [Test Runners](docs/src/test-runners.md) -- Linux, Windows, FreeBSD runner internals
-- [Project Structure](docs/src/project-structure.md) -- full directory layout
-- [Kernel Toolkit](docs/src/kernel-toolkit.md) -- kernel-mode tools, encrypted shell, VM tests
-- [Specification](docs/src/specification.md) -- requirements, ADRs, verification specs
+- [Platform Support](docs/guide/platform-support.html) -- architectures, traits, OS details
+- [Test Runners](docs/guide/test-runners.html) -- Linux, Windows, FreeBSD runner internals
+- [Project Structure](docs/guide/project-structure.html) -- full directory layout
+- [Kernel Toolkit](docs/guide/kernel-toolkit.html) -- kernel-mode tools, encrypted shell, VM tests
+- [Specification](docs/guide/specification.html) -- requirements, ADRs, verification specs
