@@ -86,6 +86,15 @@ picblobs-cli list
 picblobs-cli info hello linux:x86_64
 picblobs-cli info hello_windows windows:i686
 </code></pre>
+<h2 id="targeted-verification">Targeted verification</h2>
+<p>Run <code>verify</code> against a single architecture while iterating:</p>
+<pre data-lang="bash"><code>picblobs-cli verify --os linux --arch ppc64le
+picblobs-cli verify --os linux --arch riscv64
+</code></pre>
+<h2 id="freebsd-note">FreeBSD coverage</h2>
+<p><code>verify</code> only runs <code>freebsd:x86_64</code>. Other FreeBSD blob architectures are
+still built and shipped, but they are excluded from the Linux-hosted
+verification matrix. <code>ul_exec</code> is only built for <code>freebsd:x86_64</code>.</p>
       </article>
       <nav class="page-nav">
         <a class="prev" href="building.html">← Building</a>

