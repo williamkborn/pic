@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import errno
 import functools
 import logging
 import platform
@@ -84,19 +85,124 @@ class PairRunResult:
 
 
 def find_qemu(arch: str) -> Path:
-    """Locate the QEMU user-static binary for an architecture.
+    """Locate a qemu-user interpreter for an architecture on PATH.
+
+    Prefers the ``-static`` build (``qemu-aarch64-static``) but also accepts
+    the dynamically-linked ``qemu-aarch64`` name shipped by the ``qemu-user``
+    package, since newer distros (e.g. Ubuntu 26.04) drop the standalone
+    static binaries.
 
     Raises:
-        FileNotFoundError: If QEMU binary is not found on PATH.
+        ValueError: If *arch* is unknown.
+        FileNotFoundError: If no qemu-user interpreter is found on PATH.
     """
     name = QEMU_BINARIES.get(arch)
     if name is None:
         raise ValueError(f"Unknown architecture: {arch}")
 
-    path = shutil.which(name)
-    if path is None:
-        raise FileNotFoundError(f"{name} not found on PATH. Install qemu-user-static.")
-    return Path(path)
+    for candidate in _qemu_binary_candidates(name):
+        path = shutil.which(candidate)
+        if path is not None:
+            return Path(path)
+    looked = ", ".join(_qemu_binary_candidates(name))
+    raise FileNotFoundError(
+        f"No qemu-user interpreter for {arch} on PATH (looked for {looked}). "
+        f"Install qemu-user-static, or register binfmt_misc handlers via "
+        f"qemu-user-binfmt so the binary can be exec'd directly."
+    )
+
+
+def _qemu_binary_candidates(name: str) -> list[str]:
+    """Return qemu binary names to try, static name first.
+
+    ``qemu-arm-static`` -> ``[qemu-arm-static, qemu-arm]``.
+    """
+    if name.endswith("-static"):
+        return [name, name.removesuffix("-static")]
+    return [name]
+
+
+# binfmt_misc lets the kernel route a foreign-arch binary through QEMU on
+# exec (the qemu-user-binfmt package registers these handlers). When present
+# we can launch blobs directly with no explicit interpreter prefix.
+_BINFMT_MISC_DIR = Path("/proc/sys/fs/binfmt_misc")
+
+# Per-arch launcher prefixes discovered this session. Empty tuple = the
+# binary runs directly (host-native or via a binfmt_misc handler); a
+# non-empty tuple is the qemu-user interpreter to prepend. The runtime
+# fallback in _retry_under_qemu writes here when a direct exec turns out to
+# need QEMU after all.
+_LAUNCHER_CACHE: dict[str, tuple[str, ...]] = {}
+
+
+def _qemu_binfmt_name(arch: str) -> str | None:
+    """Map *arch* to its qemu-user binfmt_misc entry name (e.g. ``qemu-arm``).
+
+    The binfmt entry is named after the interpreter: ``qemu-arm-static`` ->
+    ``qemu-arm``.
+    """
+    name = QEMU_BINARIES.get(arch)
+    if not name:
+        return None
+    return name.removesuffix("-static")
+
+
+@functools.cache
+def _binfmt_handler_enabled(arch: str) -> bool:
+    """Return True if binfmt_misc has an *enabled* qemu-user handler for *arch*.
+
+    Reads ``/proc/sys/fs/binfmt_misc/qemu-<arch>``; the first line is
+    ``enabled`` or ``disabled``. Any read error (not Linux, not mounted,
+    no entry) means no handler.
+    """
+    name = _qemu_binfmt_name(arch)
+    if not name:
+        return False
+    try:
+        first = (_BINFMT_MISC_DIR / name).read_text().splitlines()[0].strip()
+    except (OSError, IndexError):
+        return False
+    return first == "enabled"
+
+
+def qemu_launcher(arch: str) -> list[str]:
+    """Return the command prefix needed to launch an *arch* binary.
+
+    An empty list means the binary can be exec'd directly — it targets the
+    host architecture, or a binfmt_misc handler (qemu-user-binfmt) routes it
+    through QEMU automatically. Otherwise the result is a single-element list
+    holding the path to a qemu-user interpreter to prepend.
+
+    Resolution mirrors "just run the binary, fall back to QEMU":
+      1. host-native arch        -> direct exec
+      2. binfmt_misc handler     -> direct exec
+      3. qemu-user on PATH       -> explicit launcher
+      4. none of the above       -> direct exec is still attempted; an
+         exec-format failure then triggers the fallback in _retry_under_qemu.
+    """
+    if _is_native_arch(arch) or _binfmt_handler_enabled(arch):
+        return []
+    if arch not in _LAUNCHER_CACHE:
+        try:
+            _LAUNCHER_CACHE[arch] = (str(find_qemu(arch)),)
+        except (FileNotFoundError, ValueError):
+            _LAUNCHER_CACHE[arch] = ()
+    return list(_LAUNCHER_CACHE[arch])
+
+
+def can_run(arch: str) -> bool:
+    """Return True if blobs for *arch* can be executed on this host.
+
+    True when the arch is host-native, a binfmt_misc qemu-user handler is
+    registered, or a qemu-user interpreter is on PATH.
+    """
+    if _is_native_arch(arch) or _binfmt_handler_enabled(arch):
+        return True
+    try:
+        find_qemu(arch)
+    except (FileNotFoundError, ValueError):
+        return False
+    return True
 
 
 def _find_embedded_runner(runner_type: str, arch: str) -> Path | None:
@@ -309,10 +415,7 @@ def _build_command(
 ) -> list[str]:
     """Build the QEMU + runner command line."""
     args = [str(blob_file), *(extra_args or [])]
-    if _is_native_arch(arch):
-        return [str(runner_path), *args]
-    qemu = find_qemu(arch)
-    return [str(qemu), str(runner_path), *args]
+    return [*qemu_launcher(arch), str(runner_path), *args]
 
 
 def build_linux_elf_command(
@@ -320,10 +423,7 @@ def build_linux_elf_command(
     arch: str,
 ) -> list[str]:
     """Build the native/QEMU command line for a Linux ELF-wrapped blob."""
-    if _is_native_arch(arch):
-        return [str(elf_file)]
-    qemu = find_qemu(arch)
-    return [str(qemu), str(elf_file)]
+    return [*qemu_launcher(arch), str(elf_file)]
 
 
 def build_blob_command(
@@ -642,7 +742,9 @@ def _run_blob_with_runner(
         log.debug("command:    %s", " ".join(cmd))
 
     try:
-        return _execute_blob_command(cmd, blob_file, timeout, debug, stdin_data)
+        return _execute_blob_command(
+            cmd, blob_file, timeout, debug, stdin_data, blob.target_arch
+        )
     except subprocess.TimeoutExpired:
         if not debug:
             _cleanup_blob_file(blob_file)
@@ -692,7 +794,9 @@ def _run_linux_elf_blob(
         log.debug("command:    %s", " ".join(cmd))
 
     try:
-        return _execute_blob_command(cmd, blob_file, timeout, debug, stdin_data)
+        return _execute_blob_command(
+            cmd, blob_file, timeout, debug, stdin_data, blob.target_arch
+        )
     except subprocess.TimeoutExpired:
         if not debug:
             _cleanup_blob_file(blob_file)
@@ -750,22 +854,91 @@ def _run_blob_dry(
     )
 
 
+def exec_command(
+    cmd: list[str],
+    arch: str,
+    *,
+    stdin_data: bytes = b"",
+    timeout: float | None = None,
+) -> tuple[subprocess.CompletedProcess[bytes], list[str]]:
+    """Run *cmd*, retrying under a qemu-user interpreter on exec failure.
+
+    The first attempt runs *cmd* as built (no interpreter prefix for a binary
+    the host can run directly — native or via binfmt_misc). If the kernel
+    can't exec it (``ENOEXEC``) and we weren't already using QEMU, locate a
+    qemu-user interpreter and retry once.
+
+    Returns the completed process and the argv that actually ran (which gains
+    a qemu prefix if the fallback fired).
+
+    Raises:
+        FileNotFoundError: Direct exec failed and no qemu-user interpreter is
+            available for *arch*.
+        subprocess.TimeoutExpired: If execution exceeds *timeout*.
+    """
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            check=False,
+            input=stdin_data or None,
+            timeout=timeout,
+        )
+    except OSError as exc:
+        return _retry_under_qemu(cmd, arch, exc, stdin_data, timeout)
+    return proc, cmd
+
+
+def _is_exec_format_error(exc: OSError) -> bool:
+    """True if an exec failed because the kernel could not run the binary."""
+    return exc.errno == errno.ENOEXEC
+
+
+def _retry_under_qemu(
+    cmd: list[str],
+    arch: str,
+    exc: OSError,
+    stdin_data: bytes,
+    timeout: float | None,
+) -> tuple[subprocess.CompletedProcess[bytes], list[str]]:
+    """Recover a failed direct exec by prepending a qemu-user launcher.
+
+    Only handles the "kernel can't run this binary" case where we weren't
+    already using QEMU; anything else is re-raised unchanged.
+    """
+    if not _is_exec_format_error(exc) or qemu_launcher(arch):
+        raise exc
+    try:
+        qemu = find_qemu(arch)
+    except (FileNotFoundError, ValueError) as missing:
+        raise FileNotFoundError(
+            f"Cannot execute {arch} binary: the kernel has no handler for it "
+            f"(no native support and no binfmt_misc qemu-user entry) and no "
+            f"qemu-user interpreter is installed. {missing}"
+        ) from exc
+    _LAUNCHER_CACHE[arch] = (str(qemu),)
+    new_cmd = [str(qemu), *cmd]
+    proc = subprocess.run(
+        new_cmd,
+        capture_output=True,
+        check=False,
+        input=stdin_data or None,
+        timeout=timeout,
+    )
+    return proc, new_cmd
+
+
 def _execute_blob_command(
     cmd: list[str],
     blob_file: Path,
     timeout: float,
     debug: bool,
     stdin_data: bytes,
+    arch: str,
 ) -> RunResult:
     """Execute a prepared blob command and return the captured result."""
     start = time.monotonic()
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        check=False,
-        input=stdin_data or None,
-        timeout=timeout,
-    )
+    proc, cmd = exec_command(cmd, arch, stdin_data=stdin_data, timeout=timeout)
     duration = time.monotonic() - start
     if debug:
         log.debug("exit code:  %d", proc.returncode)

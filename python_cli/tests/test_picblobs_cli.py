@@ -7,7 +7,6 @@ the Bazel build tree).
 
 from __future__ import annotations
 
-import shutil
 import stat
 import struct
 import subprocess
@@ -34,12 +33,25 @@ def runner() -> CliRunner:
 
 @pytest.fixture
 def qemu_available() -> bool:
-    return shutil.which("qemu-x86_64-static") is not None
+    """True if this host can execute a *cross* (non-native) architecture.
+
+    The CLI runtime tests below dispatch to another arch (e.g. aarch64), so
+    they gate on cross-arch execution support -- a binfmt_misc qemu-user
+    handler or a qemu-user interpreter on PATH -- not on host-native
+    execution. Host-native always works, so gating on it would turn a
+    missing-capability skip into a runtime failure for the cross-arch cases.
+    """
+    import platform
+
+    from picblobs.runner import can_run
+
+    cross_arch = "aarch64" if platform.machine() != "aarch64" else "x86_64"
+    return can_run(cross_arch)
 
 
 def _require_qemu(flag: bool) -> None:
     if not flag:
-        pytest.skip("qemu-user-static not installed")
+        pytest.skip("cross-architecture execution is unavailable on this host")
 
 
 # ---------------------------------------------------------------------------

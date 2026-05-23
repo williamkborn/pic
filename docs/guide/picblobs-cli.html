@@ -76,13 +76,28 @@ architecture and full contract.</p>
 <h2 id="installation">Installation</h2>
 <pre data-lang="bash"><code>pip install picblobs-cli      # pulls in picblobs + click, ships non-Linux runners/fixtures
 </code></pre>
-<p>QEMU user-static must be on <code>PATH</code> for cross-architecture execution:</p>
-<pre data-lang="bash"><code># Debian / Ubuntu
+<p>Cross-architecture execution needs QEMU user-mode emulation. Two setups work,
+and picblobs-cli auto-detects which one you have:</p>
+<ol>
+<li><strong>binfmt_misc handlers</strong> (preferred on Debian/Ubuntu 26.04+): the
+kernel routes a foreign-arch binary through QEMU automatically when it is
+exec'd, so picblobs-cli just runs the blob directly.</li>
+<li><strong>Standalone <code>qemu-*-static</code> interpreters on <code>PATH</code></strong>: used as a
+fallback when no binfmt_misc handler is registered (and on macOS).</li>
+</ol>
+<pre data-lang="bash"><code># Debian / Ubuntu 26.04+ — register binfmt_misc handlers (preferred)
+sudo apt install qemu-user-binfmt
+
+# Older Debian / Ubuntu — standalone static interpreters
 sudo apt install qemu-user-static
 
 # Fedora / RHEL
 sudo dnf install qemu-user-static
 </code></pre>
+<p>The resolution order is "run the binary directly; if the kernel can't exec it,
+fall back to a <code>qemu-*-static</code> (or <code>qemu-*</code>) interpreter on <code>PATH</code>; otherwise
+fail." Native-arch and i686-on-x86_64 blobs run with no QEMU at all. Run
+<code>picblobs-cli info</code> to see which targets are runnable on the current host.</p>
 <p>From a source checkout, <code>source sourceme</code> installs both packages in
 editable mode.</p>
 <h2 id="commands">Commands</h2>
@@ -92,13 +107,14 @@ picblobs-cli COMMAND --help
 <p>Top-level commands are <code>build</code>, <code>disasm</code>, <code>extract</code>, <code>info</code>, <code>list</code>,
 <code>list-runners</code>, <code>listing</code>, <code>run</code>, <code>test</code>, and <code>verify</code>.</p>
 <h3 id="info"><code>info</code></h3>
-<p>Print versions, the runner bundle directory, QEMU availability, and a
-one-line summary of every staged target.</p>
+<p>Print versions, the runner bundle directory, which targets are runnable on
+this host (native, via a binfmt_misc handler, or via a <code>qemu-*</code> interpreter),
+and a one-line summary of every staged target.</p>
 <pre data-lang="bash"><code>$ picblobs-cli info
-picblobs:     0.1.3
-picblobs-cli: 0.1.3
+picblobs:     0.1.4
+picblobs-cli: 0.1.4
 runner bundle: /.../picblobs_cli/_runners
-qemu found:    aarch64, armv5_arm, armv5_thumb, armv7_thumb, i686, mipsbe32, mipsel32, powerpc, ppc64le, riscv64, s390x, sparcv8, x86_64
+runnable:      aarch64, armv5_arm, armv5_thumb, armv7_thumb, i686, mipsbe32, mipsel32, powerpc, ppc64le, riscv64, s390x, sparcv8, x86_64
 
 Targets:
   freebsd:aarch64  (14 blob types)

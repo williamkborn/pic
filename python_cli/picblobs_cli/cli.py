@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import os as _os
-import shutil
 import signal
 import socket
 import struct
@@ -29,7 +28,7 @@ from picblobs import (
     BlobType,
     ValidationError,
 )
-from picblobs.runner import find_runner, run_blob
+from picblobs.runner import can_run, exec_command, find_runner, run_blob
 
 from picblobs_cli import (
     __version__ as cli_version,
@@ -567,17 +566,17 @@ def _emit_package_info() -> None:
     click.echo(f"picblobs-cli: {cli_version}")
     click.echo(f"runner bundle: {runners_dir()}")
 
-    # QEMU detection.
+    # Execution capability: native exec, a binfmt_misc qemu-user handler, or
+    # a qemu-user interpreter on PATH — any of which lets a blob run.
     from picblobs._qemu import QEMU_BINARIES
 
-    found: list[str] = []
-    missing: list[str] = []
-    for arch, binary in sorted(QEMU_BINARIES.items()):
-        path = shutil.which(binary)
-        (found if path else missing).append(arch)
-    click.echo(f"qemu found:    {', '.join(found) or '<none>'}")
-    if missing:
-        click.echo(f"qemu missing:  {', '.join(missing)}")
+    runnable: list[str] = []
+    blocked: list[str] = []
+    for arch in sorted(QEMU_BINARIES):
+        (runnable if can_run(arch) else blocked).append(arch)
+    click.echo(f"runnable:      {', '.join(runnable) or '<none>'}")
+    if blocked:
+        click.echo(f"not runnable:  {', '.join(blocked)}")
 
     click.echo("")
     click.echo("Targets:")
@@ -843,10 +842,7 @@ def _run_file(
         except FileNotFoundError as e:
             _fail(str(e))
 
-    try:
-        cmd = _build_command(resolved_runner, blob_file, arch)
-    except FileNotFoundError as e:
-        _fail(str(e))
+    cmd = _build_command(resolved_runner, blob_file, arch)
 
     if debug:
         click.echo(f"runner:    {resolved_runner}", err=True)
@@ -858,15 +854,11 @@ def _run_file(
         sys.exit(0)
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            check=False,
-            input=stdin_data or None,
-            timeout=timeout,
-        )
+        result, _ = exec_command(cmd, arch, stdin_data=stdin_data, timeout=timeout)
     except subprocess.TimeoutExpired:
         _fail(f"blob timed out after {timeout}s")
+    except FileNotFoundError as e:
+        _fail(str(e))
 
     sys.stdout.buffer.write(result.stdout)
     sys.stderr.buffer.write(result.stderr)
@@ -934,15 +926,11 @@ def _run_linux_file_exec(
         click.echo(f"command:   {' '.join(cmd)}", err=True)
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            check=False,
-            input=stdin_data or None,
-            timeout=timeout,
-        )
+        result, _ = exec_command(cmd, arch, stdin_data=stdin_data, timeout=timeout)
     except subprocess.TimeoutExpired:
         _fail(f"blob timed out after {timeout}s")
+    except FileNotFoundError as e:
+        _fail(str(e))
     finally:
         if exec_file is not None:
             _cleanup_prepared_linux_file(exec_file)

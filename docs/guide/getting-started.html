@@ -65,7 +65,7 @@
 <h2 id="prerequisites">Prerequisites</h2>
 <ul>
 <li><a href="https://bazel.build/">Bazel 9.0.1</a> (see <code>.bazelversion</code>)</li>
-<li><a href="https://www.qemu.org/">QEMU user-static</a> for cross-architecture testing</li>
+<li><a href="https://www.qemu.org/">QEMU user-mode</a> for cross-architecture testing — either binfmt_misc handlers (<code>qemu-user-binfmt</code>, preferred) or standalone <code>qemu-*-static</code> interpreters</li>
 <li>Python 3.10+</li>
 <li><a href="https://github.com/astral-sh/uv">uv</a> (recommended) or pip/venv</li>
 <li><code>clang-tidy</code> for full C lint (<code>pre-push</code> / <code>tools/c_lint_check.sh</code>)</li>

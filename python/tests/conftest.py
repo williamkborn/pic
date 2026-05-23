@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
-import shutil
+import platform
 import signal
 import socket
 from pathlib import Path
@@ -46,7 +46,23 @@ def _blobs_exist() -> bool:
 
 
 def _has_qemu() -> bool:
-    return shutil.which("qemu-x86_64-static") is not None
+    """True if a qemu-user interpreter for the host arch is on PATH.
+
+    The requires_qemu marker gates tests that need an actual QEMU binary --
+    notably find_qemu() discovery -- so this checks for the interpreter
+    itself, not merely whether blobs can run (a native host executes blobs
+    with no QEMU at all, and binfmt_misc handlers route through QEMU without
+    a discoverable interpreter). Per-arch runtime coverage is gated separately
+    by can_run() in _apply_capability_skips, which credits native and
+    binfmt_misc execution too.
+    """
+    from picblobs.runner import find_qemu
+
+    try:
+        find_qemu(platform.machine())
+    except (FileNotFoundError, ValueError):
+        return False
+    return True
 
 
 def _can_bind_localhost() -> bool:
@@ -270,7 +286,7 @@ def _skip_marker_reason(keyword: str) -> str:
         "requires_runners": (
             "Test runners not built. Run: bazel build //tests/runners/..."
         ),
-        "requires_qemu": "QEMU user-static not installed.",
+        "requires_qemu": "No qemu-user interpreter on PATH.",
         "requires_local_tcp": "Local TCP sockets are unavailable in this environment.",
         "requires_cross_compile": "No Bootlin cross-compiler is discoverable.",
     }
@@ -283,23 +299,52 @@ def _apply_capability_skips(
 ) -> None:
     """Skip tests whose declared infrastructure requirements are unavailable."""
     for item in items:
-        for keyword, available in capabilities.items():
-            if keyword == "ptrace":
-                continue
-            if keyword in item.keywords and not available:
-                item.add_marker(pytest.mark.skip(reason=_skip_marker_reason(keyword)))
-        if capabilities["ptrace"]:
+        _skip_for_missing_capabilities(item, capabilities)
+        _skip_for_unrunnable_arch(item)
+        if not capabilities["ptrace"]:
+            _skip_freebsd_without_ptrace(item)
+
+
+def _skip_for_missing_capabilities(
+    item: pytest.Item,
+    capabilities: dict[str, bool],
+) -> None:
+    """Skip an item whose declared capability markers are unavailable."""
+    for keyword, available in capabilities.items():
+        if keyword == "ptrace":
             continue
-        _, param_os, _ = _item_filter_params(item)
-        if param_os == "freebsd" and "requires_qemu" in item.keywords:
-            item.add_marker(
-                pytest.mark.skip(
-                    reason=(
-                        "FreeBSD runtime tests require ptrace, which is "
-                        "unavailable in this environment."
-                    )
+        if keyword in item.keywords and not available:
+            item.add_marker(pytest.mark.skip(reason=_skip_marker_reason(keyword)))
+
+
+def _skip_for_unrunnable_arch(item: pytest.Item) -> None:
+    """Skip a runtime test for an arch this host cannot execute at all.
+
+    Per-arch precision: a target this host can neither run natively, via
+    binfmt_misc, nor under qemu-user is skipped (not failed). The coarse
+    requires_qemu gate only proves the host arch runs.
+    """
+    from picblobs.runner import can_run
+
+    _, _, param_arch = _item_filter_params(item)
+    if "requires_qemu" in item.keywords and param_arch and not can_run(param_arch):
+        item.add_marker(
+            pytest.mark.skip(reason=f"No way to execute {param_arch} blobs here.")
+        )
+
+
+def _skip_freebsd_without_ptrace(item: pytest.Item) -> None:
+    """Skip FreeBSD runtime tests when this environment lacks ptrace."""
+    _, param_os, _ = _item_filter_params(item)
+    if param_os == "freebsd" and "requires_qemu" in item.keywords:
+        item.add_marker(
+            pytest.mark.skip(
+                reason=(
+                    "FreeBSD runtime tests require ptrace, which is "
+                    "unavailable in this environment."
                 )
             )
+        )
 
 
 def _item_filter_params(item: pytest.Item) -> tuple[str, str, str]:
