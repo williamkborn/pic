@@ -178,7 +178,7 @@
 <td>Linux</td>
 <td>x86_64, i686, aarch64, armv5_arm, armv5_thumb, armv7_thumb, s390x, mipsel32, mipsbe32, sparcv8, powerpc, ppc64le, riscv64</td>
 <td>hello, nacl, stagers, alloc_jump, ul_exec, verifier payloads</td>
-<td>Native runner on host arch, QEMU user-static otherwise</td>
+<td>Direct exec on host arch (or via a binfmt_misc QEMU handler), QEMU user-mode interpreter otherwise</td>
 </tr>
 <tr>
 <td>FreeBSD</td>

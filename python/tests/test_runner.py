@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import errno
+import subprocess
 from pathlib import Path
 
 import pytest
+from picblobs import runner
 from picblobs._extractor import BlobData
 from picblobs.runner import (
     QEMU_BINARIES,
     RunResult,
     _text_end,
     build_blob_command,
+    build_linux_elf_command,
+    can_run,
+    exec_command,
     find_qemu,
     find_runner,
     prepare_blob,
+    qemu_launcher,
     run_blob,
 )
 
@@ -41,6 +48,198 @@ class TestQemuBinaryMap:
     def test_find_qemu_x86_64(self) -> None:
         path = find_qemu("x86_64")
         assert path.exists()
+
+
+@pytest.fixture
+def _clear_launcher_cache():
+    """Reset launcher discovery state around a test."""
+    runner._LAUNCHER_CACHE.clear()
+    runner._binfmt_handler_enabled.cache_clear()
+    yield
+    runner._LAUNCHER_CACHE.clear()
+    runner._binfmt_handler_enabled.cache_clear()
+
+
+class TestFindQemuFallback:
+    """find_qemu accepts the non-static qemu-user binary name too."""
+
+    def test_prefers_static_then_bare_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # qemu-aarch64-static absent, qemu-aarch64 present.
+        seen: list[str] = []
+
+        def fake_which(name: str) -> str | None:
+            seen.append(name)
+            return "/usr/bin/qemu-aarch64" if name == "qemu-aarch64" else None
+
+        monkeypatch.setattr("picblobs.runner.shutil.which", fake_which)
+        path = find_qemu("aarch64")
+        assert path == Path("/usr/bin/qemu-aarch64")
+        assert seen == ["qemu-aarch64-static", "qemu-aarch64"]
+
+    def test_missing_everywhere_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("picblobs.runner.shutil.which", lambda _name: None)
+        with pytest.raises(FileNotFoundError, match="No qemu-user interpreter"):
+            find_qemu("aarch64")
+
+
+class TestQemuLauncher:
+    """qemu_launcher chooses direct exec vs an explicit qemu interpreter."""
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_native_runs_directly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: True)
+        assert qemu_launcher("x86_64") == []
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_binfmt_runs_directly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: False)
+        monkeypatch.setattr("picblobs.runner._binfmt_handler_enabled", lambda _a: True)
+        assert qemu_launcher("aarch64") == []
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_falls_back_to_qemu_interpreter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: False)
+        monkeypatch.setattr("picblobs.runner._binfmt_handler_enabled", lambda _a: False)
+        monkeypatch.setattr(
+            "picblobs.runner.find_qemu", lambda _a: Path("/usr/bin/qemu-s390x")
+        )
+        assert qemu_launcher("s390x") == ["/usr/bin/qemu-s390x"]
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_no_handler_returns_empty_for_direct_attempt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Nothing can run it yet: caller still attempts a direct exec, and the
+        # exec-format fallback handles the failure.
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: False)
+        monkeypatch.setattr("picblobs.runner._binfmt_handler_enabled", lambda _a: False)
+
+        def _no_qemu(_a):
+            raise FileNotFoundError("nope")
+
+        monkeypatch.setattr("picblobs.runner.find_qemu", _no_qemu)
+        assert qemu_launcher("s390x") == []
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_build_linux_elf_command_prepends_launcher(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: False)
+        monkeypatch.setattr("picblobs.runner._binfmt_handler_enabled", lambda _a: False)
+        monkeypatch.setattr(
+            "picblobs.runner.find_qemu", lambda _a: Path("/usr/bin/qemu-arm")
+        )
+        cmd = build_linux_elf_command(Path("/tmp/blob.elf"), "armv5_arm")
+        assert cmd == ["/usr/bin/qemu-arm", "/tmp/blob.elf"]
+
+
+class TestCanRun:
+    """can_run reports whether a blob arch is executable on this host."""
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_true_when_binfmt_registered(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: False)
+        monkeypatch.setattr("picblobs.runner._binfmt_handler_enabled", lambda _a: True)
+        assert can_run("aarch64") is True
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_false_when_nothing_available(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _a: False)
+        monkeypatch.setattr("picblobs.runner._binfmt_handler_enabled", lambda _a: False)
+
+        def _no_qemu(_a):
+            raise FileNotFoundError("nope")
+
+        monkeypatch.setattr("picblobs.runner.find_qemu", _no_qemu)
+        assert can_run("aarch64") is False
+
+
+class _FakeRun:
+    """Stateful subprocess.run replacement: raise once, then succeed."""
+
+    def __init__(self, errno_value: int | None) -> None:
+        self.errno_value = errno_value
+        self.calls: list[list[str]] = []
+
+    def __call__(self, cmd, **_kwargs):
+        self.calls.append(list(cmd))
+        if len(self.calls) == 1 and self.errno_value is not None:
+            raise OSError(self.errno_value, "boom")
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"PASS", stderr=b"")
+
+
+class TestExecCommandFallback:
+    """exec_command retries under qemu when a direct exec can't run."""
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_direct_success_no_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = _FakeRun(errno_value=None)
+        monkeypatch.setattr("picblobs.runner.subprocess.run", fake)
+        proc, cmd = exec_command(["./blob.elf"], "aarch64")
+        assert proc.stdout == b"PASS"
+        assert cmd == ["./blob.elf"]
+        assert len(fake.calls) == 1
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_enoexec_retries_under_qemu(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("picblobs.runner.qemu_launcher", lambda _a: [])
+        monkeypatch.setattr(
+            "picblobs.runner.find_qemu", lambda _a: Path("/usr/bin/qemu-aarch64")
+        )
+        fake = _FakeRun(errno_value=errno.ENOEXEC)
+        monkeypatch.setattr("picblobs.runner.subprocess.run", fake)
+        proc, cmd = exec_command(["./blob.elf"], "aarch64")
+        assert proc.stdout == b"PASS"
+        assert cmd == ["/usr/bin/qemu-aarch64", "./blob.elf"]
+        assert fake.calls == [["./blob.elf"], ["/usr/bin/qemu-aarch64", "./blob.elf"]]
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_enoexec_without_qemu_raises_clear_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("picblobs.runner.qemu_launcher", lambda _a: [])
+
+        def _no_qemu(_a):
+            raise FileNotFoundError("nope")
+
+        monkeypatch.setattr("picblobs.runner.find_qemu", _no_qemu)
+        monkeypatch.setattr(
+            "picblobs.runner.subprocess.run", _FakeRun(errno_value=errno.ENOEXEC)
+        )
+        with pytest.raises(FileNotFoundError, match="Cannot execute aarch64 binary"):
+            exec_command(["./blob.elf"], "aarch64")
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_other_oserror_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("picblobs.runner.qemu_launcher", lambda _a: [])
+        monkeypatch.setattr(
+            "picblobs.runner.subprocess.run", _FakeRun(errno_value=errno.EACCES)
+        )
+        with pytest.raises(OSError) as exc_info:
+            exec_command(["./blob.elf"], "aarch64")
+        assert exc_info.value.errno == errno.EACCES
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_no_retry_when_already_under_qemu(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # qemu_launcher reports a qemu prefix -> we were already using it, so
+        # an ENOEXEC must not loop back into another qemu attempt.
+        monkeypatch.setattr(
+            "picblobs.runner.qemu_launcher", lambda _a: ["/usr/bin/qemu-aarch64"]
+        )
+        monkeypatch.setattr(
+            "picblobs.runner.subprocess.run", _FakeRun(errno_value=errno.ENOEXEC)
+        )
+        with pytest.raises(OSError) as exc_info:
+            exec_command(["/usr/bin/qemu-aarch64", "./blob.elf"], "aarch64")
+        assert exc_info.value.errno == errno.ENOEXEC
 
 
 class TestFindRunner:

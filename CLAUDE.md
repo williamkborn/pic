@@ -2,7 +2,7 @@
 
 Position-independent code blobs for multiple OS/arch targets. Bazel 9 + bzlmod build system with Bootlin cross-compilation toolchains.
 
-**Version**: 0.1.3 | **License**: Apache-2.0 | **Python**: 3.10+
+**Version**: 0.1.4 | **License**: Apache-2.0 | **Python**: 3.10+
 
 ## Dev setup
 
@@ -99,7 +99,7 @@ bazel build --config=lint //src/... //tests/...   # clang-tidy
 
 #### Module Constants
 
-- `__version__: str` — "0.1.3"
+- `__version__: str` — "0.1.4"
 - `__all__: list[str]` — Public API exports: ["get_blob", "list_blobs", "BlobData", "extract", "clear_cache"]
 
 ---
@@ -136,10 +136,26 @@ bazel build --config=lint //src/... //tests/...   # clang-tidy
 #### Functions
 
 **`find_qemu(arch: str) -> Path`**
-- Locate the QEMU user-static binary for an architecture
+- Locate a qemu-user interpreter for an architecture on PATH
+- Prefers the `qemu-<arch>-static` name, then falls back to the dynamically-linked `qemu-<arch>` name shipped by the `qemu-user` package
 - **Args**: `arch` — Architecture name (e.g., "x86_64", "aarch64")
 - **Returns**: Path to the QEMU binary
-- **Raises**: `FileNotFoundError` if QEMU binary not found on PATH
+- **Raises**: `ValueError` if arch unknown; `FileNotFoundError` if no qemu-user interpreter is on PATH
+
+**`qemu_launcher(arch: str) -> list[str]`**
+- Return the command prefix needed to launch an *arch* binary
+- Empty list means the binary runs directly: it is host-native, or a binfmt_misc handler (`qemu-user-binfmt`) routes it through QEMU on exec. Otherwise returns `[path_to_qemu_interpreter]`
+- Resolution order: native → binfmt_misc handler → `qemu-user` on PATH → empty (caller still attempts a direct exec, and `exec_command` handles an exec-format failure)
+- Cached per arch in `_LAUNCHER_CACHE`
+
+**`can_run(arch: str) -> bool`**
+- True if blobs for *arch* can be executed on this host (native, binfmt_misc handler, or a `qemu-user` interpreter on PATH). Backs the `picblobs-cli info` "runnable" line and the test-suite capability gate
+
+**`exec_command(cmd: list[str], arch: str, *, stdin_data: bytes = b"", timeout: float | None = None) -> tuple[subprocess.CompletedProcess, list[str]]`**
+- Run *cmd*, retrying under a qemu-user interpreter if a direct exec fails because the kernel can't run the (foreign) binary (`ENOEXEC`)
+- Implements "just run the binary; if that fails, fall back to `qemu-*-static`; otherwise fail"
+- **Returns**: the completed process and the argv that actually ran (gains a qemu prefix if the fallback fired)
+- **Raises**: `FileNotFoundError` if direct exec failed and no qemu-user interpreter is available; `subprocess.TimeoutExpired` on timeout
 
 **`find_runner(runner_type: str, arch: str = "", search_paths: list[Path] | None = None) -> Path`**
 - Locate a compiled C test runner binary
@@ -603,7 +619,7 @@ bazel build //release:full --config=linux_x86_64
 ```toml
 [project]
 name = "picblobs"
-version = "0.1.3"
+version = "0.1.4"
 requires-python = ">=3.10"
 dependencies = ["pyelftools>=0.31"]
 
@@ -762,9 +778,11 @@ python -m picblobs test --os linux --arch x86_64 # filter
 - Run `python -m picblobs list` to see available combinations
 - Ensure blobs are staged: `python tools/stage_blobs.py`
 
-### QEMU not found
-- Install: `apt install qemu-user-static` (Linux) or `brew install qemu` (macOS)
-- Verify: `which qemu-x86_64-static`
+### Cannot execute a cross-arch blob
+- Execution resolution: run the binary directly (host-native, or routed through QEMU by a binfmt_misc handler) → else a `qemu-*-static`/`qemu-*` interpreter on PATH → else fail. See `qemu_launcher()` / `exec_command()` in `picblobs/runner.py`.
+- binfmt_misc route (preferred, Ubuntu 26.04+): `apt install qemu-user-binfmt`; verify `ls /proc/sys/fs/binfmt_misc/qemu-aarch64`
+- Standalone interpreters: `apt install qemu-user-static` (Linux) or `brew install qemu` (macOS); verify `which qemu-x86_64-static` (older systems) or `which qemu-aarch64`
+- Check what this host can run: `picblobs-cli info` (the "runnable" line)
 
 ### Runner binary not found
 - Build and stage runners: `python tools/stage_blobs.py` (not `--no-runners`)
@@ -794,6 +812,6 @@ python -m picblobs test --os linux --arch x86_64 # filter
 - **pytest** ≥8.0 — Test framework
 - **ruff** — Python formatter/linter
 - **clang-format** — C code formatter
-- **QEMU** user-static — Cross-architecture execution
+- **QEMU** user-mode — Cross-architecture execution (binfmt_misc handlers via `qemu-user-binfmt`, or standalone `qemu-*-static` interpreters)
 - **Bootlin cross-toolchains** — Fetched automatically via Bazel
 

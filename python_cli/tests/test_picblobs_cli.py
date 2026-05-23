@@ -7,7 +7,6 @@ the Bazel build tree).
 
 from __future__ import annotations
 
-import shutil
 import stat
 import struct
 import subprocess
@@ -34,12 +33,16 @@ def runner() -> CliRunner:
 
 @pytest.fixture
 def qemu_available() -> bool:
-    return shutil.which("qemu-x86_64-static") is not None
+    # x86_64 blobs run natively, via a binfmt_misc qemu-user handler, or under
+    # a qemu-user interpreter on PATH — any is enough to exercise execution.
+    from picblobs.runner import can_run
+
+    return can_run("x86_64")
 
 
 def _require_qemu(flag: bool) -> None:
     if not flag:
-        pytest.skip("qemu-user-static not installed")
+        pytest.skip("no way to execute blobs on this host")
 
 
 # ---------------------------------------------------------------------------
