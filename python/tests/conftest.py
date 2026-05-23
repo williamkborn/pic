@@ -46,17 +46,23 @@ def _blobs_exist() -> bool:
 
 
 def _has_qemu() -> bool:
-    """True if blobs can be executed on this host at all.
+    """True if a qemu-user interpreter for the host arch is on PATH.
 
-    Execution works when the host arch runs natively, a binfmt_misc qemu-user
-    handler is registered (qemu-user-binfmt), or a qemu-user interpreter is on
-    PATH. The host arch is always runnable natively, so this gates only
-    truly execution-incapable environments; per-arch precision is applied in
-    _apply_capability_skips.
+    The requires_qemu marker gates tests that need an actual QEMU binary --
+    notably find_qemu() discovery -- so this checks for the interpreter
+    itself, not merely whether blobs can run (a native host executes blobs
+    with no QEMU at all, and binfmt_misc handlers route through QEMU without
+    a discoverable interpreter). Per-arch runtime coverage is gated separately
+    by can_run() in _apply_capability_skips, which credits native and
+    binfmt_misc execution too.
     """
-    from picblobs.runner import can_run
+    from picblobs.runner import find_qemu
 
-    return can_run(platform.machine())
+    try:
+        find_qemu(platform.machine())
+    except (FileNotFoundError, ValueError):
+        return False
+    return True
 
 
 def _can_bind_localhost() -> bool:
@@ -280,7 +286,7 @@ def _skip_marker_reason(keyword: str) -> str:
         "requires_runners": (
             "Test runners not built. Run: bazel build //tests/runners/..."
         ),
-        "requires_qemu": "QEMU user-static not installed.",
+        "requires_qemu": "No qemu-user interpreter on PATH.",
         "requires_local_tcp": "Local TCP sockets are unavailable in this environment.",
         "requires_cross_compile": "No Bootlin cross-compiler is discoverable.",
     }
