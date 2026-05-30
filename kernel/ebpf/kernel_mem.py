@@ -46,13 +46,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import ctypes
+import importlib.util
 import os
-import struct
 import sys
 import time
-from pathlib import Path
-
 
 # ===========================================================================
 # Technique 1: Credential dump — read task_struct → real_cred → uid/gid/cap
@@ -169,19 +166,46 @@ int dump_creds(struct pt_regs *ctx) {
 
 # Capability bit names (from include/uapi/linux/capability.h)
 CAP_NAMES = {
-    0: "CAP_CHOWN", 1: "CAP_DAC_OVERRIDE", 2: "CAP_DAC_READ_SEARCH",
-    3: "CAP_FOWNER", 4: "CAP_FSETID", 5: "CAP_KILL", 6: "CAP_SETGID",
-    7: "CAP_SETUID", 8: "CAP_SETPCAP", 9: "CAP_LINUX_IMMUTABLE",
-    10: "CAP_NET_BIND_SERVICE", 11: "CAP_NET_BROADCAST", 12: "CAP_NET_ADMIN",
-    13: "CAP_NET_RAW", 14: "CAP_IPC_LOCK", 15: "CAP_IPC_OWNER",
-    16: "CAP_SYS_MODULE", 17: "CAP_SYS_RAWIO", 18: "CAP_SYS_CHROOT",
-    19: "CAP_SYS_PTRACE", 20: "CAP_SYS_PACCT", 21: "CAP_SYS_ADMIN",
-    22: "CAP_SYS_BOOT", 23: "CAP_SYS_NICE", 24: "CAP_SYS_RESOURCE",
-    25: "CAP_SYS_TIME", 26: "CAP_SYS_TTY_CONFIG", 27: "CAP_MKNOD",
-    28: "CAP_LEASE", 29: "CAP_AUDIT_WRITE", 30: "CAP_AUDIT_CONTROL",
-    31: "CAP_SETFCAP", 32: "CAP_MAC_OVERRIDE", 33: "CAP_MAC_ADMIN",
-    34: "CAP_SYSLOG", 35: "CAP_WAKE_ALARM", 36: "CAP_BLOCK_SUSPEND",
-    37: "CAP_AUDIT_READ", 38: "CAP_PERFMON", 39: "CAP_BPF",
+    0: "CAP_CHOWN",
+    1: "CAP_DAC_OVERRIDE",
+    2: "CAP_DAC_READ_SEARCH",
+    3: "CAP_FOWNER",
+    4: "CAP_FSETID",
+    5: "CAP_KILL",
+    6: "CAP_SETGID",
+    7: "CAP_SETUID",
+    8: "CAP_SETPCAP",
+    9: "CAP_LINUX_IMMUTABLE",
+    10: "CAP_NET_BIND_SERVICE",
+    11: "CAP_NET_BROADCAST",
+    12: "CAP_NET_ADMIN",
+    13: "CAP_NET_RAW",
+    14: "CAP_IPC_LOCK",
+    15: "CAP_IPC_OWNER",
+    16: "CAP_SYS_MODULE",
+    17: "CAP_SYS_RAWIO",
+    18: "CAP_SYS_CHROOT",
+    19: "CAP_SYS_PTRACE",
+    20: "CAP_SYS_PACCT",
+    21: "CAP_SYS_ADMIN",
+    22: "CAP_SYS_BOOT",
+    23: "CAP_SYS_NICE",
+    24: "CAP_SYS_RESOURCE",
+    25: "CAP_SYS_TIME",
+    26: "CAP_SYS_TTY_CONFIG",
+    27: "CAP_MKNOD",
+    28: "CAP_LEASE",
+    29: "CAP_AUDIT_WRITE",
+    30: "CAP_AUDIT_CONTROL",
+    31: "CAP_SETFCAP",
+    32: "CAP_MAC_OVERRIDE",
+    33: "CAP_MAC_ADMIN",
+    34: "CAP_SYSLOG",
+    35: "CAP_WAKE_ALARM",
+    36: "CAP_BLOCK_SUSPEND",
+    37: "CAP_AUDIT_READ",
+    38: "CAP_PERFMON",
+    39: "CAP_BPF",
     40: "CAP_CHECKPOINT_RESTORE",
 }
 
@@ -203,10 +227,10 @@ def mode_creds(args):
     src = BPF_CRED_DUMP.replace("__TARGET_PID__", str(pid))
 
     target_str = f"PID {pid}" if pid else "ALL processes"
-    print(f"\n[*] ══════ KERNEL CREDENTIAL DUMP ══════")
+    print("\n[*] ══════ KERNEL CREDENTIAL DUMP ══════")
     print(f"[*] Target: {target_str}")
-    print(f"[*] Reading: task_struct → real_cred → uid/gid/caps")
-    print(f"[*] All reads via bpf_probe_read_kernel() in kernel context\n")
+    print("[*] Reading: task_struct → real_cred → uid/gid/caps")
+    print("[*] All reads via bpf_probe_read_kernel() in kernel context\n")
 
     b = BPF(text=src)
     b.attach_kprobe(event="__x64_sys_write", fn_name="dump_creds")
@@ -232,23 +256,27 @@ def mode_creds(args):
         print(f"  cred:         {event.cred_addr:#018x}")
         print(f"  mm_struct:    {event.mm_addr:#018x}")
         print()
-        print(f"  UIDs:  uid={event.uid}  euid={event.euid}  "
-              f"suid={event.suid}  fsuid={event.fsuid}")
-        print(f"  GIDs:  gid={event.gid}  egid={event.egid}  "
-              f"sgid={event.sgid}  fsgid={event.fsgid}")
+        print(
+            f"  UIDs:  uid={event.uid}  euid={event.euid}  "
+            f"suid={event.suid}  fsuid={event.fsuid}"
+        )
+        print(
+            f"  GIDs:  gid={event.gid}  egid={event.egid}  "
+            f"sgid={event.sgid}  fsgid={event.fsgid}"
+        )
         print()
 
         eff_caps = decode_caps(event.cap_effective)
-        perm_caps = decode_caps(event.cap_permitted)
+        decode_caps(event.cap_permitted)
 
         print(f"  Capabilities (effective):  {event.cap_effective:#018x}")
         if eff_caps:
             # Print in columns
             for i in range(0, len(eff_caps), 3):
-                row = "    " + "  ".join(f"{c:<28}" for c in eff_caps[i:i+3])
+                row = "    " + "  ".join(f"{c:<28}" for c in eff_caps[i : i + 3])
                 print(row)
         else:
-            print(f"    (none)")
+            print("    (none)")
 
         print(f"  Capabilities (permitted):  {event.cap_permitted:#018x}")
         print(f"  Capabilities (inheritable): {event.cap_inheritable:#018x}")
@@ -258,15 +286,15 @@ def mode_creds(args):
 
         # Highlight interesting findings
         if event.euid == 0:
-            print(f"\n  [!] RUNNING AS ROOT (euid=0)")
+            print("\n  [!] RUNNING AS ROOT (euid=0)")
         if event.cap_effective & (1 << 21):  # CAP_SYS_ADMIN
-            print(f"  [!] HAS CAP_SYS_ADMIN")
+            print("  [!] HAS CAP_SYS_ADMIN")
         if event.cap_effective & (1 << 19):  # CAP_SYS_PTRACE
-            print(f"  [!] HAS CAP_SYS_PTRACE — can ptrace any process")
+            print("  [!] HAS CAP_SYS_PTRACE — can ptrace any process")
         if event.cap_effective & (1 << 16):  # CAP_SYS_MODULE
-            print(f"  [!] HAS CAP_SYS_MODULE — can load kernel modules")
+            print("  [!] HAS CAP_SYS_MODULE — can load kernel modules")
         if event.cap_effective & (1 << 39):  # CAP_BPF
-            print(f"  [!] HAS CAP_BPF — can load BPF programs")
+            print("  [!] HAS CAP_BPF — can load BPF programs")
 
         if pid != 0 and count[0] >= 1:
             return
@@ -406,10 +434,10 @@ def mode_tasks(args):
         print("[!] Could not find init_task in /proc/kallsyms")
         return 1
 
-    print(f"\n[*] ══════ KERNEL TASK LIST WALK ══════")
+    print("\n[*] ══════ KERNEL TASK LIST WALK ══════")
     print(f"[*] init_task @ {init_addr:#018x}")
-    print(f"[*] Walking task_struct linked list from kernel memory")
-    print(f"[*] Each entry read via bpf_probe_read_kernel()\n")
+    print("[*] Walking task_struct linked list from kernel memory")
+    print("[*] Each entry read via bpf_probe_read_kernel()\n")
 
     src = BPF_TASK_WALK.replace("__INIT_TASK_ADDR__", str(init_addr))
     b = BPF(text=src)
@@ -419,17 +447,19 @@ def mode_tasks(args):
 
     def handle_event(ctx, data, size):
         event = b["events"].event(data)
-        tasks.append({
-            "pid": event.tgid,
-            "tid": event.pid,
-            "ppid": event.ppid,
-            "uid": event.uid,
-            "comm": event.comm.decode("utf-8", errors="replace"),
-            "task_addr": event.task_addr,
-            "mm_addr": event.mm_addr,
-            "flags": event.flags,
-            "kthread": event.mm_addr == 0,
-        })
+        tasks.append(
+            {
+                "pid": event.tgid,
+                "tid": event.pid,
+                "ppid": event.ppid,
+                "uid": event.uid,
+                "comm": event.comm.decode("utf-8", errors="replace"),
+                "task_addr": event.task_addr,
+                "mm_addr": event.mm_addr,
+                "flags": event.flags,
+                "kthread": event.mm_addr == 0,
+            }
+        )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -439,10 +469,11 @@ def mode_tasks(args):
     b.ring_buffer_consume()
 
     # Display results
-    print(f"{'PID':>7}  {'PPID':>7}  {'UID':>5}  {'TYPE':>6}  "
-          f"{'TASK_STRUCT':<20}  {'COMM'}")
-    print(f"{'─' * 7}  {'─' * 7}  {'─' * 5}  {'─' * 6}  "
-          f"{'─' * 20}  {'─' * 16}")
+    print(
+        f"{'PID':>7}  {'PPID':>7}  {'UID':>5}  {'TYPE':>6}  "
+        f"{'TASK_STRUCT':<20}  {'COMM'}"
+    )
+    print(f"{'─' * 7}  {'─' * 7}  {'─' * 5}  {'─' * 6}  {'─' * 20}  {'─' * 16}")
 
     # Deduplicate by tgid (thread group leaders only)
     seen = set()
@@ -457,15 +488,19 @@ def mode_tasks(args):
             kernel_count += 1
         else:
             user_count += 1
-        print(f"{t['pid']:>7}  {t['ppid']:>7}  {t['uid']:>5}  "
-              f"{ttype:>6}  {t['task_addr']:#018x}  {t['comm']}")
+        print(
+            f"{t['pid']:>7}  {t['ppid']:>7}  {t['uid']:>5}  "
+            f"{ttype:>6}  {t['task_addr']:#018x}  {t['comm']}"
+        )
 
-    print(f"\n[*] Found {len(seen)} processes ({user_count} user, "
-          f"{kernel_count} kernel threads)")
+    print(
+        f"\n[*] Found {len(seen)} processes ({user_count} user, "
+        f"{kernel_count} kernel threads)"
+    )
 
     # Compare against /proc to find hidden processes
     if args.check_hidden:
-        print(f"\n[*] ── Hidden process check ──")
+        print("\n[*] ── Hidden process check ──")
         proc_pids = set()
         for entry in os.listdir("/proc"):
             if entry.isdigit():
@@ -475,19 +510,22 @@ def mode_tasks(args):
 
         hidden = bpf_pids - proc_pids
         if hidden:
-            print(f"[!] Processes visible in kernel but NOT in /proc:")
+            print("[!] Processes visible in kernel but NOT in /proc:")
             for pid in sorted(hidden):
                 t = next(x for x in tasks if x["pid"] == pid)
-                print(f"    PID {pid}: {t['comm']} (task_struct @ "
-                      f"{t['task_addr']:#018x})")
-            print(f"[!] These processes may be hidden by a rootkit!")
+                print(
+                    f"    PID {pid}: {t['comm']} (task_struct @ {t['task_addr']:#018x})"
+                )
+            print("[!] These processes may be hidden by a rootkit!")
         else:
-            print(f"[+] No hidden processes found (kernel and /proc agree)")
+            print("[+] No hidden processes found (kernel and /proc agree)")
 
         extra = proc_pids - bpf_pids - {0}
         if extra and len(extra) < 20:
-            print(f"[*] PIDs in /proc but not in BPF walk (spawned after "
-                  f"walk): {sorted(extra)[:10]}")
+            print(
+                f"[*] PIDs in /proc but not in BPF walk (spawned after "
+                f"walk): {sorted(extra)[:10]}"
+            )
 
     return 0
 
@@ -588,9 +626,9 @@ def mode_modules(args):
         print("[!] Could not find 'modules' symbol in /proc/kallsyms")
         return 1
 
-    print(f"\n[*] ══════ KERNEL MODULE ENUMERATION ══════")
+    print("\n[*] ══════ KERNEL MODULE ENUMERATION ══════")
     print(f"[*] modules list_head @ {modules_addr:#018x}")
-    print(f"[*] Walking struct module linked list from kernel memory\n")
+    print("[*] Walking struct module linked list from kernel memory\n")
 
     src = BPF_MODULE_ENUM.replace("__MODULES_ADDR__", str(modules_addr))
     b = BPF(text=src)
@@ -600,15 +638,17 @@ def mode_modules(args):
 
     def handle_event(ctx, data, size):
         event = b["events"].event(data)
-        modules.append({
-            "name": event.name.decode("utf-8", errors="replace").rstrip("\x00"),
-            "addr": event.mod_addr,
-            "core_addr": event.core_addr,
-            "core_size": event.core_size,
-            "init_size": event.init_size,
-            "state": event.state,
-            "taints": event.taints,
-        })
+        modules.append(
+            {
+                "name": event.name.decode("utf-8", errors="replace").rstrip("\x00"),
+                "addr": event.mod_addr,
+                "core_addr": event.core_addr,
+                "core_size": event.core_size,
+                "init_size": event.init_size,
+                "state": event.state,
+                "taints": event.taints,
+            }
+        )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -616,20 +656,24 @@ def mode_modules(args):
     time.sleep(0.5)
     b.ring_buffer_consume()
 
-    print(f"{'MODULE':<24}  {'STATE':>7}  {'CORE BASE':<20}  "
-          f"{'CORE SIZE':>10}  {'STRUCT MODULE'}")
+    print(
+        f"{'MODULE':<24}  {'STATE':>7}  {'CORE BASE':<20}  "
+        f"{'CORE SIZE':>10}  {'STRUCT MODULE'}"
+    )
     print(f"{'─' * 24}  {'─' * 7}  {'─' * 20}  {'─' * 10}  {'─' * 20}")
 
     for m in modules:
         state = MODULE_STATES.get(m["state"], f"?{m['state']}")
-        print(f"{m['name']:<24}  {state:>7}  {m['core_addr']:#018x}  "
-              f"{m['core_size']:>10}  {m['addr']:#018x}")
+        print(
+            f"{m['name']:<24}  {state:>7}  {m['core_addr']:#018x}  "
+            f"{m['core_size']:>10}  {m['addr']:#018x}"
+        )
 
     print(f"\n[*] Found {len(modules)} kernel modules via BPF walk")
 
     # Compare against /proc/modules
     if args.check_hidden:
-        print(f"\n[*] ── Hidden module check ──")
+        print("\n[*] ── Hidden module check ──")
         proc_modules = set()
         try:
             with open("/proc/modules") as f:
@@ -641,14 +685,13 @@ def mode_modules(args):
         bpf_modules = {m["name"] for m in modules}
         hidden = bpf_modules - proc_modules
         if hidden:
-            print(f"[!] Modules in kernel list but NOT in /proc/modules:")
+            print("[!] Modules in kernel list but NOT in /proc/modules:")
             for name in sorted(hidden):
                 m = next(x for x in modules if x["name"] == name)
-                print(f"    {name} @ {m['core_addr']:#018x} "
-                      f"(size {m['core_size']})")
-            print(f"[!] These modules may be hidden by a rootkit!")
+                print(f"    {name} @ {m['core_addr']:#018x} (size {m['core_size']})")
+            print("[!] These modules may be hidden by a rootkit!")
         else:
-            print(f"[+] No hidden modules found (kernel list and /proc agree)")
+            print("[+] No hidden modules found (kernel list and /proc agree)")
 
     return 0
 
@@ -751,10 +794,10 @@ int walk_vmas(struct pt_regs *ctx) {
 """
 
 # VM flags from include/linux/mm.h
-VM_READ    = 0x00000001
-VM_WRITE   = 0x00000002
-VM_EXEC    = 0x00000004
-VM_SHARED  = 0x00000008
+VM_READ = 0x00000001
+VM_WRITE = 0x00000002
+VM_EXEC = 0x00000004
+VM_SHARED = 0x00000008
 VM_MAYREAD = 0x00000010
 VM_MAYWRITE = 0x00000020
 VM_MAYEXEC = 0x00000040
@@ -778,10 +821,10 @@ def mode_vmas(args):
         print("[!] --pid required for VMA walk")
         return 1
 
-    print(f"\n[*] ══════ KERNEL VMA WALK ══════")
+    print("\n[*] ══════ KERNEL VMA WALK ══════")
     print(f"[*] Target PID: {pid}")
-    print(f"[*] Reading: task_struct → mm_struct → vm_area_struct list")
-    print(f"[*] This is the kernel's ground-truth view of the address space\n")
+    print("[*] Reading: task_struct → mm_struct → vm_area_struct list")
+    print("[*] This is the kernel's ground-truth view of the address space\n")
 
     src = BPF_VMA_WALK.replace("__TARGET_PID__", str(pid))
     b = BPF(text=src)
@@ -791,14 +834,16 @@ def mode_vmas(args):
 
     def handle_event(ctx, data, size):
         event = b["events"].event(data)
-        vmas.append({
-            "start": event.vm_start,
-            "end": event.vm_end,
-            "flags": event.vm_flags,
-            "pgoff": event.vm_pgoff,
-            "inode": event.file_inode,
-            "fname": event.fname.decode("utf-8", errors="replace").rstrip("\x00"),
-        })
+        vmas.append(
+            {
+                "start": event.vm_start,
+                "end": event.vm_end,
+                "flags": event.vm_flags,
+                "pgoff": event.vm_pgoff,
+                "inode": event.file_inode,
+                "fname": event.fname.decode("utf-8", errors="replace").rstrip("\x00"),
+            }
+        )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -817,10 +862,11 @@ def mode_vmas(args):
         print("[*] Try: kill -USR1 <pid> or wait for I/O")
         return 1
 
-    print(f"{'START':<18}  {'END':<18}  {'PERM':>4}  {'SIZE':>10}  "
-          f"{'OFFSET':>10}  {'FILE'}")
-    print(f"{'─' * 18}  {'─' * 18}  {'─' * 4}  {'─' * 10}  "
-          f"{'─' * 10}  {'─' * 30}")
+    print(
+        f"{'START':<18}  {'END':<18}  {'PERM':>4}  {'SIZE':>10}  "
+        f"{'OFFSET':>10}  {'FILE'}"
+    )
+    print(f"{'─' * 18}  {'─' * 18}  {'─' * 4}  {'─' * 10}  {'─' * 10}  {'─' * 30}")
 
     rwx_regions = []
     total_mapped = 0
@@ -832,23 +878,25 @@ def mode_vmas(args):
         offset = v["pgoff"] * 4096
         fname = v["fname"] or "[anon]"
 
-        print(f"{v['start']:#018x}  {v['end']:#018x}  {perms}  "
-              f"{size:>10}  {offset:#010x}  {fname}")
+        print(
+            f"{v['start']:#018x}  {v['end']:#018x}  {perms}  "
+            f"{size:>10}  {offset:#010x}  {fname}"
+        )
 
-        if (v["flags"] & (VM_READ | VM_WRITE | VM_EXEC)) == \
-           (VM_READ | VM_WRITE | VM_EXEC):
+        if (v["flags"] & (VM_READ | VM_WRITE | VM_EXEC)) == (
+            VM_READ | VM_WRITE | VM_EXEC
+        ):
             rwx_regions.append(v)
 
     print(f"\n[*] {len(vmas)} VMAs, {total_mapped / 1024 / 1024:.1f} MB total mapped")
 
     if rwx_regions:
-        print(f"\n[!] ── RWX REGIONS DETECTED ──")
+        print("\n[!] ── RWX REGIONS DETECTED ──")
         for v in rwx_regions:
             size = v["end"] - v["start"]
             fname = v["fname"] or "[anon]"
-            print(f"    {v['start']:#018x} - {v['end']:#018x}  "
-                  f"({size} bytes)  {fname}")
-        print(f"[!] RWX regions are injection targets — blob can be written here")
+            print(f"    {v['start']:#018x} - {v['end']:#018x}  ({size} bytes)  {fname}")
+        print("[!] RWX regions are injection targets — blob can be written here")
 
     return 0
 
@@ -900,9 +948,9 @@ def mode_kaslr(args):
     """Technique 5: Leak kernel base address via BPF probes."""
     from bcc import BPF
 
-    print(f"\n[*] ══════ KASLR LEAK VIA eBPF ══════")
-    print(f"[*] BPF programs can read kernel instruction pointers")
-    print(f"[*] This reveals the KASLR offset without /proc/kallsyms\n")
+    print("\n[*] ══════ KASLR LEAK VIA eBPF ══════")
+    print("[*] BPF programs can read kernel instruction pointers")
+    print("[*] This reveals the KASLR offset without /proc/kallsyms\n")
 
     b = BPF(text=BPF_KASLR_LEAK)
     b.attach_kprobe(event="__x64_sys_getpid", fn_name="leak_kaslr")
@@ -950,15 +998,15 @@ def mode_kaslr(args):
         print(f"  KASLR slide:                         {kaslr_slide:#x}")
 
         if kaslr_slide == 0:
-            print(f"\n  [*] KASLR is DISABLED (slide = 0)")
+            print("\n  [*] KASLR is DISABLED (slide = 0)")
         else:
-            print(f"\n  [!] KASLR is ENABLED — but we have the slide!")
-            print(f"  [!] Any kernel symbol can now be resolved:")
+            print("\n  [!] KASLR is ENABLED — but we have the slide!")
+            print("  [!] Any kernel symbol can now be resolved:")
             print(f"      symbol_addr = known_offset + {stext:#x}")
 
-    print(f"\n  [*] Key insight: BPF programs run in kernel context and can")
-    print(f"  [*] access PT_REGS_IP, task_struct pointers, and other kernel")
-    print(f"  [*] addresses that are hidden from userspace by KASLR.")
+    print("\n  [*] Key insight: BPF programs run in kernel context and can")
+    print("  [*] access PT_REGS_IP, task_struct pointers, and other kernel")
+    print("  [*] addresses that are hidden from userspace by KASLR.")
 
     return 0
 
@@ -1005,11 +1053,15 @@ def mode_kallsyms(args):
     """Technique 6: Resolve kernel symbol addresses via kprobe attachment."""
     from bcc import BPF
 
-    symbols = args.symbol or ["commit_creds", "prepare_kernel_cred",
-                               "core_pattern", "__x64_sys_execve"]
+    symbols = args.symbol or [
+        "commit_creds",
+        "prepare_kernel_cred",
+        "core_pattern",
+        "__x64_sys_execve",
+    ]
 
-    print(f"\n[*] ══════ KERNEL SYMBOL RESOLUTION ══════")
-    print(f"[*] Resolving symbols by attaching kprobes")
+    print("\n[*] ══════ KERNEL SYMBOL RESOLUTION ══════")
+    print("[*] Resolving symbols by attaching kprobes")
     print(f"[*] Targets: {', '.join(symbols)}\n")
 
     # For each symbol, try to attach a kprobe and capture its address
@@ -1023,7 +1075,7 @@ def mode_kallsyms(args):
             # If attach succeeds, we can read the address from kallsyms
             # (BCC resolves it internally)
             addr = BPF.ksym(sym)
-            results[sym] = addr if addr else "attached (addr pending)"
+            results[sym] = addr or "attached (addr pending)"
             b.detach_kprobe(event=sym)
             del b
         except Exception as e:
@@ -1045,10 +1097,7 @@ def mode_kallsyms(args):
 
     for sym in symbols:
         bpf_val = results.get(sym, "?")
-        if isinstance(bpf_val, int):
-            bpf_str = f"{bpf_val:#018x}"
-        else:
-            bpf_str = str(bpf_val)
+        bpf_str = f"{bpf_val:#018x}" if isinstance(bpf_val, int) else str(bpf_val)
 
         ksym_val = kallsyms.get(sym)
         ksym_str = f"{ksym_val:#018x}" if ksym_val else "?"
@@ -1059,14 +1108,20 @@ def mode_kallsyms(args):
     print()
     for sym in symbols:
         if sym == "commit_creds" and sym in kallsyms:
-            print(f"[!] commit_creds @ {kallsyms[sym]:#x} — used for "
-                  f"privilege escalation (overwrite current->cred)")
+            print(
+                f"[!] commit_creds @ {kallsyms[sym]:#x} — used for "
+                f"privilege escalation (overwrite current->cred)"
+            )
         elif sym == "prepare_kernel_cred" and sym in kallsyms:
-            print(f"[!] prepare_kernel_cred @ {kallsyms[sym]:#x} — "
-                  f"allocates root cred struct (uid=0, full caps)")
+            print(
+                f"[!] prepare_kernel_cred @ {kallsyms[sym]:#x} — "
+                f"allocates root cred struct (uid=0, full caps)"
+            )
         elif sym == "core_pattern" and sym in kallsyms:
-            print(f"[!] core_pattern @ {kallsyms[sym]:#x} — "
-                  f"overwriting this enables code exec on crash")
+            print(
+                f"[!] core_pattern @ {kallsyms[sym]:#x} — "
+                f"overwriting this enables code exec on crash"
+            )
 
     return 0
 
@@ -1074,6 +1129,7 @@ def mode_kallsyms(args):
 # ===========================================================================
 # Main
 # ===========================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1097,39 +1153,44 @@ Examples:
   sudo python3 mbed/ebpf_kernel_mem.py vmas --pid 1234
   sudo python3 mbed/ebpf_kernel_mem.py kaslr
   sudo python3 mbed/ebpf_kernel_mem.py kallsyms --symbol commit_creds
-        """)
+        """,
+    )
 
     subs = parser.add_subparsers(dest="technique", required=True)
 
     # Technique 1: creds
     p1 = subs.add_parser("creds", help="Dump process credentials from kernel")
-    p1.add_argument("--pid", type=int, default=0,
-                    help="Target PID (0 = all)")
-    p1.add_argument("--limit", type=int, default=20,
-                    help="Max processes to dump (default: 20)")
+    p1.add_argument("--pid", type=int, default=0, help="Target PID (0 = all)")
+    p1.add_argument(
+        "--limit", type=int, default=20, help="Max processes to dump (default: 20)"
+    )
 
     # Technique 2: tasks
     p2 = subs.add_parser("tasks", help="Walk kernel task list")
-    p2.add_argument("--check-hidden", action="store_true",
-                    help="Compare against /proc to find hidden processes")
+    p2.add_argument(
+        "--check-hidden",
+        action="store_true",
+        help="Compare against /proc to find hidden processes",
+    )
 
     # Technique 3: modules
     p3 = subs.add_parser("modules", help="Walk kernel module list")
-    p3.add_argument("--check-hidden", action="store_true",
-                    help="Compare against /proc/modules to find hidden modules")
+    p3.add_argument(
+        "--check-hidden",
+        action="store_true",
+        help="Compare against /proc/modules to find hidden modules",
+    )
 
     # Technique 4: vmas
     p4 = subs.add_parser("vmas", help="Walk process VMA list")
-    p4.add_argument("--pid", type=int, required=True,
-                    help="Target PID")
+    p4.add_argument("--pid", type=int, required=True, help="Target PID")
 
     # Technique 5: kaslr
-    p5 = subs.add_parser("kaslr", help="Leak KASLR base address")
+    subs.add_parser("kaslr", help="Leak KASLR base address")
 
     # Technique 6: kallsyms
     p6 = subs.add_parser("kallsyms", help="Resolve kernel symbol addresses")
-    p6.add_argument("--symbol", action="append",
-                    help="Symbol to resolve (repeatable)")
+    p6.add_argument("--symbol", action="append", help="Symbol to resolve (repeatable)")
 
     args = parser.parse_args()
 
@@ -1137,9 +1198,7 @@ Examples:
         print("[!] Requires root for kernel memory access via eBPF")
         return 1
 
-    try:
-        from bcc import BPF
-    except ImportError:
+    if importlib.util.find_spec("bcc") is None:
         print("ERROR: BCC not installed. Run: apt install bpfcc-tools python3-bpfcc")
         return 1
 

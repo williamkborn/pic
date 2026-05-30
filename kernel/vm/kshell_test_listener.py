@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Test listener for kshell.ko — run inside the VM."""
-import socket, time, sys
+
+import socket
+import sys
+import time
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -20,7 +23,7 @@ try:
         banner = conn.recv(4096)
         sys.stdout.write("BANNER: " + repr(banner[:300]) + "\n")
         sys.stdout.flush()
-    except socket.timeout:
+    except TimeoutError:
         sys.stdout.write("BANNER: timeout\n")
         sys.stdout.flush()
 
@@ -31,7 +34,7 @@ try:
         resp = conn.recv(65536)
         sys.stdout.write("RESP_ID: " + repr(resp[:500]) + "\n")
         sys.stdout.flush()
-    except socket.timeout:
+    except TimeoutError:
         sys.stdout.write("RESP_ID: timeout\n")
         sys.stdout.flush()
 
@@ -42,7 +45,7 @@ try:
         resp = conn.recv(65536)
         sys.stdout.write("RESP_UNAME: " + repr(resp[:500]) + "\n")
         sys.stdout.flush()
-    except socket.timeout:
+    except TimeoutError:
         sys.stdout.write("RESP_UNAME: timeout\n")
         sys.stdout.flush()
 
@@ -51,7 +54,7 @@ try:
     conn.close()
     sys.stdout.write("DONE\n")
 
-except socket.timeout:
+except TimeoutError:
     sys.stdout.write("ERROR: no connection within 30s\n")
 except Exception as e:
     sys.stdout.write("ERROR: " + str(e) + "\n")

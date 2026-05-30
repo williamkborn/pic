@@ -34,6 +34,7 @@ PY_ROOTS = [
     "python_cli/picblobs_cli",
     "python_cli/tests",
     "tools",
+    "kernel",
 ]
 # Roots for Starlark / BUILD files. Buildifier walks these recursively.
 BAZEL_ROOTS = [
