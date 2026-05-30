@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 VENV_BIN="$ROOT/python/.venv/bin"
 
 if [ ! -x "$VENV_BIN/python" ]; then
-    echo "error: missing $VENV_BIN/python. Run: source sourceme" >&2
+    echo "error: missing $VENV_BIN/python. Run: task setup" >&2
     exit 1
 fi
 

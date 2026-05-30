@@ -60,10 +60,12 @@ jobs:
             -o /tmp/bazel
           sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
-          uv pip install twine
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
       - name: Verify release version wiring
@@ -90,15 +92,12 @@ jobs:
           PY
 
       - name: Stage release blobs
-        run: python tools/stage_blobs.py --no-runners
+        run: task stage:release
 
       - name: Build picblobs distributions
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.expected }}
-        run: |
-          uv build python --wheel --sdist --out-dir dist/picblobs
-          python tools/check_dist.py picblobs --dist-dir dist/picblobs --expected-version "${EXPECTED_VERSION}"
-          python -m twine check dist/picblobs/*
+        run: task dist:picblobs EXPECTED_VERSION="${EXPECTED_VERSION}"
 
       - name: Smoke-install the built wheel
         env:

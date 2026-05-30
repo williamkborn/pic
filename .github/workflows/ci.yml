@@ -29,8 +29,11 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
@@ -46,14 +49,10 @@ jobs:
         run: lefthook validate
 
       - name: Check formatting
-        env:
-          PICBLOBS_REQUIRE_LINT_TOOLS: "1"
-        run: python tools/fmt.py --check
+        run: task fmt:check
 
       - name: Check lint
-        env:
-          PICBLOBS_REQUIRE_LINT_TOOLS: "1"
-        run: python tools/lint.py --check
+        run: task lint:check
 
   bazel-tests:
     runs-on: ubuntu-latest
@@ -87,24 +86,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-tidy clang-format cppcheck qemu-user-static
 
+      - name: Install Task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Check generated files are fresh
-        run: bazel test --config=ci //tools:generate_check
+        run: task bazel:generate-check
 
       - name: Build all platforms with lint aspect
-        run: |
-          bazel build --config=ci --config=linux_x86_64 //src/... //tests/runners/linux/...
-          bazel build --config=ci --config=linux_aarch64 //src/...
-          bazel build --config=ci --config=windows_x86_64 //src/payload:hello_windows
-          bazel build --config=ci --config=freebsd_x86_64 //src/payload:hello
+        run: task bazel:build
 
       - name: Run Bazel test suite
-        # These tests run on the host; they build their ARM artifacts via
-        # internal platform transitions, so do NOT pass a --config platform
-        # (that would set the target platform and break test toolchain
-        # resolution).
-        run: |
-          bazel test --config=ci //tests:nacl_suite
-          bazel test --config=ci //tests/runners/...:all
+        run: task bazel:test
 
   stage-test-assets:
     runs-on: ubuntu-latest
@@ -135,13 +129,16 @@ jobs:
             -o /tmp/bazel
           sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
       - name: Stage test assets
-        run: python tools/stage_blobs.py
+        run: task stage
 
       - uses: actions/upload-artifact@v4
         with:
@@ -190,13 +187,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
       - name: Run full test suite
-        run: ./testall -q
+        run: task test -- -q
 
   verify-e2e:
     needs: stage-test-assets
@@ -228,13 +228,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
       - name: Run picblobs-cli verify
-        run: picblobs-cli verify
+        run: task verify
 
   build-smoke:
     needs: stage-test-assets
@@ -266,10 +269,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
-          uv pip install twine
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
       - name: Run targeted execution smoke
@@ -282,12 +287,7 @@ jobs:
           grep -F "Hello, world!" /tmp/picblobs-run.txt
 
       - name: Build distributions
-        run: |
-          uv build python --wheel --sdist --out-dir dist/picblobs
-          uv build python_cli --wheel --sdist --out-dir dist/picblobs-cli
-          python tools/check_dist.py picblobs --dist-dir dist/picblobs
-          python tools/check_dist.py picblobs-cli --dist-dir dist/picblobs-cli
-          python -m twine check dist/picblobs/* dist/picblobs-cli/*
+        run: task dist
 
       - name: Smoke-install built wheels
         run: |

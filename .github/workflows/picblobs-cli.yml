@@ -62,10 +62,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - name: Install Python dev environment
+      - name: Install Task + Python dev environment
         run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -b "$HOME/.local/bin" v3.51.1
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           source sourceme
-          uv pip install twine
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
       - name: Verify release version wiring
@@ -92,17 +94,12 @@ jobs:
           PY
 
       - name: Stage full release tree
-        run: python tools/stage_blobs.py
+        run: task stage
 
       - name: Build distributions
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.expected }}
-        run: |
-          uv build python --wheel --sdist --out-dir dist/picblobs
-          uv build python_cli --wheel --sdist --out-dir dist/picblobs-cli
-          python tools/check_dist.py picblobs --dist-dir dist/picblobs --expected-version "${EXPECTED_VERSION}"
-          python tools/check_dist.py picblobs-cli --dist-dir dist/picblobs-cli --expected-version "${EXPECTED_VERSION}"
-          python -m twine check dist/picblobs/* dist/picblobs-cli/*
+        run: task dist EXPECTED_VERSION="${EXPECTED_VERSION}"
 
       - name: Smoke-install the built wheels
         env:

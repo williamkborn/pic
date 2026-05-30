@@ -63,18 +63,18 @@
       <article>
 <h1 id="testing">Testing</h1>
 <h2 id="full-test-suite">Full test suite</h2>
-<pre data-lang="bash"><code>./testall
+<pre data-lang="bash"><code>task test
 </code></pre>
 <p>Runs all unit tests, sync tests, CLI tests, and payload execution tests. Some
 platform-specific execution cases still skip when required runners, QEMU
 binaries, ptrace support, or network primitives are unavailable.</p>
 <h2 id="filtered-runs">Filtered runs</h2>
-<pre data-lang="bash"><code>./testall -v                           # verbose output
-./testall --payload-only               # only payload execution tests
-./testall --unit-only                  # only unit/sync tests
-./testall --os linux --arch x86_64     # filter by platform
-./testall --type hello                 # filter by blob type
-./testall -k test_payload_hello        # pytest -k expression
+<pre data-lang="bash"><code>task test -- -v                           # verbose output
+task test:payload                         # only payload execution tests
+task test:unit                            # only unit/sync tests
+task test -- --os linux --arch x86_64     # filter by platform
+task test -- --type hello                 # filter by blob type
+task test -- -k test_payload_hello        # pytest -k expression
 </code></pre>
 <h2 id="via-picblobs-cli">Via picblobs-cli</h2>
 <pre data-lang="bash"><code>picblobs-cli test                          # run pytest
