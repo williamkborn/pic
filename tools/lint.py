@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -30,6 +31,27 @@ BASELINE_FILE = PROJECT_ROOT / "tools/lizard_baseline.txt"
 RUFF_ROOTS = ["python/picblobs", "python/tests", "python_cli", "tools"]
 
 LIZARD_ROOTS = ["src", "tests", "python", "python_cli", "tools"]
+BUILDIFIER_ROOTS = [
+    "bazel",
+    "platforms",
+    "release",
+    "src",
+    "tests",
+    "toolchains",
+    "tools",
+    "python",
+    "python_cli",
+    "mbed",
+    "kernel",
+]
+BUILDIFIER_EXTENSIONS = {".bzl"}
+BUILDIFIER_NAMES = {
+    "BUILD",
+    "BUILD.bazel",
+    "WORKSPACE",
+    "WORKSPACE.bazel",
+    "MODULE.bazel",
+}
 EXCLUDE = {
     "bazel-bin",
     "bazel-out",
@@ -75,6 +97,52 @@ def _supports_appimage_extract(binary: str) -> bool:
         check=False,
     )
     return result.returncode == 0
+
+
+def _run_buildifier_check(paths: list[Path] | None = None) -> int:
+    if paths == []:
+        log.info("buildifier: no matching Bazel files")
+        return 0
+
+    binary = shutil.which("buildifier")
+    if binary is None:
+        if os.environ.get("PICBLOBS_REQUIRE_LINT_TOOLS"):
+            log.error("buildifier not found but PICBLOBS_REQUIRE_LINT_TOOLS is set")
+            return 1
+        log.warning("buildifier not found; skipping Starlark lint")
+        return 0
+
+    targets = (
+        _relativize(paths)
+        if paths is not None
+        else _relativize(_default_buildifier_paths())
+    )
+    cmd = ["buildifier", "--lint=warn", "--mode=check", *targets]
+    log.info("buildifier: %d Starlark files", len(targets))
+    result = subprocess.run(
+        cmd, cwd=PROJECT_ROOT, text=True, capture_output=True, check=False
+    )
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def _default_buildifier_paths() -> list[Path]:
+    files = collect_files(
+        [],
+        roots=BUILDIFIER_ROOTS,
+        extensions=BUILDIFIER_EXTENSIONS,
+        exclude=EXCLUDE,
+        names=BUILDIFIER_NAMES,
+    )
+    # Root-level Bazel files aren't under any of the BUILDIFIER_ROOTS.
+    for name in ("MODULE.bazel", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel"):
+        candidate = PROJECT_ROOT / name
+        if candidate.exists():
+            files.append(candidate)
+    return sorted(set(files))
 
 
 def _run_ruff_check(paths: list[Path] | None = None) -> int:
@@ -185,7 +253,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path]]:
+def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path], list[Path]]:
     ruff_paths = collect_files(
         paths,
         roots=RUFF_ROOTS,
@@ -198,31 +266,56 @@ def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path]]:
         extensions={".c", ".h", ".py"},
         exclude=EXCLUDE,
     )
-    return ruff_paths, lizard_paths
+    buildifier_paths = collect_files(
+        paths,
+        roots=BUILDIFIER_ROOTS,
+        extensions=BUILDIFIER_EXTENSIONS,
+        exclude=EXCLUDE,
+        names=BUILDIFIER_NAMES,
+    )
+    if paths:
+        # Root-level files aren't under any of the BUILDIFIER_ROOTS but may
+        # be passed explicitly.
+        for raw in paths:
+            candidate = (PROJECT_ROOT / raw).resolve()
+            if candidate.name in BUILDIFIER_NAMES and candidate.is_file():
+                buildifier_paths.append(candidate)
+    buildifier_paths = sorted(set(buildifier_paths))
+    return ruff_paths, lizard_paths, buildifier_paths
+
+
+def _arg_or_default(paths: list[Path], have_explicit: bool) -> list[Path] | None:
+    """Pass explicit paths through; otherwise let the runner use its defaults."""
+    return paths if have_explicit else None
 
 
 def main() -> int:
     args = _parse_args()
-
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
-    ruff_paths, lizard_paths = _collect_targets(args.paths)
+    ruff_paths, lizard_paths, buildifier_paths = _collect_targets(args.paths)
+    have_explicit = bool(args.paths)
 
-    if not ruff_paths and not lizard_paths and args.paths:
+    if have_explicit and not (ruff_paths or lizard_paths or buildifier_paths):
         log.info("No matching files.")
         return 0
 
-    if _run_ruff_check(paths=ruff_paths if args.paths else None) != 0:
-        log.error("Ruff issues found.")
-        return 1
+    checks = (
+        ("Ruff", _run_ruff_check, ruff_paths),
+        ("Buildifier", _run_buildifier_check, buildifier_paths),
+    )
+    for label, runner, paths in checks:
+        if runner(paths=_arg_or_default(paths, have_explicit)) != 0:
+            log.error("%s issues found.", label)
+            return 1
 
-    if not lizard_paths and args.paths:
+    if have_explicit and not lizard_paths:
         log.info("ok")
         return 0
 
     return _run_lizard_check(
-        lizard_paths if args.paths else None,
-        check_stale=not args.paths,
+        _arg_or_default(lizard_paths, have_explicit),
+        check_stale=not have_explicit,
     )
 
 

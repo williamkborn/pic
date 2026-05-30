@@ -6,8 +6,13 @@ tables) and executes a Windows-targeting blob within it.
 """
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:lint.bzl", "cppcheck_test")
 
-package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
+package(default_visibility = [
+    "//python:__subpackages__",
+    "//release:__pkg__",
+    "//tests:__subpackages__",
+])
 
 cc_library(
     name = "runner_obj",
@@ -34,6 +39,7 @@ genrule(
         "-nostdlib",
         "-nostartfiles",
         "-static",
+        "-Wl,--gc-sections",
         "-Wl,--whole-archive",
         "$(location :runner_obj)",
         "-Wl,--no-whole-archive",
@@ -41,4 +47,11 @@ genrule(
     ]),
     executable = True,
     toolchains = ["@rules_cc//cc:current_cc_toolchain"],
+)
+
+cppcheck_test(
+    name = "runner_cppcheck",
+    size = "small",
+    srcs = ["runner.c"],
+    include_dirs = ["src/include"],
 )

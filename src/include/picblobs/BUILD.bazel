@@ -2,17 +2,13 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
-package(default_visibility = ["//src:__subpackages__", "//tests:__subpackages__"])
+package(default_visibility = [
+    "//src:__subpackages__",
+    "//tests:__subpackages__",
+])
 
 cc_library(
     name = "headers",
     hdrs = glob(["**/*.h"]),
     strip_include_prefix = "//src/include",
-)
-
-# Raw header files without cc_library wrapping — used by genrule
-# targets that compile with g++ directly (e.g., Mbed OS test runner).
-filegroup(
-    name = "raw_headers",
-    srcs = glob(["**/*.h"]),
 )

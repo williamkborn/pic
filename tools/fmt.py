@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,22 @@ PY_ROOTS = [
     "python_cli/tests",
     "tools",
 ]
+# Roots for Starlark / BUILD files. Buildifier walks these recursively.
+BAZEL_ROOTS = [
+    "bazel",
+    "platforms",
+    "release",
+    "src",
+    "tests",
+    "toolchains",
+    "tools",
+    "python",
+    "python_cli",
+    "mbed",
+    "kernel",
+]
+BAZEL_EXTENSIONS = {".bzl"}
+BAZEL_NAMES = {"BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel"}
 
 # Directories to exclude (relative to project root).
 EXCLUDE = {
@@ -104,7 +121,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path]]:
+def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path], list[Path]]:
     c_files = collect_files(
         paths,
         roots=C_ROOTS,
@@ -117,7 +134,22 @@ def _collect_targets(paths: list[str]) -> tuple[list[Path], list[Path]]:
         extensions={".py"},
         exclude=EXCLUDE,
     )
-    return c_files, py_files
+    bazel_files = collect_files(
+        paths,
+        roots=BAZEL_ROOTS,
+        extensions=BAZEL_EXTENSIONS,
+        exclude=EXCLUDE,
+        names=BAZEL_NAMES,
+    )
+    # MODULE.bazel and root BUILD.bazel live at the repo root, not under any
+    # of the BAZEL_ROOTS — pick them up explicitly when no paths were given.
+    if not paths:
+        for name in ("MODULE.bazel", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel"):
+            candidate = PROJECT_ROOT / name
+            if candidate.exists():
+                bazel_files.append(candidate)
+        bazel_files = sorted(set(bazel_files))
+    return c_files, py_files, bazel_files
 
 
 def _format_c_files(files: list[Path], *, check: bool) -> bool:
@@ -137,19 +169,33 @@ def _format_python_files(files: list[Path], *, check: bool) -> bool:
     return _run_formatter("ruff", cmd, files, check)
 
 
+def _format_bazel_files(files: list[Path], *, check: bool) -> bool:
+    if not files:
+        return True
+    if shutil.which("buildifier") is None:
+        if os.environ.get("PICBLOBS_REQUIRE_LINT_TOOLS"):
+            log.error("buildifier not found but PICBLOBS_REQUIRE_LINT_TOOLS is set")
+            return False
+        log.warning("buildifier not found; skipping %d Bazel files", len(files))
+        return True
+    cmd = ["buildifier", "--mode=check"] if check else ["buildifier"]
+    return _run_formatter("buildifier", cmd, files, check)
+
+
 def main() -> int:
     args = _parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
-    c_files, py_files = _collect_targets(args.paths)
+    c_files, py_files, bazel_files = _collect_targets(args.paths)
 
-    if not c_files and not py_files:
+    if not c_files and not py_files and not bazel_files:
         log.info("No matching files.")
         return 0
 
     ok = _format_c_files(c_files, check=args.check)
     ok = _format_python_files(py_files, check=args.check) and ok
+    ok = _format_bazel_files(bazel_files, check=args.check) and ok
 
     if ok:
         log.info("ok")

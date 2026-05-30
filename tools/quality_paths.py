@@ -21,24 +21,29 @@ def is_excluded(path: Path, exclude: set[str]) -> bool:
     return any(part in exclude for part in rel_path.parts)
 
 
+def _matches(path: Path, extensions: set[str], names: set[str]) -> bool:
+    return path.suffix in extensions or path.name in names
+
+
 def _iter_matching_files(
     path: Path,
     *,
     extensions: set[str],
     exclude: set[str],
+    names: set[str],
 ) -> Iterable[Path]:
     if not path.exists() or is_excluded(path, exclude):
         return
 
     if path.is_file():
-        if path.suffix in extensions:
+        if _matches(path, extensions, names):
             yield path
         return
 
     for child in path.rglob("*"):
         if not child.is_file():
             continue
-        if child.suffix not in extensions:
+        if not _matches(child, extensions, names):
             continue
         if is_excluded(child, exclude):
             continue
@@ -51,9 +56,20 @@ def collect_files(
     roots: Sequence[str],
     extensions: set[str],
     exclude: set[str],
+    names: set[str] | None = None,
 ) -> list[Path]:
-    """Collect matching files from explicit inputs or from configured roots."""
+    """Collect matching files from explicit inputs or from configured roots.
+
+    Args:
+        inputs: Explicit paths to scan. Falls back to `roots` when empty.
+        roots: Directory roots to scan when `inputs` is empty.
+        extensions: File suffixes to include (e.g. {".py"}).
+        exclude: Directory segment names to skip (e.g. {".venv"}).
+        names: Exact filenames to include irrespective of suffix
+            (e.g. {"BUILD.bazel"}).
+    """
     raw_paths = list(inputs) if inputs else list(roots)
+    name_set = names or set()
     files: set[Path] = set()
 
     for raw_path in raw_paths:
@@ -62,7 +78,12 @@ def collect_files(
             path = PROJECT_ROOT / path
         path = path.resolve()
         files.update(
-            _iter_matching_files(path, extensions=extensions, exclude=exclude),
+            _iter_matching_files(
+                path,
+                extensions=extensions,
+                exclude=exclude,
+                names=name_set,
+            ),
         )
 
     return sorted(files)

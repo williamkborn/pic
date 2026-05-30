@@ -34,14 +34,77 @@ jobs:
           source sourceme
           echo "${GITHUB_WORKSPACE}/python/.venv/bin" >> "${GITHUB_PATH}"
 
+      - name: Install buildifier
+        run: |
+          BUILDIFIER_VERSION="7.3.1"
+          curl -fsSL \
+            "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-amd64" \
+            -o /tmp/buildifier
+          sudo install -m 0755 /tmp/buildifier /usr/local/bin/buildifier
+
       - name: Validate lefthook config
         run: lefthook validate
 
       - name: Check formatting
+        env:
+          PICBLOBS_REQUIRE_LINT_TOOLS: "1"
         run: python tools/fmt.py --check
 
       - name: Check lint
+        env:
+          PICBLOBS_REQUIRE_LINT_TOOLS: "1"
         run: python tools/lint.py --check
+
+  bazel-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Bazel
+        run: |
+          BAZEL_VERSION="$(cat .bazelversion)"
+          curl -fsSL \
+            "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
+            -o /tmp/bazel
+          sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
+
+      - name: Install lint tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy clang-format cppcheck qemu-user-static
+
+      - name: Check generated files are fresh
+        run: bazel test --config=ci //tools:generate_check
+
+      - name: Build all platforms with lint aspect
+        run: |
+          bazel build --config=ci --config=linux_x86_64 //src/... //tests/runners/linux/...
+          bazel build --config=ci --config=linux_aarch64 //src/...
+          bazel build --config=ci --config=windows_x86_64 //src/payload:hello_windows
+          bazel build --config=ci --config=freebsd_x86_64 //src/payload:hello
+
+      - name: Run Bazel test suite
+        # These tests run on the host; they build their ARM artifacts via
+        # internal platform transitions, so do NOT pass a --config platform
+        # (that would set the target platform and break test toolchain
+        # resolution).
+        run: |
+          bazel test --config=ci //tests:nacl_suite
+          bazel test --config=ci //tests/runners/...:all
 
   stage-test-assets:
     runs-on: ubuntu-latest

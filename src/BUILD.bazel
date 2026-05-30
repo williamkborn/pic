@@ -1,3 +1,7 @@
 """Source tree root — see subdirectories for build targets."""
 
-package(default_visibility = ["//src:__subpackages__", "//tests:__subpackages__", "//python:__subpackages__"])
+package(default_visibility = [
+    "//python:__subpackages__",
+    "//src:__subpackages__",
+    "//tests:__subpackages__",
+])

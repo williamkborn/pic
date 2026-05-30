@@ -201,7 +201,6 @@ cc_toolchain(
 )
 """
 
-
 def _arm_none_eabi_repo_impl(ctx):
     """Repository rule that fetches the ARM GNU bare-metal toolchain."""
     url = ctx.attr.url
@@ -242,7 +241,6 @@ def _arm_none_eabi_repo_impl(ctx):
     build_content = _BUILD_FILE_CONTENT.format(triple = _TRIPLE)
     ctx.file("BUILD.bazel", build_content)
 
-
 arm_none_eabi_repo = repository_rule(
     implementation = _arm_none_eabi_repo_impl,
     attrs = {
@@ -253,7 +251,6 @@ arm_none_eabi_repo = repository_rule(
     },
     environ = ["PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"],
 )
-
 
 # --- Module extension ---
 

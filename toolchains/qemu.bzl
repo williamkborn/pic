@@ -44,7 +44,7 @@ qemu_arm_repo = repository_rule(
     local = True,
 )
 
-def _qemu_impl(module_ctx):
+def _qemu_impl(_module_ctx):
     qemu_arm_repo(name = "qemu_arm_static")
 
 qemu = module_extension(

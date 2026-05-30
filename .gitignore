@@ -3,7 +3,6 @@
 # Bazel
 /bazel-*
 /.bazel-cache/
-MODULE.bazel.lock
 
 # Python
 __pycache__/
