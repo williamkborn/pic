@@ -948,6 +948,28 @@ def _gen_payload_build() -> str:
 # ============================================================
 
 
+def _require_formatters() -> bool:
+    """Return True if the formatters that shape generated output are present.
+
+    Generated Bazel/C files are buildifier/clang-format formatted to match the
+    committed tree. Without these tools the generator emits raw output, so
+    --check would report false "out of date" results. Print an actionable error
+    and return False instead of silently producing a mismatch.
+    """
+    import shutil
+
+    missing = [t for t in ("buildifier", "clang-format") if shutil.which(t) is None]
+    if not missing:
+        return True
+    print(
+        f"error: required formatter(s) not found on PATH: {', '.join(missing)}\n"
+        "Generated Bazel/C files are buildifier/clang-format formatted; without\n"
+        "them this check is inaccurate. Install them (e.g. run `task setup`).",
+        file=sys.stderr,
+    )
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate derived files from registry")
     parser.add_argument(
@@ -956,6 +978,9 @@ def main() -> int:
         help="Verify generated files are up to date (exit 1 if not)",
     )
     args = parser.parse_args()
+
+    if not _require_formatters():
+        return 1
 
     targets = _generated_targets()
 

@@ -18,6 +18,9 @@ vars:
   # clang-format, buildifier) — go-task refuses to override PATH via `env:`, so
   # we delegate to the repo's existing wrapper (also used by lefthook).
   DEV: 'tools/with_dev_python.sh'
+  # buildifier is not pip-installable; `task setup` fetches this version into the
+  # venv. Keep in sync with the CI workflows that install it.
+  BUILDIFIER_VERSION: '7.3.1'
 
 tasks:
   default:
@@ -28,11 +31,22 @@ tasks:
 
   # ---------------------------------------------------------------- setup ---
   setup:
-    desc: "Create the dev venv, install both packages (editable) + git hooks"
+    desc: "Create the dev venv, install both packages (editable) + tools + git hooks"
     cmds:
       - uv venv {{.VENV}}
       - uv pip install --python {{.PY}} -e '{{.ROOT_DIR}}/python[dev]'
       - uv pip install --python {{.PY}} -e '{{.ROOT_DIR}}/python_cli'
+      # buildifier (formats generated Bazel files; required by generate.py and
+      # fmt/lint). Not on PyPI, so fetch the binary into the venv if absent.
+      - |
+        if ! command -v buildifier >/dev/null 2>&1 && [ ! -x "{{.VENV}}/bin/buildifier" ]; then
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m)
+          case "$arch" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; esac
+          echo "==> Installing buildifier v{{.BUILDIFIER_VERSION}} ($os-$arch) into the venv"
+          curl -fsSL "https://github.com/bazelbuild/buildtools/releases/download/v{{.BUILDIFIER_VERSION}}/buildifier-${os}-${arch}" -o "{{.VENV}}/bin/buildifier"
+          chmod +x "{{.VENV}}/bin/buildifier"
+        fi
       - 'if [ -z "${CI:-}" ] && git rev-parse --git-dir >/dev/null 2>&1; then {{.VENV}}/bin/lefthook install; fi'
 
   _venv:
@@ -122,7 +136,10 @@ tasks:
   bazel:build:
     desc: "CI Bazel build matrix (src + runners across representative platforms)"
     cmds:
-      - bazel build --config=ci --config=linux_x86_64 //src/... //tests/runners/linux/...
+      # Exclude the cppcheck *test* target from this platform build: building a
+      # test under a target --platforms breaks test-toolchain resolution on
+      # Bazel 9. It is exercised by `task bazel:test` instead (host platform).
+      - bazel build --config=ci --config=linux_x86_64 -- //src/... //tests/runners/linux/... -//tests/runners/linux:runner_cppcheck
       - bazel build --config=ci --config=linux_aarch64 //src/...
       - bazel build --config=ci --config=windows_x86_64 //src/payload:hello_windows
       - bazel build --config=ci --config=freebsd_x86_64 //src/payload:hello

@@ -95,8 +95,10 @@ python -m pytest "${TEST_FILES[@]}" "${PYTEST_ARGS[@]}"
 PICBLOBS_STATUS=$?
 
 # Also run the picblobs-cli suite (separate rootdir — click testing +
-# runner-discovery checks that depend on picblobs_cli being installed).
-if [[ "$UNIT_ONLY" -eq 0 && "$PAYLOAD_ONLY" -eq 0 ]]; then
+# runner-discovery checks that depend on picblobs_cli being installed). These
+# are unit tests, not payload execution tests, so they run for the full and
+# --unit-only subsets; only --payload-only suppresses them.
+if [[ "$PAYLOAD_ONLY" -eq 0 ]]; then
     echo ""
     echo "==> Running picblobs-cli test suite"
     cd "$ROOT/python_cli"
