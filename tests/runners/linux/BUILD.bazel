@@ -7,7 +7,11 @@ a blob using real Linux syscalls (emulated by QEMU for non-native arches).
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//bazel:lint.bzl", "cppcheck_test")
 
-package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
+package(default_visibility = [
+    "//python:__subpackages__",
+    "//release:__pkg__",
+    "//tests:__subpackages__",
+])
 
 exports_files([
     "runner_hosted.c",
@@ -16,7 +20,7 @@ exports_files([
 filegroup(
     name = "start_headers",
     srcs = glob(["start/*.h"]),
-    visibility = ["//tests/runners:__subpackages__"],
+    visibility = ["//tests:__subpackages__"],
 )
 
 cc_library(
@@ -32,7 +36,9 @@ cc_library(
 )
 
 # Link via genrule to avoid cc_binary injecting -Wl,-S which
-# strips sections on some architectures (MIPS, ARM).
+# strips sections on some architectures (MIPS, ARM). The genrule
+# bypasses cc_common.link, so the toolchain's freestanding-feature
+# link flags are added explicitly.
 genrule(
     name = "runner",
     srcs = [":runner_obj"],
@@ -42,6 +48,7 @@ genrule(
         "-nostdlib",
         "-nostartfiles",
         "-static",
+        "-Wl,--gc-sections",
         "-Wl,-e,_start",
         "-Wl,--whole-archive",
         "$(location :runner_obj)",
@@ -54,6 +61,7 @@ genrule(
 
 cppcheck_test(
     name = "runner_cppcheck",
+    size = "small",
     srcs = ["runner.c"],
     include_dirs = ["src/include"],
 )
@@ -82,6 +90,7 @@ genrule(
         "-nostdlib",
         "-nostartfiles",
         "-static",
+        "-Wl,--gc-sections",
         "-Wl,-e,_start",
         "-Wl,--whole-archive",
         "$(location :runner_hosted_obj)",

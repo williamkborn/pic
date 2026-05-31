@@ -122,6 +122,12 @@ def _config_impl(ctx):
         abi_libc_version = "{target_libc}",
         tool_paths = tool_paths,
         features = features,
+        # Absolute on-disk paths to the toolchain's own headers, baked in at
+        # fetch time. Without these, hosted compiles that pull in libc/libstdc++
+        # headers fail Bazel's "absolute path inclusion" hermeticity check.
+        # Freestanding blobs never include system headers, so this is inert
+        # for them.
+        cxx_builtin_include_directories = {builtin_include_dirs},
     )
 
 bootlin_config = rule(
@@ -146,6 +152,7 @@ filegroup(
         "libexec/gcc/{triple}/**",
         "{triple}/include/**",
         "{triple}/lib/**",
+        "{triple}/sysroot/**",
     ]),
 )
 
@@ -157,6 +164,9 @@ filegroup(
         "lib/gcc/{triple}/**",
         "libexec/gcc/{triple}/**",
         "{triple}/include/**",
+        # Hosted compiles (C++ test runners) need the libc sysroot headers;
+        # freestanding blobs don't, but globbing them is harmless.
+        "{triple}/sysroot/**",
     ]),
 )
 
@@ -168,6 +178,8 @@ filegroup(
         "lib/gcc/{triple}/**",
         "libexec/gcc/{triple}/**",
         "{triple}/lib/**",
+        # Hosted links need crt objects and libc/libstdc++ from the sysroot.
+        "{triple}/sysroot/**",
     ]),
 )
 
@@ -254,6 +266,17 @@ def _bootlin_toolchain_repo_impl(ctx):
         # buildifier: disable=print
         print("  Pin with: sha256 = \"{}\"".format(result.sha256))
 
+    # Absolute on-disk locations of the toolchain's own header trees. These
+    # cover the GCC internal headers (lib/gcc/{triple}/<ver>/include[-fixed]),
+    # the libstdc++ headers ({triple}/include/c++), and the libc sysroot
+    # ({triple}/sysroot/usr/include). They are listed as builtin include dirs
+    # so hosted compiles pass Bazel's absolute-path hermeticity check.
+    repo_path = str(ctx.path("."))
+    builtin_include_dirs = [
+        "{}/lib/gcc/{}".format(repo_path, triple),
+        "{}/{}".format(repo_path, triple),
+    ]
+
     # Generate the config.bzl with baked-in triple and flags.
     config_bzl = _CONFIG_BZL_CONTENT.format(
         triple = triple,
@@ -261,6 +284,7 @@ def _bootlin_toolchain_repo_impl(ctx):
         target_cpu = target_cpu,
         toolchain_id = toolchain_id,
         target_libc = libc,
+        builtin_include_dirs = repr(builtin_include_dirs),
     )
     ctx.file("config.bzl", config_bzl)
 

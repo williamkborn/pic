@@ -193,7 +193,7 @@ def project_root() -> Path:
 
 @pytest.fixture(scope="session")
 def blob_dir() -> Path:
-    """Path to staged .so blob files (populated by ``./buildall``)."""
+    """Path to staged .so blob files (populated by ``task stage``)."""
     return PROJECT_ROOT / "python" / "picblobs" / "_blobs"
 
 

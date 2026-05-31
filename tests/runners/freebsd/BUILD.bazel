@@ -5,8 +5,13 @@ then executes the blob under QEMU with real Linux syscalls.
 """
 
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:lint.bzl", "cppcheck_test")
 
-package(default_visibility = ["//tests:__subpackages__", "//python:__subpackages__", "//release:__pkg__"])
+package(default_visibility = [
+    "//python:__subpackages__",
+    "//release:__pkg__",
+    "//tests:__subpackages__",
+])
 
 cc_library(
     name = "runner_obj",
@@ -29,6 +34,7 @@ genrule(
         "-nostdlib",
         "-nostartfiles",
         "-static",
+        "-Wl,--gc-sections",
         "-Wl,-e,_start",
         "-Wl,--whole-archive",
         "$(location :runner_obj)",
@@ -37,4 +43,11 @@ genrule(
     ]),
     executable = True,
     toolchains = ["@rules_cc//cc:current_cc_toolchain"],
+)
+
+cppcheck_test(
+    name = "runner_cppcheck",
+    size = "small",
+    srcs = ["runner.c"],
+    include_dirs = ["src/include"],
 )

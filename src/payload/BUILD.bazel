@@ -8,36 +8,36 @@ package(default_visibility = ["//visibility:public"])
 pic_blob(
     name = "alloc_jump",
     srcs = ["alloc_jump.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "alloc_jump_windows",
     srcs = ["alloc_jump_windows.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "hello",
     srcs = ["hello.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "hello_windows",
     srcs = ["hello_windows.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "nacl_client",
     srcs = ["nacl_client.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 extract_bin(
@@ -48,9 +48,9 @@ extract_bin(
 pic_blob(
     name = "nacl_client_hosted",
     srcs = ["nacl_client.c"],
+    linker_script = "//src/linker:blob.ld",
     local_defines = ["PIC_PLATFORM_HOSTED"],
     deps = ["//src/include/picblobs:headers"],
-    linker_script = "//src/linker:blob.ld",
 )
 
 extract_bin(
@@ -61,15 +61,15 @@ extract_bin(
 pic_blob(
     name = "nacl_hello",
     srcs = ["nacl_hello.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "nacl_server",
     srcs = ["nacl_server.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 extract_bin(
@@ -80,9 +80,9 @@ extract_bin(
 pic_blob(
     name = "nacl_server_hosted",
     srcs = ["nacl_server.c"],
+    linker_script = "//src/linker:blob.ld",
     local_defines = ["PIC_PLATFORM_HOSTED"],
     deps = ["//src/include/picblobs:headers"],
-    linker_script = "//src/linker:blob.ld",
 )
 
 extract_bin(
@@ -93,98 +93,97 @@ extract_bin(
 pic_blob(
     name = "reflective_pe_windows",
     srcs = ["reflective_pe_windows.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_fd",
     srcs = ["stager_fd.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_fd_windows",
     srcs = ["stager_fd_windows.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_mmap",
     srcs = ["stager_mmap.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_pipe",
     srcs = ["stager_pipe.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_pipe_windows",
     srcs = ["stager_pipe_windows.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_tcp",
     srcs = ["stager_tcp.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "stager_tcp_windows",
     srcs = ["stager_tcp_windows.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "test_fd_ok",
     srcs = ["test_fd_ok.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "test_mmap_ok",
     srcs = ["test_mmap_ok.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "test_pass",
     srcs = ["test_pass.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "test_pipe_ok",
     srcs = ["test_pipe_ok.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "test_tcp_ok",
     srcs = ["test_tcp_ok.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
 
 pic_blob(
     name = "ul_exec",
     srcs = ["ul_exec.c"],
-    deps = ["//src/include/picblobs:headers"],
     linker_script = "//src/linker:blob.ld",
+    deps = ["//src/include/picblobs:headers"],
 )
-

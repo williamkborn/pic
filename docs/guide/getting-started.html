@@ -78,13 +78,13 @@ SPARC, PowerPC, ppc64le, and RISC-V targets.</p>
 source sourceme
 
 # Build and stage all blobs + runners
-./buildall
+task stage
 
 # Verify everything works
 picblobs-cli verify
 
 # Run the full test suite
-./testall
+task test
 </code></pre>
 <p><code>source sourceme</code> also installs the repo's Git hooks with <code>lefthook</code>, so local
 formatting and lint checks start running automatically on <code>git commit</code> and

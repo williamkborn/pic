@@ -3,7 +3,6 @@
 # Bazel
 /bazel-*
 /.bazel-cache/
-MODULE.bazel.lock
 
 # Python
 __pycache__/
@@ -42,8 +41,9 @@ python/picblobs/manifest.json
 # mdbook build output
 docs/book/
 
-# Claude Code
-.claude/
+# Claude Code — share settings.json, keep personal overrides local
+.claude/settings.local.json
+.claude/*.local.json
 
 # Mbed OS build artifacts
 mbed/BUILD/

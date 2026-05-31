@@ -48,13 +48,12 @@ import os
 import struct
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-
 
 # ===========================================================================
 # Kernel info helpers
 # ===========================================================================
+
 
 def get_vermagic() -> str:
     """Get the current kernel's vermagic string.
@@ -70,10 +69,9 @@ def get_vermagic() -> str:
 
     # Try to read actual vermagic from a loaded module
     for entry in Path("/sys/module").iterdir():
-        vpath = entry / "version"
+        entry / "version"
         # The vermagic is typically in /proc/modules or can be
         # extracted from any loaded .ko
-        pass
 
     # Build it from uname + kernel config
     # This is an approximation — real vermagic includes compiler version
@@ -81,11 +79,10 @@ def get_vermagic() -> str:
     preempt = "preempt"  # most modern kernels
 
     # Check /boot/config or /proc/config.gz for precise values
-    config_path = Path(f"/boot/config-{release}")
+    Path(f"/boot/config-{release}")
     mod_unload = "mod_unload"
 
-    vermagic = f"{release} {smp} {preempt} {mod_unload} "
-    return vermagic
+    return f"{release} {smp} {preempt} {mod_unload} "
 
 
 def read_kallsyms() -> dict[str, int]:
@@ -107,6 +104,7 @@ def read_kallsyms() -> dict[str, int]:
 # ===========================================================================
 # Technique 1: Vermagic patching
 # ===========================================================================
+
 
 def patch_vermagic(ko_path: str, target_vermagic: str = "") -> str:
     """Patch a .ko file's vermagic to match the running kernel.
@@ -133,7 +131,7 @@ def patch_vermagic(ko_path: str, target_vermagic: str = "") -> str:
 
     # Find the end of the current vermagic string (null terminated)
     end = data.index(b"\x00", idx)
-    old_vermagic = data[idx + len(marker):end].decode()
+    old_vermagic = data[idx + len(marker) : end].decode()
     print(f"[*] Original vermagic: {old_vermagic}")
 
     # Build new vermagic value
@@ -147,13 +145,14 @@ def patch_vermagic(ko_path: str, target_vermagic: str = "") -> str:
 
     # Patch
     patched = bytearray(data)
-    patched[idx + len(marker):end] = new_value
+    patched[idx + len(marker) : end] = new_value
 
     # Write patched file
     out_path = ko_path.replace(".ko", "_patched.ko")
     Path(out_path).write_bytes(bytes(patched))
     print(f"[+] Patched .ko written to: {out_path}")
-    print(f"[*] New vermagic: {new_value.rstrip(b'\\x00').decode()}")
+    trimmed_vermagic = new_value.rstrip(b"\x00").decode()
+    print(f"[*] New vermagic: {trimmed_vermagic}")
 
     return out_path
 
@@ -161,6 +160,7 @@ def patch_vermagic(ko_path: str, target_vermagic: str = "") -> str:
 # ===========================================================================
 # Technique 2: Raw init_module — craft minimal ELF in memory
 # ===========================================================================
+
 
 def build_minimal_module(code: bytes, name: str = "picblob") -> bytes:
     """Build a minimal loadable kernel module ELF from raw code.
@@ -194,19 +194,19 @@ def build_minimal_module(code: bytes, name: str = "picblob") -> bytes:
     # .text section: our code
     text_data = bytearray(code)
     # Ensure the code returns (add 'ret' if not present)
-    if not text_data or text_data[-1] != 0xc3:
-        text_data.append(0xc3)  # ret
+    if not text_data or text_data[-1] != 0xC3:
+        text_data.append(0xC3)  # ret
 
     # .modinfo section: vermagic string
     modinfo_data = b"vermagic=" + vermagic
 
     # String table (section names)
     strtab_entries = [
-        b"",                            # 0: null
-        b".text",                       # 1
-        b".modinfo",                    # 7
-        b".gnu.linkonce.this_module",   # 16
-        b".strtab",                     # 42
+        b"",  # 0: null
+        b".text",  # 1
+        b".modinfo",  # 7
+        b".gnu.linkonce.this_module",  # 16
+        b".strtab",  # 42
     ]
     strtab = b"\x00"
     name_offsets = [0]  # null string at offset 0
@@ -239,7 +239,7 @@ def build_minimal_module(code: bytes, name: str = "picblob") -> bytes:
     # list_head = 16 bytes, state = 4 bytes, pad = 4 bytes → name at 24
     NAME_OFFSET = 24
     name_bytes = name.encode()[:55] + b"\x00"  # MODULE_NAME_LEN = 56
-    module_data[NAME_OFFSET:NAME_OFFSET + len(name_bytes)] = name_bytes
+    module_data[NAME_OFFSET : NAME_OFFSET + len(name_bytes)] = name_bytes
 
     # init function pointer offset — this is the hardest to get right.
     # We'll try to determine it from /proc/kallsyms + /sys/module
@@ -272,8 +272,8 @@ def build_minimal_module(code: bytes, name: str = "picblob") -> bytes:
     # [section header table]
 
     ELF_HEADER_SIZE = 64  # Elf64_Ehdr
-    SHDR_SIZE = 64         # Elf64_Shdr
-    NUM_SECTIONS = 5       # null + .text + .modinfo + .this_module + .strtab
+    SHDR_SIZE = 64  # Elf64_Shdr
+    NUM_SECTIONS = 5  # null + .text + .modinfo + .this_module + .strtab
 
     # Calculate offsets
     text_offset = ELF_HEADER_SIZE
@@ -294,44 +294,58 @@ def build_minimal_module(code: bytes, name: str = "picblob") -> bytes:
     elf = bytearray()
 
     # e_ident
-    elf += b"\x7fELF"          # magic
-    elf += b"\x02"             # 64-bit
-    elf += b"\x01"             # little-endian
-    elf += b"\x01"             # ELF version
-    elf += b"\x00"             # OS/ABI
-    elf += b"\x00" * 8         # padding
+    elf += b"\x7fELF"  # magic
+    elf += b"\x02"  # 64-bit
+    elf += b"\x01"  # little-endian
+    elf += b"\x01"  # ELF version
+    elf += b"\x00"  # OS/ABI
+    elf += b"\x00" * 8  # padding
 
     # ELF header fields
-    elf += struct.pack("<H", 1)        # e_type: ET_REL (relocatable)
-    elf += struct.pack("<H", 62)       # e_machine: EM_X86_64
-    elf += struct.pack("<I", 1)        # e_version
-    elf += struct.pack("<Q", 0)        # e_entry
-    elf += struct.pack("<Q", 0)        # e_phoff (no program headers)
+    elf += struct.pack("<H", 1)  # e_type: ET_REL (relocatable)
+    elf += struct.pack("<H", 62)  # e_machine: EM_X86_64
+    elf += struct.pack("<I", 1)  # e_version
+    elf += struct.pack("<Q", 0)  # e_entry
+    elf += struct.pack("<Q", 0)  # e_phoff (no program headers)
     elf += struct.pack("<Q", shdr_offset)  # e_shoff
-    elf += struct.pack("<I", 0)        # e_flags
+    elf += struct.pack("<I", 0)  # e_flags
     elf += struct.pack("<H", ELF_HEADER_SIZE)  # e_ehsize
-    elf += struct.pack("<H", 0)        # e_phentsize
-    elf += struct.pack("<H", 0)        # e_phnum
+    elf += struct.pack("<H", 0)  # e_phentsize
+    elf += struct.pack("<H", 0)  # e_phnum
     elf += struct.pack("<H", SHDR_SIZE)  # e_shentsize
     elf += struct.pack("<H", NUM_SECTIONS)  # e_shnum
-    elf += struct.pack("<H", 4)        # e_shstrndx (.strtab is section 4)
+    elf += struct.pack("<H", 4)  # e_shstrndx (.strtab is section 4)
 
     assert len(elf) == ELF_HEADER_SIZE
 
     # Append section data
-    elf += text_data                   # .text
-    elf += modinfo_data                # .modinfo
+    elf += text_data  # .text
+    elf += modinfo_data  # .modinfo
     elf += b"\x00" * (module_offset - len(elf))  # padding
-    elf += module_data                 # .gnu.linkonce.this_module
-    elf += strtab                      # .strtab
+    elf += module_data  # .gnu.linkonce.this_module
+    elf += strtab  # .strtab
     elf += b"\x00" * (shdr_offset - len(elf))  # padding
 
     # Section header table
-    def add_shdr(name_idx, sh_type, flags, addr, offset, size,
-                 link=0, info=0, align=1, entsize=0):
-        elf.extend(struct.pack("<IIQQQQIIQQQ"[:11],
-            name_idx, sh_type, flags, addr, offset, size,
-            link, info, align, entsize, 0)[:SHDR_SIZE])
+    def add_shdr(
+        name_idx, sh_type, flags, addr, offset, size, link=0, info=0, align=1, entsize=0
+    ):
+        elf.extend(
+            struct.pack(
+                "<IIQQQQIIQQQ"[:11],
+                name_idx,
+                sh_type,
+                flags,
+                addr,
+                offset,
+                size,
+                link,
+                info,
+                align,
+                entsize,
+                0,
+            )[:SHDR_SIZE]
+        )
 
     # SHT_NULL = 0, SHT_PROGBITS = 1, SHT_STRTAB = 3
     SHF_ALLOC = 0x2
@@ -342,40 +356,67 @@ def build_minimal_module(code: bytes, name: str = "picblob") -> bytes:
     elf += b"\x00" * SHDR_SIZE
 
     # Section 1: .text
-    elf += struct.pack("<IIQQQQIIqq",
-        name_offsets[1],      # name
-        1,                    # SHT_PROGBITS
+    elf += struct.pack(
+        "<IIQQQQIIqq",
+        name_offsets[1],  # name
+        1,  # SHT_PROGBITS
         SHF_ALLOC | SHF_EXECINSTR,  # flags
-        0,                    # addr
-        text_offset,          # offset
-        text_size,            # size
-        0, 0,                 # link, info
-        16,                   # align
-        0)                    # entsize
+        0,  # addr
+        text_offset,  # offset
+        text_size,  # size
+        0,
+        0,  # link, info
+        16,  # align
+        0,
+    )  # entsize
 
     # Section 2: .modinfo
-    elf += struct.pack("<IIQQQQIIQQQ"[:11],
-        name_offsets[2],      # name
-        1,                    # SHT_PROGBITS
-        SHF_ALLOC,           # flags
-        0, modinfo_offset, modinfo_size,
-        0, 0, 1, 0, 0)[:SHDR_SIZE]
+    elf += struct.pack(
+        "<IIQQQQIIQQQ"[:11],
+        name_offsets[2],  # name
+        1,  # SHT_PROGBITS
+        SHF_ALLOC,  # flags
+        0,
+        modinfo_offset,
+        modinfo_size,
+        0,
+        0,
+        1,
+        0,
+        0,
+    )[:SHDR_SIZE]
 
     # Section 3: .gnu.linkonce.this_module
-    elf += struct.pack("<IIQQQQIIQQQ"[:11],
-        name_offsets[3],      # name
-        1,                    # SHT_PROGBITS
+    elf += struct.pack(
+        "<IIQQQQIIQQQ"[:11],
+        name_offsets[3],  # name
+        1,  # SHT_PROGBITS
         SHF_ALLOC | SHF_WRITE,
-        0, module_offset, module_size,
-        0, 0, 8, 0, 0)[:SHDR_SIZE]
+        0,
+        module_offset,
+        module_size,
+        0,
+        0,
+        8,
+        0,
+        0,
+    )[:SHDR_SIZE]
 
     # Section 4: .strtab
-    elf += struct.pack("<IIQQQQIIQQQ"[:11],
-        name_offsets[4],      # name
-        3,                    # SHT_STRTAB
+    elf += struct.pack(
+        "<IIQQQQIIQQQ"[:11],
+        name_offsets[4],  # name
+        3,  # SHT_STRTAB
         0,
-        0, strtab_offset, strtab_size,
-        0, 0, 1, 0, 0)[:SHDR_SIZE]
+        0,
+        strtab_offset,
+        strtab_size,
+        0,
+        0,
+        1,
+        0,
+        0,
+    )[:SHDR_SIZE]
 
     return bytes(elf)
 
@@ -387,13 +428,10 @@ def find_init_offset() -> int | None:
     by correlating with /proc/kallsyms addresses.
     """
     # Look for any loaded module's init function in kallsyms
-    syms = read_kallsyms()
+    read_kallsyms()
 
     for mod_dir in Path("/sys/module").iterdir():
-        init_sym = f"init_module"
         # Try to find the module's init address
-        mod_name = mod_dir.name
-        full_sym = f"{mod_name}_init"  # common naming
 
         # Check if this module has sections info
         sections_dir = mod_dir / "sections"
@@ -447,7 +485,6 @@ def raw_init_module(module_data: bytes, params: str = "") -> int:
 
     # init_module syscall number on x86_64
     SYS_INIT_MODULE = 175
-    SYS_FINIT_MODULE = 313
 
     syscall = libc.syscall
     syscall.restype = ctypes.c_long
@@ -455,10 +492,12 @@ def raw_init_module(module_data: bytes, params: str = "") -> int:
     module_buf = ctypes.create_string_buffer(module_data)
     params_buf = ctypes.create_string_buffer(params.encode() + b"\x00")
 
-    ret = syscall(SYS_INIT_MODULE,
-                  ctypes.cast(module_buf, ctypes.c_void_p),
-                  ctypes.c_ulong(len(module_data)),
-                  ctypes.cast(params_buf, ctypes.c_char_p))
+    ret = syscall(
+        SYS_INIT_MODULE,
+        ctypes.cast(module_buf, ctypes.c_void_p),
+        ctypes.c_ulong(len(module_data)),
+        ctypes.cast(params_buf, ctypes.c_char_p),
+    )
 
     if ret != 0:
         errno = ctypes.get_errno()
@@ -470,10 +509,11 @@ def raw_init_module(module_data: bytes, params: str = "") -> int:
 # Commands
 # ===========================================================================
 
+
 def cmd_info(args):
     """Show kernel info relevant to module loading."""
     uname = os.uname()
-    print(f"\n[*] ══════ KERNEL MODULE PORTABILITY INFO ══════\n")
+    print("\n[*] ══════ KERNEL MODULE PORTABILITY INFO ══════\n")
     print(f"  Kernel release:      {uname.release}")
     print(f"  Kernel version:      {uname.version}")
     print(f"  Machine:             {uname.machine}")
@@ -481,7 +521,9 @@ def cmd_info(args):
 
     # Check features
     kdir = Path(f"/lib/modules/{uname.release}/build")
-    print(f"\n  Kernel headers:      {'installed' if kdir.exists() else 'NOT installed'}")
+    print(
+        f"\n  Kernel headers:      {'installed' if kdir.exists() else 'NOT installed'}"
+    )
 
     # Check module signing enforcement
     sig_enforce = False
@@ -490,54 +532,59 @@ def cmd_info(args):
         text = config.read_text()
         if "CONFIG_MODULE_SIG_FORCE=y" in text:
             sig_enforce = True
-            print(f"  Module signing:      ENFORCED (CONFIG_MODULE_SIG_FORCE=y)")
-            print(f"                       → unsigned modules will be REJECTED")
+            print("  Module signing:      ENFORCED (CONFIG_MODULE_SIG_FORCE=y)")
+            print("                       → unsigned modules will be REJECTED")
         elif "CONFIG_MODULE_SIG=y" in text:
-            print(f"  Module signing:      enabled but not enforced")
-            print(f"                       → unsigned modules load with taint")
+            print("  Module signing:      enabled but not enforced")
+            print("                       → unsigned modules load with taint")
         else:
-            print(f"  Module signing:      disabled")
+            print("  Module signing:      disabled")
 
         if "CONFIG_LOCK_DOWN_KERNEL" in text:
-            print(f"  Lockdown:            enabled")
-            print(f"                       → may block unsigned module loading")
+            print("  Lockdown:            enabled")
+            print("                       → may block unsigned module loading")
 
     # Kallsyms accessibility
     syms = read_kallsyms()
     if syms:
         print(f"\n  /proc/kallsyms:      readable ({len(syms)} symbols)")
         # Key symbols for module loading
-        for sym in ["init_module", "module_alloc", "set_memory_x",
-                     "commit_creds", "prepare_kernel_cred"]:
+        for sym in [
+            "init_module",
+            "module_alloc",
+            "set_memory_x",
+            "commit_creds",
+            "prepare_kernel_cred",
+        ]:
             addr = syms.get(sym, 0)
             if addr:
                 print(f"    {sym:<28} {addr:#018x}")
     else:
-        print(f"\n  /proc/kallsyms:      NOT readable (need root)")
+        print("\n  /proc/kallsyms:      NOT readable (need root)")
 
     # Portability assessment
-    print(f"\n  ── Portability assessment ──")
+    print("\n  ── Portability assessment ──")
     if sig_enforce:
-        print(f"  [!] Module signing enforced — .ko loading blocked")
-        print(f"      Alternatives: eBPF, or exploit a signed module")
+        print("  [!] Module signing enforced — .ko loading blocked")
+        print("      Alternatives: eBPF, or exploit a signed module")
     elif not kdir.exists():
-        print(f"  [*] No kernel headers — can't compile .ko on target")
-        print(f"      Use: cross-compile, vermagic patch, or raw init_module")
+        print("  [*] No kernel headers — can't compile .ko on target")
+        print("      Use: cross-compile, vermagic patch, or raw init_module")
     else:
-        print(f"  [+] Standard .ko loading should work")
+        print("  [+] Standard .ko loading should work")
 
-    print(f"\n  Techniques by portability:")
-    print(f"    1. eBPF (most portable)     — works on 5.8+, no signing")
-    print(f"    2. Raw init_module          — no headers needed on target")
-    print(f"    3. Vermagic-patched .ko     — cross-compiled, patched")
-    print(f"    4. Standard .ko (least)     — requires matching headers")
+    print("\n  Techniques by portability:")
+    print("    1. eBPF (most portable)     — works on 5.8+, no signing")
+    print("    2. Raw init_module          — no headers needed on target")
+    print("    3. Vermagic-patched .ko     — cross-compiled, patched")
+    print("    4. Standard .ko (least)     — requires matching headers")
 
     return 0
 
 
 def cmd_patch(args):
     """Patch vermagic in a .ko file."""
-    print(f"\n[*] ══════ VERMAGIC PATCH ══════\n")
+    print("\n[*] ══════ VERMAGIC PATCH ══════\n")
     patched = patch_vermagic(args.ko_path)
     print(f"\n[*] Try loading: sudo insmod {patched}")
     return 0
@@ -545,8 +592,8 @@ def cmd_patch(args):
 
 def cmd_raw_load(args):
     """Build and load a minimal module from raw code."""
-    print(f"\n[*] ══════ RAW init_module LOADER ══════")
-    print(f"[*] Building minimal ELF module without kernel headers\n")
+    print("\n[*] ══════ RAW init_module LOADER ══════")
+    print("[*] Building minimal ELF module without kernel headers\n")
 
     code_path = Path(args.code)
     if not code_path.exists():
@@ -571,12 +618,12 @@ def cmd_raw_load(args):
         return 0
 
     # Load via init_module syscall
-    print(f"[*] Calling init_module() syscall...")
+    print("[*] Calling init_module() syscall...")
     params = args.params or ""
     ret = raw_init_module(module_elf, params)
 
     if ret == 0:
-        print(f"[+] Module loaded successfully!")
+        print("[+] Module loaded successfully!")
         # Show dmesg
         dmesg = subprocess.run(["dmesg"], capture_output=True, text=True)
         for line in dmesg.stdout.strip().split("\n")[-10:]:
@@ -584,10 +631,10 @@ def cmd_raw_load(args):
                 print(f"  {line}")
     else:
         print(f"[!] init_module failed: error {-ret} ({os.strerror(-ret)})")
-        print(f"[*] Common failures:")
-        print(f"    EPERM (1):   module signing enforced")
-        print(f"    ENOEXEC (8): ELF format error or vermagic mismatch")
-        print(f"    ENOENT (2):  missing required symbol/section")
+        print("[*] Common failures:")
+        print("    EPERM (1):   module signing enforced")
+        print("    ENOEXEC (8): ELF format error or vermagic mismatch")
+        print("    ENOENT (2):  missing required symbol/section")
         print(f"[*] Debug with: readelf -a {elf_path}")
         return 1
 
@@ -609,26 +656,27 @@ Examples:
   python3 mbed/kmod_loader/portable_kmod.py info
   sudo python3 mbed/kmod_loader/portable_kmod.py patch-vermagic pic_kmod.ko
   sudo python3 mbed/kmod_loader/portable_kmod.py raw-load --code blob.bin
-        """)
+        """,
+    )
 
     subs = parser.add_subparsers(dest="command", required=True)
 
     subs.add_parser("info", help="Show kernel module portability info")
 
-    p_patch = subs.add_parser("patch-vermagic",
-        help="Patch vermagic in a .ko file")
+    p_patch = subs.add_parser("patch-vermagic", help="Patch vermagic in a .ko file")
     p_patch.add_argument("ko_path", help="Path to .ko file")
 
-    p_raw = subs.add_parser("raw-load",
-        help="Build and load minimal module from raw code")
-    p_raw.add_argument("--code", required=True,
-                       help="Path to raw code binary")
-    p_raw.add_argument("--name", default="",
-                       help="Module name (default: filename stem)")
-    p_raw.add_argument("--params", default="",
-                       help="Module parameters string")
-    p_raw.add_argument("--dry-run", action="store_true",
-                       help="Build ELF but don't load")
+    p_raw = subs.add_parser(
+        "raw-load", help="Build and load minimal module from raw code"
+    )
+    p_raw.add_argument("--code", required=True, help="Path to raw code binary")
+    p_raw.add_argument(
+        "--name", default="", help="Module name (default: filename stem)"
+    )
+    p_raw.add_argument("--params", default="", help="Module parameters string")
+    p_raw.add_argument(
+        "--dry-run", action="store_true", help="Build ELF but don't load"
+    )
 
     args = parser.parse_args()
 
@@ -636,8 +684,9 @@ Examples:
         print("[!] Requires root")
         return 1
 
-    return {"info": cmd_info, "patch-vermagic": cmd_patch,
-            "raw-load": cmd_raw_load}[args.command](args)
+    return {"info": cmd_info, "patch-vermagic": cmd_patch, "raw-load": cmd_raw_load}[
+        args.command
+    ](args)
 
 
 if __name__ == "__main__":

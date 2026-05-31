@@ -48,12 +48,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ctypes
+import importlib.util
 import os
-import signal
 import sys
 import time
 from pathlib import Path
-
 
 # ===========================================================================
 # Template 1: Syscall monitor
@@ -128,23 +128,74 @@ TRACEPOINT_PROBE(raw_syscalls, sys_exit) {
 
 # x86_64 syscall number → name (common ones)
 SYSCALL_NAMES = {
-    0: "read", 1: "write", 2: "open", 3: "close", 4: "stat",
-    5: "fstat", 6: "lstat", 7: "poll", 8: "lseek", 9: "mmap",
-    10: "mprotect", 11: "munmap", 12: "brk", 13: "rt_sigaction",
-    14: "rt_sigprocmask", 16: "ioctl", 17: "pread64", 18: "pwrite64",
-    19: "readv", 20: "writev", 21: "access", 22: "pipe", 23: "select",
-    28: "madvise", 32: "dup", 33: "dup2", 35: "nanosleep",
-    39: "getpid", 41: "socket", 42: "connect", 43: "accept",
-    44: "sendto", 45: "recvfrom", 46: "sendmsg", 47: "recvmsg",
-    49: "bind", 50: "listen", 56: "clone", 57: "fork", 58: "vfork",
-    59: "execve", 60: "exit", 62: "kill", 72: "fcntl", 78: "getdents",
-    79: "getcwd", 80: "chdir", 82: "rename", 83: "mkdir",
-    87: "unlink", 89: "readlink", 90: "chmod", 92: "chown",
-    102: "getuid", 104: "getgid", 110: "getppid",
-    157: "prctl", 186: "gettid", 200: "tkill",
-    217: "getdents64", 231: "exit_group", 257: "openat",
-    262: "newfstatat", 281: "epoll_pwait", 290: "eventfd2",
-    302: "prlimit64", 318: "getrandom", 332: "statx",
+    0: "read",
+    1: "write",
+    2: "open",
+    3: "close",
+    4: "stat",
+    5: "fstat",
+    6: "lstat",
+    7: "poll",
+    8: "lseek",
+    9: "mmap",
+    10: "mprotect",
+    11: "munmap",
+    12: "brk",
+    13: "rt_sigaction",
+    14: "rt_sigprocmask",
+    16: "ioctl",
+    17: "pread64",
+    18: "pwrite64",
+    19: "readv",
+    20: "writev",
+    21: "access",
+    22: "pipe",
+    23: "select",
+    28: "madvise",
+    32: "dup",
+    33: "dup2",
+    35: "nanosleep",
+    39: "getpid",
+    41: "socket",
+    42: "connect",
+    43: "accept",
+    44: "sendto",
+    45: "recvfrom",
+    46: "sendmsg",
+    47: "recvmsg",
+    49: "bind",
+    50: "listen",
+    56: "clone",
+    57: "fork",
+    58: "vfork",
+    59: "execve",
+    60: "exit",
+    62: "kill",
+    72: "fcntl",
+    78: "getdents",
+    79: "getcwd",
+    80: "chdir",
+    82: "rename",
+    83: "mkdir",
+    87: "unlink",
+    89: "readlink",
+    90: "chmod",
+    92: "chown",
+    102: "getuid",
+    104: "getgid",
+    110: "getppid",
+    157: "prctl",
+    186: "gettid",
+    200: "tkill",
+    217: "getdents64",
+    231: "exit_group",
+    257: "openat",
+    262: "newfstatat",
+    281: "epoll_pwait",
+    290: "eventfd2",
+    302: "prlimit64",
+    318: "getrandom",
+    332: "statx",
     435: "clone3",
 }
 
@@ -157,18 +208,17 @@ def mode_syscall_monitor(args):
     src = BPF_SYSCALL_MONITOR.replace("__TARGET_PID__", str(pid))
 
     target_str = f"PID {pid}" if pid else "ALL processes"
-    print(f"\n[*] ══════ KERNEL SYSCALL MONITOR ══════")
+    print("\n[*] ══════ KERNEL SYSCALL MONITOR ══════")
     print(f"[*] Target: {target_str}")
-    print(f"[*] Tracing: raw_syscalls:sys_enter + sys_exit")
-    print(f"[*] All events captured in kernel context")
-    print(f"[*] Ctrl+C to stop\n")
+    print("[*] Tracing: raw_syscalls:sys_enter + sys_exit")
+    print("[*] All events captured in kernel context")
+    print("[*] Ctrl+C to stop\n")
 
     b = BPF(text=src)
 
     start_ts = [0]
 
-    print(f"{'TIME':>12}  {'PID':>7}  {'COMM':<16}  {'SYSCALL':<16}  "
-          f"{'ARGS / RETURN'}")
+    print(f"{'TIME':>12}  {'PID':>7}  {'COMM':<16}  {'SYSCALL':<16}  {'ARGS / RETURN'}")
     print(f"{'─' * 12}  {'─' * 7}  {'─' * 16}  {'─' * 16}  {'─' * 40}")
 
     def handle_event(ctx, data, size):
@@ -185,12 +235,15 @@ def mode_syscall_monitor(args):
             ret = event.ret
             if ret > 0xFFFFFFFF00000000:
                 ret = -(0x10000000000000000 - ret)  # sign-extend
-            print(f"{ts:>12.6f}  {event.pid:>7}  {comm:<16}  "
-                  f"{'← ' + name:<16}  ret={ret}")
+            print(
+                f"{ts:>12.6f}  {event.pid:>7}  {comm:<16}  {'← ' + name:<16}  ret={ret}"
+            )
         else:
-            print(f"{ts:>12.6f}  {event.pid:>7}  {comm:<16}  "
-                  f"{'→ ' + name:<16}  "
-                  f"({event.arg0:#x}, {event.arg1:#x}, {event.arg2:#x})")
+            print(
+                f"{ts:>12.6f}  {event.pid:>7}  {comm:<16}  "
+                f"{'→ ' + name:<16}  "
+                f"({event.arg0:#x}, {event.arg1:#x}, {event.arg2:#x})"
+            )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -198,7 +251,7 @@ def mode_syscall_monitor(args):
         while True:
             b.ring_buffer_poll(timeout=100)
     except KeyboardInterrupt:
-        print(f"\n[*] Stopped")
+        print("\n[*] Stopped")
 
     return 0
 
@@ -306,19 +359,17 @@ def mode_file_snoop(args):
     src = BPF_FILE_SNOOP.replace("__TARGET_PID__", str(pid))
 
     target_str = f"PID {pid}" if pid else "ALL processes"
-    print(f"\n[*] ══════ KERNEL FILE SNOOP ══════")
+    print("\n[*] ══════ KERNEL FILE SNOOP ══════")
     print(f"[*] Target: {target_str}")
-    print(f"[*] Tracing: openat, read, write")
-    print(f"[*] Ctrl+C to stop\n")
+    print("[*] Tracing: openat, read, write")
+    print("[*] Ctrl+C to stop\n")
 
     b = BPF(text=src)
     start_ts = [0]
     OP_NAMES = {0: "OPEN", 1: "READ", 2: "WRITE", 3: "CLOSE"}
 
-    print(f"{'TIME':>10}  {'PID':>7}  {'COMM':<16}  {'OP':<6}  "
-          f"{'BYTES':>8}  {'FILE'}")
-    print(f"{'─' * 10}  {'─' * 7}  {'─' * 16}  {'─' * 6}  "
-          f"{'─' * 8}  {'─' * 40}")
+    print(f"{'TIME':>10}  {'PID':>7}  {'COMM':<16}  {'OP':<6}  {'BYTES':>8}  {'FILE'}")
+    print(f"{'─' * 10}  {'─' * 7}  {'─' * 16}  {'─' * 6}  {'─' * 8}  {'─' * 40}")
 
     def handle_event(ctx, data, size):
         event = b["events"].event(data)
@@ -329,8 +380,9 @@ def mode_file_snoop(args):
         op = OP_NAMES.get(event.op, "?")
         fname = event.fname.decode("utf-8", errors="replace").rstrip("\x00")
         bytes_str = str(event.bytes) if event.bytes else ""
-        print(f"{ts:>10.4f}  {event.pid:>7}  {comm:<16}  {op:<6}  "
-              f"{bytes_str:>8}  {fname}")
+        print(
+            f"{ts:>10.4f}  {event.pid:>7}  {comm:<16}  {op:<6}  {bytes_str:>8}  {fname}"
+        )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -338,7 +390,7 @@ def mode_file_snoop(args):
         while True:
             b.ring_buffer_poll(timeout=100)
     except KeyboardInterrupt:
-        print(f"\n[*] Stopped")
+        print("\n[*] Stopped")
     return 0
 
 
@@ -425,19 +477,27 @@ int xdp_inspect(struct xdp_md *ctx) {
 
 def ip_to_str(ip_int):
     """Convert network-byte-order u32 to dotted quad."""
-    import socket, struct
+    import socket
+    import struct
+
     return socket.inet_ntoa(struct.pack("!I", ip_int))
 
 
 def tcp_flags_str(flags):
     """Decode TCP flags byte."""
     names = []
-    if flags & 0x02: names.append("SYN")
-    if flags & 0x10: names.append("ACK")
-    if flags & 0x01: names.append("FIN")
-    if flags & 0x04: names.append("RST")
-    if flags & 0x08: names.append("PSH")
-    if flags & 0x20: names.append("URG")
+    if flags & 0x02:
+        names.append("SYN")
+    if flags & 0x10:
+        names.append("ACK")
+    if flags & 0x01:
+        names.append("FIN")
+    if flags & 0x04:
+        names.append("RST")
+    if flags & 0x08:
+        names.append("PSH")
+    if flags & 0x20:
+        names.append("URG")
     return "|".join(names) if names else ""
 
 
@@ -447,11 +507,11 @@ def mode_net_inspect(args):
 
     iface = args.iface or "eth0"
 
-    print(f"\n[*] ══════ XDP NETWORK INSPECTOR ══════")
+    print("\n[*] ══════ XDP NETWORK INSPECTOR ══════")
     print(f"[*] Interface: {iface}")
-    print(f"[*] Attachment point: XDP (pre-stack, NIC level)")
-    print(f"[*] This runs in kernel context before any packet processing")
-    print(f"[*] Ctrl+C to stop\n")
+    print("[*] Attachment point: XDP (pre-stack, NIC level)")
+    print("[*] This runs in kernel context before any packet processing")
+    print("[*] Ctrl+C to stop\n")
 
     b = BPF(text=BPF_NET_INSPECT)
     fn = b.load_func("xdp_inspect", BPF.XDP)
@@ -460,10 +520,11 @@ def mode_net_inspect(args):
     start_ts = [0]
     PROTO = {6: "TCP", 17: "UDP", 1: "ICMP"}
 
-    print(f"{'TIME':>10}  {'PROTO':<5}  {'SOURCE':<21}  {'DEST':<21}  "
-          f"{'LEN':>5}  {'FLAGS'}")
-    print(f"{'─' * 10}  {'─' * 5}  {'─' * 21}  {'─' * 21}  "
-          f"{'─' * 5}  {'─' * 15}")
+    print(
+        f"{'TIME':>10}  {'PROTO':<5}  {'SOURCE':<21}  {'DEST':<21}  "
+        f"{'LEN':>5}  {'FLAGS'}"
+    )
+    print(f"{'─' * 10}  {'─' * 5}  {'─' * 21}  {'─' * 21}  {'─' * 5}  {'─' * 15}")
 
     def handle_event(ctx, data, size):
         event = b["events"].event(data)
@@ -479,8 +540,10 @@ def mode_net_inspect(args):
             dst = f"{dst}:{event.dst_port}"
         flags = tcp_flags_str(event.tcp_flags)
 
-        print(f"{ts:>10.4f}  {proto:<5}  {src:<21}  {dst:<21}  "
-              f"{event.pkt_len:>5}  {flags}")
+        print(
+            f"{ts:>10.4f}  {proto:<5}  {src:<21}  {dst:<21}  "
+            f"{event.pkt_len:>5}  {flags}"
+        )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -593,14 +656,55 @@ TRACEPOINT_PROBE(syscalls, sys_enter_openat) {
 """
 
 KEY_NAMES = {
-    1: "ESC", 2: "1", 3: "2", 4: "3", 5: "4", 6: "5", 7: "6", 8: "7",
-    9: "8", 10: "9", 11: "0", 14: "BACKSPACE", 15: "TAB", 16: "Q",
-    17: "W", 18: "E", 19: "R", 20: "T", 21: "Y", 22: "U", 23: "I",
-    24: "O", 25: "P", 28: "ENTER", 29: "L_CTRL", 30: "A", 31: "S",
-    32: "D", 33: "F", 34: "G", 35: "H", 36: "J", 37: "K", 38: "L",
-    42: "L_SHIFT", 44: "Z", 45: "X", 46: "C", 47: "V", 48: "B",
-    49: "N", 50: "M", 54: "R_SHIFT", 56: "L_ALT", 57: "SPACE",
-    58: "CAPSLOCK", 97: "R_CTRL", 100: "R_ALT", 125: "L_META",
+    1: "ESC",
+    2: "1",
+    3: "2",
+    4: "3",
+    5: "4",
+    6: "5",
+    7: "6",
+    8: "7",
+    9: "8",
+    10: "9",
+    11: "0",
+    14: "BACKSPACE",
+    15: "TAB",
+    16: "Q",
+    17: "W",
+    18: "E",
+    19: "R",
+    20: "T",
+    21: "Y",
+    22: "U",
+    23: "I",
+    24: "O",
+    25: "P",
+    28: "ENTER",
+    29: "L_CTRL",
+    30: "A",
+    31: "S",
+    32: "D",
+    33: "F",
+    34: "G",
+    35: "H",
+    36: "J",
+    37: "K",
+    38: "L",
+    42: "L_SHIFT",
+    44: "Z",
+    45: "X",
+    46: "C",
+    47: "V",
+    48: "B",
+    49: "N",
+    50: "M",
+    54: "R_SHIFT",
+    56: "L_ALT",
+    57: "SPACE",
+    58: "CAPSLOCK",
+    97: "R_CTRL",
+    100: "R_ALT",
+    125: "L_META",
 }
 
 
@@ -608,12 +712,12 @@ def mode_keylog_detect(args):
     """Template 4: Keyboard input monitor and keylogger detector."""
     from bcc import BPF
 
-    print(f"\n[*] ══════ KERNEL KEYBOARD MONITOR ══════")
-    print(f"[*] Hooking: input_event (kernel input subsystem)")
-    print(f"[*] Also watching: openat for /dev/input/* access")
-    print(f"[*] This shows how keyloggers intercept input")
-    print(f"[*] and how to detect processes reading input devices")
-    print(f"[*] Ctrl+C to stop\n")
+    print("\n[*] ══════ KERNEL KEYBOARD MONITOR ══════")
+    print("[*] Hooking: input_event (kernel input subsystem)")
+    print("[*] Also watching: openat for /dev/input/* access")
+    print("[*] This shows how keyloggers intercept input")
+    print("[*] and how to detect processes reading input devices")
+    print("[*] Ctrl+C to stop\n")
 
     b = BPF(text=BPF_KEYLOG_DETECT)
     b.attach_kprobe(event="input_event", fn_name="trace_input_event")
@@ -633,12 +737,14 @@ def mode_keylog_detect(args):
             # Input device opened — potential keylogger alert
             suspicious_pids.add(event.pid)
             print(f"\n[!] ALERT: PID {event.pid} ({comm}) opened {dev}")
-            print(f"[!] This process may be a keylogger!\n")
+            print("[!] This process may be a keylogger!\n")
         else:
             key = KEY_NAMES.get(event.code, f"KEY_{event.code}")
             marker = " [!]" if event.pid in suspicious_pids else ""
-            print(f"{ts:>10.4f}  {event.pid:>7}  {comm:<16}  "
-                  f"KEY: {key:<12}  dev: {dev}{marker}")
+            print(
+                f"{ts:>10.4f}  {event.pid:>7}  {comm:<16}  "
+                f"KEY: {key:<12}  dev: {dev}{marker}"
+            )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -649,9 +755,10 @@ def mode_keylog_detect(args):
         pass
 
     if suspicious_pids:
-        print(f"\n[!] Suspicious PIDs that opened /dev/input/*: "
-              f"{sorted(suspicious_pids)}")
-    print(f"[*] Stopped")
+        print(
+            f"\n[!] Suspicious PIDs that opened /dev/input/*: {sorted(suspicious_pids)}"
+        )
+    print("[*] Stopped")
     return 0
 
 
@@ -723,10 +830,10 @@ def mode_cred_monitor(args):
     """Template 5: Monitor all credential changes system-wide."""
     from bcc import BPF
 
-    print(f"\n[*] ══════ KERNEL CREDENTIAL CHANGE MONITOR ══════")
-    print(f"[*] Hooking: commit_creds (kernel credential update path)")
-    print(f"[*] Every setuid, capset, and privesc goes through this function")
-    print(f"[*] Ctrl+C to stop\n")
+    print("\n[*] ══════ KERNEL CREDENTIAL CHANGE MONITOR ══════")
+    print("[*] Hooking: commit_creds (kernel credential update path)")
+    print("[*] Every setuid, capset, and privesc goes through this function")
+    print("[*] Ctrl+C to stop\n")
 
     b = BPF(text=BPF_CRED_MONITOR)
     b.attach_kprobe(event="commit_creds", fn_name="trace_commit_creds")
@@ -743,22 +850,28 @@ def mode_cred_monitor(args):
         uid_changed = event.old_uid != event.new_uid
         euid_changed = event.old_euid != event.new_euid
         cap_changed = event.old_cap_eff != event.new_cap_eff
-        privesc = (event.old_euid != 0 and event.new_euid == 0)
+        privesc = event.old_euid != 0 and event.new_euid == 0
 
         if privesc:
             print(f"\n{'!' * 72}")
-            print(f"[!!!] PRIVILEGE ESCALATION DETECTED")
-            print(f"[!!!] PID {event.pid} ({comm}) went from "
-                  f"euid={event.old_euid} → euid=0 (ROOT)")
+            print("[!!!] PRIVILEGE ESCALATION DETECTED")
+            print(
+                f"[!!!] PID {event.pid} ({comm}) went from "
+                f"euid={event.old_euid} → euid=0 (ROOT)"
+            )
             print(f"[!!!] Caller: {event.caller_ip:#018x}")
             print(f"{'!' * 72}\n")
         elif uid_changed or euid_changed:
-            print(f"{ts:>10.4f}  PID {event.pid:>7}  {comm:<16}  "
-                  f"uid: {event.old_uid}→{event.new_uid}  "
-                  f"euid: {event.old_euid}→{event.new_euid}")
+            print(
+                f"{ts:>10.4f}  PID {event.pid:>7}  {comm:<16}  "
+                f"uid: {event.old_uid}→{event.new_uid}  "
+                f"euid: {event.old_euid}→{event.new_euid}"
+            )
         elif cap_changed:
-            print(f"{ts:>10.4f}  PID {event.pid:>7}  {comm:<16}  "
-                  f"caps: {event.old_cap_eff:#x}→{event.new_cap_eff:#x}")
+            print(
+                f"{ts:>10.4f}  PID {event.pid:>7}  {comm:<16}  "
+                f"caps: {event.old_cap_eff:#x}→{event.new_cap_eff:#x}"
+            )
 
     b["events"].open_ring_buffer(handle_event)
 
@@ -768,13 +881,14 @@ def mode_cred_monitor(args):
     except KeyboardInterrupt:
         pass
 
-    print(f"\n[*] Stopped")
+    print("\n[*] Stopped")
     return 0
 
 
 # ===========================================================================
 # Template 6: Custom program loader
 # ===========================================================================
+
 
 def mode_custom(args):
     """Load and run a custom BPF C program from a file."""
@@ -787,7 +901,7 @@ def mode_custom(args):
 
     src = prog_path.read_text()
 
-    print(f"\n[*] ══════ CUSTOM eBPF PROGRAM ══════")
+    print("\n[*] ══════ CUSTOM eBPF PROGRAM ══════")
     print(f"[*] Loading: {prog_path}")
     print(f"[*] Size: {len(src)} bytes")
     print()
@@ -799,21 +913,21 @@ def mode_custom(args):
     try:
         b = BPF(text=src)
     except Exception as e:
-        print(f"[!] BPF compilation/verification failed:")
+        print("[!] BPF compilation/verification failed:")
         print(f"    {e}")
-        print(f"\n[*] Common issues:")
-        print(f"    - BPF verifier rejected the program (too complex, "
-              f"unbounded loops)")
-        print(f"    - Missing kernel headers for struct definitions")
-        print(f"    - Invalid memory access (forgot bpf_probe_read_kernel)")
+        print("\n[*] Common issues:")
+        print("    - BPF verifier rejected the program (too complex, unbounded loops)")
+        print("    - Missing kernel headers for struct definitions")
+        print("    - Invalid memory access (forgot bpf_probe_read_kernel)")
         return 1
 
-    print(f"[+] Program loaded and verified successfully!")
-    print(f"[*] The BPF verifier accepted your program — it's now in kernel")
-    print(f"[*] Press Ctrl+C to unload\n")
+    print("[+] Program loaded and verified successfully!")
+    print("[*] The BPF verifier accepted your program — it's now in kernel")
+    print("[*] Press Ctrl+C to unload\n")
 
     # If the program has a ring buffer named 'events', print events
     try:
+
         def handle_event(ctx, data, size):
             raw = ctypes.string_at(data, size)
             print(f"[event] {size} bytes: {raw[:64].hex()}")
@@ -822,7 +936,7 @@ def mode_custom(args):
         has_events = True
     except KeyError:
         has_events = False
-        print(f"[*] No 'events' ring buffer found — program runs silently")
+        print("[*] No 'events' ring buffer found — program runs silently")
 
     try:
         while True:
@@ -833,7 +947,7 @@ def mode_custom(args):
     except KeyboardInterrupt:
         pass
 
-    print(f"\n[*] Program unloaded from kernel")
+    print("\n[*] Program unloaded from kernel")
     return 0
 
 
@@ -841,42 +955,61 @@ def mode_custom(args):
 # List templates
 # ===========================================================================
 
+
 def mode_list(args):
     """List available templates with descriptions."""
-    print(f"\n[*] ══════ AVAILABLE KERNEL PROGRAM TEMPLATES ══════\n")
+    print("\n[*] ══════ AVAILABLE KERNEL PROGRAM TEMPLATES ══════\n")
 
     templates = [
-        ("syscall-monitor", "Log all syscalls with args/return values",
-         "sudo python3 mbed/ebpf_kernel_prog.py syscall-monitor --pid 1234"),
-        ("file-snoop", "Monitor file open/read/write from kernel",
-         "sudo python3 mbed/ebpf_kernel_prog.py file-snoop --pid 1234"),
-        ("net-inspect", "XDP packet inspector (NIC level, pre-stack)",
-         "sudo python3 mbed/ebpf_kernel_prog.py net-inspect --iface eth0"),
-        ("keylog-detect", "Keyboard input monitor + keylogger detection",
-         "sudo python3 mbed/ebpf_kernel_prog.py keylog-detect"),
-        ("cred-monitor", "Privilege escalation detector (hooks commit_creds)",
-         "sudo python3 mbed/ebpf_kernel_prog.py cred-monitor"),
-        ("custom", "Load your own BPF C program from a file",
-         "sudo python3 mbed/ebpf_kernel_prog.py custom --program my.c"),
+        (
+            "syscall-monitor",
+            "Log all syscalls with args/return values",
+            "sudo python3 mbed/ebpf_kernel_prog.py syscall-monitor --pid 1234",
+        ),
+        (
+            "file-snoop",
+            "Monitor file open/read/write from kernel",
+            "sudo python3 mbed/ebpf_kernel_prog.py file-snoop --pid 1234",
+        ),
+        (
+            "net-inspect",
+            "XDP packet inspector (NIC level, pre-stack)",
+            "sudo python3 mbed/ebpf_kernel_prog.py net-inspect --iface eth0",
+        ),
+        (
+            "keylog-detect",
+            "Keyboard input monitor + keylogger detection",
+            "sudo python3 mbed/ebpf_kernel_prog.py keylog-detect",
+        ),
+        (
+            "cred-monitor",
+            "Privilege escalation detector (hooks commit_creds)",
+            "sudo python3 mbed/ebpf_kernel_prog.py cred-monitor",
+        ),
+        (
+            "custom",
+            "Load your own BPF C program from a file",
+            "sudo python3 mbed/ebpf_kernel_prog.py custom --program my.c",
+        ),
     ]
 
     for name, desc, example in templates:
         print(f"  {name:<20}  {desc}")
         print(f"  {'':20}  $ {example}\n")
 
-    print(f"Writing custom programs:")
-    print(f"  Create a .c file with BPF C code. You can use:")
-    print(f"    - bpf_probe_read_kernel()     read kernel memory")
-    print(f"    - bpf_probe_write_user()      write to userspace memory")
-    print(f"    - bpf_get_current_task()      get current task_struct")
-    print(f"    - bpf_get_current_pid_tgid()  get PID/TID")
-    print(f"    - bpf_get_current_comm()      get process name")
-    print(f"    - bpf_ktime_get_ns()          nanosecond timestamp")
-    print(f"    - BPF_RINGBUF_OUTPUT()        ring buffer for events")
-    print(f"    - BPF_HASH / BPF_ARRAY        maps for state")
+    print("Writing custom programs:")
+    print("  Create a .c file with BPF C code. You can use:")
+    print("    - bpf_probe_read_kernel()     read kernel memory")
+    print("    - bpf_probe_write_user()      write to userspace memory")
+    print("    - bpf_get_current_task()      get current task_struct")
+    print("    - bpf_get_current_pid_tgid()  get PID/TID")
+    print("    - bpf_get_current_comm()      get process name")
+    print("    - bpf_ktime_get_ns()          nanosecond timestamp")
+    print("    - BPF_RINGBUF_OUTPUT()        ring buffer for events")
+    print("    - BPF_HASH / BPF_ARRAY        maps for state")
     print()
-    print(f"  The BPF verifier will reject unsafe programs.")
-    print(f"  Use __TARGET_PID__ as a placeholder — replaced by --pid.\n")
+    print("  The BPF verifier will reject unsafe programs.")
+    print("  Use __TARGET_PID__ as a placeholder — replaced by --pid.\n")
 
     return 0
 
@@ -884,6 +1017,7 @@ def mode_list(args):
 # ===========================================================================
 # Main
 # ===========================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -900,7 +1034,8 @@ Examples:
   sudo python3 mbed/ebpf_kernel_prog.py net-inspect --iface eth0
   sudo python3 mbed/ebpf_kernel_prog.py custom --program my_prog.c
   sudo python3 mbed/ebpf_kernel_prog.py list
-        """)
+        """,
+    )
 
     subs = parser.add_subparsers(dest="template", required=True)
 
@@ -913,15 +1048,15 @@ Examples:
     p3 = subs.add_parser("net-inspect", help="XDP packet inspector")
     p3.add_argument("--iface", default="eth0")
 
-    p4 = subs.add_parser("keylog-detect", help="Keyboard monitor + detection")
+    subs.add_parser("keylog-detect", help="Keyboard monitor + detection")
 
-    p5 = subs.add_parser("cred-monitor", help="Privilege escalation detector")
+    subs.add_parser("cred-monitor", help="Privilege escalation detector")
 
     p6 = subs.add_parser("custom", help="Load custom BPF program")
     p6.add_argument("--program", required=True, help="Path to BPF C source")
     p6.add_argument("--pid", type=int, default=0)
 
-    p7 = subs.add_parser("list", help="List available templates")
+    subs.add_parser("list", help="List available templates")
 
     args = parser.parse_args()
 
@@ -929,13 +1064,10 @@ Examples:
         print("[!] Requires root for eBPF program loading")
         return 1
 
-    if args.template != "list":
-        try:
-            from bcc import BPF
-        except ImportError:
-            print("ERROR: BCC not installed.")
-            print("Run: apt install bpfcc-tools python3-bpfcc")
-            return 1
+    if args.template != "list" and importlib.util.find_spec("bcc") is None:
+        print("ERROR: BCC not installed.")
+        print("Run: apt install bpfcc-tools python3-bpfcc")
+        return 1
 
     handlers = {
         "syscall-monitor": mode_syscall_monitor,

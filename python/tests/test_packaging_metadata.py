@@ -94,10 +94,13 @@ class TestPicblobsCliPackaging:
 
 
 class TestRepoTooling:
-    def test_sourceme_installs_lefthook(self) -> None:
-        content = (REPO_ROOT / "sourceme").read_text()
+    def test_setup_installs_lefthook(self) -> None:
+        # sourceme delegates all setup to `task setup`, which installs hooks.
+        sourceme = (REPO_ROOT / "sourceme").read_text()
+        assert "task setup" in sourceme
 
-        assert "lefthook install" in content
+        taskfile = (REPO_ROOT / "Taskfile.yml").read_text()
+        assert "lefthook install" in taskfile
 
     def test_lefthook_covers_repo_quality_entrypoints(self) -> None:
         content = (REPO_ROOT / "lefthook.yml").read_text()

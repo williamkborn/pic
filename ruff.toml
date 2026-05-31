@@ -47,3 +47,22 @@ ignore = [
 "tools/generate.py" = ["E501"]
 "tools/registry.py" = ["E501"]
 "tools/validate_wine.py" = ["E402"]
+# kernel/ is standalone operational/educational tooling (eBPF labs, kmod
+# loaders, VM harness) run as root with external tools. It is linted for
+# correctness (all F-codes, real bugs) but exempt from style / ergonomics /
+# security-context rules that do not fit standalone operator scripts.
+"kernel/**/*.py" = [
+    "E402",    # imports after sys.path setup
+    "E501",    # long operator-facing banners/print lines
+    "PERF401", # manual list build vs comprehension
+    "PLW1510", # subprocess.run without explicit check= (results handled inline)
+    "PTH108",  # os.unlink vs Path.unlink
+    "PTH110",  # os.path.exists vs Path.exists
+    "PTH123",  # open() vs Path.open()
+    "PTH208",  # os.listdir vs Path.iterdir
+    "S101",    # assert in scripts
+    "S104",    # bind 0.0.0.0 (listener is intentionally all-interfaces)
+    "S108",    # /tmp usage
+    "S310",    # urllib urlopen of operator-supplied URLs
+    "SIM115",  # explicit open() vs context manager
+]

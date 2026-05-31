@@ -30,37 +30,37 @@ py_test(
     name = "test_extractor",
     size = "small",
     srcs = ["tests/test_extractor.py"],
-    main = "tests/test_extractor.py",
+    data = ["tests/conftest.py"],
     imports = ["."],
+    main = "tests/test_extractor.py",
     deps = [
         ":picblobs",
         requirement("pytest"),
     ],
-    data = ["tests/conftest.py"],
 )
 
 py_test(
     name = "test_runner",
     size = "small",
     srcs = ["tests/test_runner.py"],
-    main = "tests/test_runner.py",
+    data = ["tests/conftest.py"],
     imports = ["."],
+    main = "tests/test_runner.py",
     deps = [
         ":picblobs",
         requirement("pytest"),
     ],
-    data = ["tests/conftest.py"],
 )
 
 py_test(
     name = "test_cli",
     size = "small",
     srcs = ["tests/test_cli.py"],
-    main = "tests/test_cli.py",
+    data = ["tests/conftest.py"],
     imports = ["."],
+    main = "tests/test_cli.py",
     deps = [
         ":picblobs",
         requirement("pytest"),
     ],
-    data = ["tests/conftest.py"],
 )

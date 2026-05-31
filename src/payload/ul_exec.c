@@ -740,8 +740,10 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
 	*sp++ = (pic_uintptr)argc;
 	sp = push_string_vector(sp, argc, argv_str);
 	sp = push_string_vector(sp, envp_count, envp_str);
-	sp = push_auxv_entries(sp, entry, phdr_addr, phnum, phentsize,
-		interp_base, random_addr);
+	/* Final write to the stack; the returned (advanced) sp is unused — the
+	 * trampoline jumps with `top`, the initial stack pointer. */
+	push_auxv_entries(sp, entry, phdr_addr, phnum, phentsize, interp_base,
+		random_addr);
 
 	PIC_LOG("ul_exec: stack argc=%d envc=%d top=%x final_sp=%x\n",
 		(long)argc, (long)envp_count,

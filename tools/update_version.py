@@ -108,16 +108,6 @@ VERSION_TARGETS: tuple[VersionTarget, ...] = (
         re.compile(r"(?m)^(\*\*Version\*\*: )([^ |]+)( \|.*)$"),
     ),
     VersionTarget(
-        Path("CLAUDE.md"),
-        "public API __version__ example",
-        re.compile(r'(?m)^(- `__version__: str` — ")([^"]+)(")$'),
-    ),
-    VersionTarget(
-        Path("CLAUDE.md"),
-        "pyproject version example",
-        re.compile(r'(?m)^(version = ")([^"]+)(")$'),
-    ),
-    VersionTarget(
         Path("docs/guide/picblobs-cli.html"),
         "picblobs-cli info example, library version",
         re.compile(r"(?m)^(picblobs:\s+)(\S+)()$"),

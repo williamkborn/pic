@@ -43,14 +43,13 @@ Requirements:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
-import time
 import urllib.request
 from pathlib import Path
 
@@ -95,6 +94,7 @@ VM_DISK_SIZE = "4G"
 # Image management
 # ---------------------------------------------------------------------------
 
+
 def fetch_image(distro: str = DEFAULT_DISTRO) -> Path:
     """Download and verify a cloud image."""
     cfg = DISTROS[distro]
@@ -105,9 +105,8 @@ def fetch_image(distro: str = DEFAULT_DISTRO) -> Path:
         print(f"[*] Image cached: {image_path}")
         if verify_checksum(image_path, cfg):
             return image_path
-        else:
-            print(f"[!] Checksum mismatch — re-downloading")
-            image_path.unlink()
+        print("[!] Checksum mismatch — re-downloading")
+        image_path.unlink()
 
     print(f"[*] Downloading {cfg['name']} cloud image...")
     print(f"[*] URL: {cfg['url']}\n")
@@ -124,7 +123,7 @@ def fetch_image(distro: str = DEFAULT_DISTRO) -> Path:
     print()
 
     if not verify_checksum(image_path, cfg):
-        print(f"[!] Checksum verification FAILED")
+        print("[!] Checksum verification FAILED")
         image_path.unlink()
         sys.exit(1)
 
@@ -159,12 +158,15 @@ def verify_checksum(image_path: Path, cfg: dict) -> bool:
             break
         if len(parts) >= 1:
             candidate = parts[0].lower()
-            if len(candidate) == hash_len and all(c in "0123456789abcdef" for c in candidate):
-                if expected is None:
-                    expected = candidate
+            if (
+                len(candidate) == hash_len
+                and all(c in "0123456789abcdef" for c in candidate)
+                and expected is None
+            ):
+                expected = candidate
 
     if not expected:
-        print(f"[*] Could not parse checksum — skipping verification")
+        print("[*] Could not parse checksum — skipping verification")
         return True
 
     h = hashlib.new(checksum_type)
@@ -185,11 +187,22 @@ def verify_checksum(image_path: Path, cfg: dict) -> bool:
 def create_overlay(base_image: Path, work_dir: Path) -> Path:
     """Create a copy-on-write overlay so the base image stays clean."""
     overlay = work_dir / "overlay.qcow2"
-    subprocess.run([
-        "qemu-img", "create", "-f", "qcow2",
-        "-b", str(base_image.resolve()), "-F", "qcow2",
-        str(overlay), VM_DISK_SIZE
-    ], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "qemu-img",
+            "create",
+            "-f",
+            "qcow2",
+            "-b",
+            str(base_image.resolve()),
+            "-F",
+            "qcow2",
+            str(overlay),
+            VM_DISK_SIZE,
+        ],
+        check=True,
+        capture_output=True,
+    )
     return overlay
 
 
@@ -197,8 +210,10 @@ def create_overlay(base_image: Path, work_dir: Path) -> Path:
 # Cloud-init
 # ---------------------------------------------------------------------------
 
-def create_cloudinit_iso(work_dir: Path, test_script: str = "",
-                         distro: str = DEFAULT_DISTRO) -> Path:
+
+def create_cloudinit_iso(
+    work_dir: Path, test_script: str = "", distro: str = DEFAULT_DISTRO
+) -> Path:
     """Create a cloud-init nocloud ISO with our setup commands."""
 
     ci_dir = work_dir / "cidata"
@@ -206,12 +221,12 @@ def create_cloudinit_iso(work_dir: Path, test_script: str = "",
 
     # meta-data
     (ci_dir / "meta-data").write_text(
-        "instance-id: picblobs-test\n"
-        "local-hostname: labvm\n"
+        "instance-id: picblobs-test\nlocal-hostname: labvm\n"
     )
 
     # Build a single self-contained init script
     import base64
+
     boot_script = "#!/bin/sh\nset -ex\n"
     boot_script += "mkdir -p /mnt/lab\n"
     boot_script += "mount -t 9p -o trans=virtio,version=9p2000.L labshare /mnt/lab 2>/dev/null || true\n"
@@ -260,25 +275,30 @@ runcmd:
     # Try genisoimage first, fall back to mkisofs
     for tool in ["genisoimage", "mkisofs"]:
         if shutil.which(tool):
-            subprocess.run([
-                tool,
-                "-output", str(iso_path),
-                "-volid", "cidata",
-                "-joliet", "-rock",
-                "-quiet",
-                str(ci_dir)
-            ], check=True, capture_output=True)
+            subprocess.run(
+                [
+                    tool,
+                    "-output",
+                    str(iso_path),
+                    "-volid",
+                    "cidata",
+                    "-joliet",
+                    "-rock",
+                    "-quiet",
+                    str(ci_dir),
+                ],
+                check=True,
+                capture_output=True,
+            )
             return iso_path
 
     # Last resort: try xorrisofs
     if shutil.which("xorrisofs"):
-        subprocess.run([
-            "xorrisofs",
-            "-o", str(iso_path),
-            "-V", "cidata",
-            "-J", "-r",
-            str(ci_dir)
-        ], check=True, capture_output=True)
+        subprocess.run(
+            ["xorrisofs", "-o", str(iso_path), "-V", "cidata", "-J", "-r", str(ci_dir)],
+            check=True,
+            capture_output=True,
+        )
         return iso_path
 
     print("[!] No ISO creation tool found (need genisoimage, mkisofs, or xorrisofs)")
@@ -290,32 +310,35 @@ runcmd:
 # QEMU launcher
 # ---------------------------------------------------------------------------
 
-def build_qemu_cmd(overlay: Path, cloudinit_iso: Path,
-                   interactive: bool = False) -> list[str]:
+
+def build_qemu_cmd(
+    overlay: Path, cloudinit_iso: Path, interactive: bool = False
+) -> list[str]:
     """Build the QEMU command line."""
     cmd = [
         "qemu-system-x86_64",
-        "-m", VM_MEMORY,
-        "-smp", VM_CPUS,
+        "-m",
+        VM_MEMORY,
+        "-smp",
+        VM_CPUS,
         "-nographic",
-
         # Boot disk (copy-on-write overlay)
-        "-drive", f"file={overlay},format=qcow2,if=virtio",
-
+        "-drive",
+        f"file={overlay},format=qcow2,if=virtio",
         # Cloud-init ISO
-        "-cdrom", str(cloudinit_iso),
-
+        "-cdrom",
+        str(cloudinit_iso),
         # Share mbed/ directory into guest via virtio-9p (read-only)
-        "-virtfs", f"local,path={KERNEL_DIR},mount_tag=labshare,"
-                   f"security_model=mapped-xattr,id=labfs,readonly=on",
-
+        "-virtfs",
+        f"local,path={KERNEL_DIR},mount_tag=labshare,"
+        f"security_model=mapped-xattr,id=labfs,readonly=on",
         # User-mode networking for apk package install.
         # SLIRP NAT — no inbound connections possible, no port forwarding.
-        "-nic", "user,model=virtio-net-pci",
-
+        "-nic",
+        "user,model=virtio-net-pci",
         # Serial console
-        "-serial", "mon:stdio",
-
+        "-serial",
+        "mon:stdio",
         # Enable KVM if available (much faster)
     ]
 
@@ -333,31 +356,29 @@ def run_vm_interactive(base_image: Path, distro: str = DEFAULT_DISTRO):
     with tempfile.TemporaryDirectory(prefix="picblobs_vm_") as work_dir:
         work = Path(work_dir)
 
-        print(f"[*] Creating overlay disk...")
+        print("[*] Creating overlay disk...")
         overlay = create_overlay(base_image, work)
 
-        print(f"[*] Creating cloud-init ISO...")
+        print("[*] Creating cloud-init ISO...")
         ci_iso = create_cloudinit_iso(work, distro=distro)
 
         cmd = build_qemu_cmd(overlay, ci_iso, interactive=True)
 
         print(f"[*] Booting {DISTROS[distro]['name']} VM (Ctrl+A, X to exit)...")
         print(f"[*] Shared directory: /mnt/lab (= {KERNEL_DIR})")
-        print(f"[*] Login: root / lab")
-        print(f"[*] Kernel headers: apk add linux-virt-dev")
+        print("[*] Login: root / lab")
+        print("[*] Kernel headers: apk add linux-virt-dev")
         print()
 
-        try:
+        with contextlib.suppress(KeyboardInterrupt):
             subprocess.run(cmd)
-        except KeyboardInterrupt:
-            pass
 
-    print(f"\n[*] VM shut down, overlay discarded")
+    print("\n[*] VM shut down, overlay discarded")
 
 
-def run_vm_test(base_image: Path, test_script: str,
-                timeout: int = 300,
-                distro: str = DEFAULT_DISTRO) -> tuple[int, str]:
+def run_vm_test(
+    base_image: Path, test_script: str, timeout: int = 300, distro: str = DEFAULT_DISTRO
+) -> tuple[int, str]:
     """Boot the VM, run a test script, capture output, shut down."""
     with tempfile.TemporaryDirectory(prefix="picblobs_vm_") as work_dir:
         work = Path(work_dir)
@@ -944,6 +965,7 @@ ALL_TESTS = {
 # Commands
 # ---------------------------------------------------------------------------
 
+
 def cmd_fetch(args):
     """Download and verify the VM image."""
     distro = getattr(args, "distro", DEFAULT_DISTRO)
@@ -980,8 +1002,7 @@ def cmd_test(args):
         print(f"[*] Test: {test_name} — {desc}")
         print(f"{'═' * 60}\n")
 
-        rc, output = run_vm_test(image, script, timeout=args.timeout,
-                                distro=distro)
+        rc, output = run_vm_test(image, script, timeout=args.timeout, distro=distro)
 
         # Parse results from output
         passed = "[PASS]" in output
@@ -1001,21 +1022,36 @@ def cmd_test(args):
 
         # Print relevant output lines
         for line in output.splitlines():
-            if any(tag in line for tag in ["[test]", "[PASS]", "[FAIL]",
-                                           "pic_kmod", "══════", "make",
-                                           "error", "Error", "insmod",
-                                           "modinfo", "TEST", "apk",
-                                           "vermagic", "patching",
-                                           "+ ", "RESULT"]):
+            if any(
+                tag in line
+                for tag in [
+                    "[test]",
+                    "[PASS]",
+                    "[FAIL]",
+                    "pic_kmod",
+                    "══════",
+                    "make",
+                    "error",
+                    "Error",
+                    "insmod",
+                    "modinfo",
+                    "TEST",
+                    "apk",
+                    "vermagic",
+                    "patching",
+                    "+ ",
+                    "RESULT",
+                ]
+            ):
                 print(f"  {line.rstrip()}")
 
         if panicked:
-            print(f"\n  [!] KERNEL PANIC — but that's OK, it was in the VM!")
-            print(f"  [*] The host is fine. This is why we use QEMU.")
+            print("\n  [!] KERNEL PANIC — but that's OK, it was in the VM!")
+            print("  [*] The host is fine. This is why we use QEMU.")
 
     # Summary
     print(f"\n{'═' * 60}")
-    print(f"  TEST RESULTS")
+    print("  TEST RESULTS")
     print(f"{'═' * 60}")
     for name, status in results.items():
         desc = ALL_TESTS[name][0]
@@ -1036,17 +1072,17 @@ def cmd_clean(args):
         shutil.rmtree(CACHE_DIR)
         print(f"[+] Removed {CACHE_DIR} ({size / 1024 / 1024:.1f} MB)")
     else:
-        print(f"[*] Nothing to clean")
+        print("[*] Nothing to clean")
     return 0
 
 
 def cmd_list(args):
     """List available tests."""
-    print(f"\n[*] Available tests:\n")
+    print("\n[*] Available tests:\n")
     for name, (desc, _) in ALL_TESTS.items():
         print(f"  {name:<20}  {desc}")
-    print(f"\n  Run all:    python3 kernel/vm/vm_harness.py test")
-    print(f"  Run one:    python3 kernel/vm/vm_harness.py test -t kmod-build")
+    print("\n  Run all:    python3 kernel/vm/vm_harness.py test")
+    print("  Run one:    python3 kernel/vm/vm_harness.py test -t kmod-build")
     return 0
 
 
@@ -1064,13 +1100,14 @@ def check_prereqs():
 
     if missing:
         print(f"[!] Missing required tools: {', '.join(missing)}")
-        print(f"[*] Install with: apt install qemu-system-x86 qemu-utils genisoimage")
+        print("[*] Install with: apt install qemu-system-x86 qemu-utils genisoimage")
         sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1088,7 +1125,8 @@ Examples:
   python3 kernel/vm/vm_harness.py test
   python3 kernel/vm/vm_harness.py test -t kmod-build -t kmod-nopanic
   python3 kernel/vm/vm_harness.py shell
-        """)
+        """,
+    )
 
     subs = parser.add_subparsers(dest="command", required=True)
 
@@ -1096,20 +1134,27 @@ Examples:
     distro_choices = list(DISTROS.keys())
 
     p_test = subs.add_parser("test", help="Run tests in VM")
-    p_test.add_argument("-t", "--tests", action="append",
-                        help="Test name (repeatable, default: all)")
-    p_test.add_argument("--timeout", type=int, default=300,
-                        help="Per-test timeout in seconds (default: 300)")
-    p_test.add_argument("--distro", choices=distro_choices,
-                        default=DEFAULT_DISTRO, help="VM distro (default: alpine)")
+    p_test.add_argument(
+        "-t", "--tests", action="append", help="Test name (repeatable, default: all)"
+    )
+    p_test.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Per-test timeout in seconds (default: 300)",
+    )
+    p_test.add_argument(
+        "--distro",
+        choices=distro_choices,
+        default=DEFAULT_DISTRO,
+        help="VM distro (default: alpine)",
+    )
 
     p_shell = subs.add_parser("shell", help="Interactive VM shell")
-    p_shell.add_argument("--distro", choices=distro_choices,
-                         default=DEFAULT_DISTRO)
+    p_shell.add_argument("--distro", choices=distro_choices, default=DEFAULT_DISTRO)
 
     p_fetch = subs.add_parser("fetch", help="Download/verify image")
-    p_fetch.add_argument("--distro", choices=distro_choices,
-                         default=DEFAULT_DISTRO)
+    p_fetch.add_argument("--distro", choices=distro_choices, default=DEFAULT_DISTRO)
     subs.add_parser("list", help="List available tests")
     subs.add_parser("clean", help="Remove cached images")
 

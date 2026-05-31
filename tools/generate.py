@@ -97,13 +97,42 @@ def _clang_format(content: str) -> str:
     return content
 
 
+def _buildifier(content: str, path: Path) -> str:
+    """Run buildifier on Bazel content if available. Returns formatted content.
+
+    Keeps generated BUILD/.bzl files consistent with `tools/fmt.py`, which
+    enforces buildifier formatting repo-wide.
+    """
+    import shutil
+
+    if not shutil.which("buildifier"):
+        return content
+    file_type = "bzl" if path.suffix == ".bzl" else "build"
+    try:
+        result = subprocess.run(
+            ["buildifier", "-type", file_type],
+            input=content,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout
+    except (OSError, subprocess.SubprocessError):
+        return content
+    return content
+
+
 def _write(path: Path, content: str, check: bool) -> bool:
     """Write content to path. Returns True if file changed.
 
-    C/H files are run through clang-format before writing.
+    C/H files are run through clang-format and Bazel files through
+    buildifier before writing, matching the repo formatters.
     """
     if path.suffix in (".c", ".h"):
         content = _clang_format(content)
+    elif path.suffix == ".bzl" or path.name in ("BUILD", "BUILD.bazel"):
+        content = _buildifier(content, path)
     if path.exists() and path.read_text() == content:
         return False
     if check:
@@ -642,7 +671,7 @@ def _platform_target_os_config_lines() -> list[str]:
         [
             "config_setting(\n"
             f'    name = "is_target_{os_name}",\n'
-            f'    values = {{"define": "PICBLOBS_TARGET_OS={os_name}"}},\n'
+            f'    constraint_values = [":{os_name}"],\n'
             ")\n"
             for os_name in OPERATING_SYSTEMS
         ]
@@ -650,8 +679,7 @@ def _platform_target_os_config_lines() -> list[str]:
     lines.append(
         "config_setting(\n"
         '    name = "is_target_windows_aarch64",\n'
-        '    values = {"define": "PICBLOBS_TARGET_OS=windows"},\n'
-        '    constraint_values = ["@platforms//cpu:aarch64"],\n'
+        '    constraint_values = [":windows", "@platforms//cpu:aarch64"],\n'
         ")\n"
     )
     lines.append("\n")
@@ -802,10 +830,7 @@ def _gen_bazelrc_block() -> str:
         for arch_name in os_def.architectures:
             cfg = f"{os_name}_{arch_name}"
             pad = max(1, 22 - len(cfg))
-            lines.append(
-                f"build:{cfg}{' ' * pad}--platforms=//platforms:{cfg} "
-                f"--define=PICBLOBS_TARGET_OS={os_name}"
-            )
+            lines.append(f"build:{cfg}{' ' * pad}--platforms=//platforms:{cfg}")
         lines.append("")
     return "\n".join(lines)
 
@@ -923,6 +948,28 @@ def _gen_payload_build() -> str:
 # ============================================================
 
 
+def _require_formatters() -> bool:
+    """Return True if the formatters that shape generated output are present.
+
+    Generated Bazel/C files are buildifier/clang-format formatted to match the
+    committed tree. Without these tools the generator emits raw output, so
+    --check would report false "out of date" results. Print an actionable error
+    and return False instead of silently producing a mismatch.
+    """
+    import shutil
+
+    missing = [t for t in ("buildifier", "clang-format") if shutil.which(t) is None]
+    if not missing:
+        return True
+    print(
+        f"error: required formatter(s) not found on PATH: {', '.join(missing)}\n"
+        "Generated Bazel/C files are buildifier/clang-format formatted; without\n"
+        "them this check is inaccurate. Install them (e.g. run `task setup`).",
+        file=sys.stderr,
+    )
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate derived files from registry")
     parser.add_argument(
@@ -931,6 +978,9 @@ def main() -> int:
         help="Verify generated files are up to date (exit 1 if not)",
     )
     args = parser.parse_args()
+
+    if not _require_formatters():
+        return 1
 
     targets = _generated_targets()
 

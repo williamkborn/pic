@@ -69,7 +69,7 @@ void _start(void)
 {
 	PIC_SELF_RELOCATE();
 
-	unsigned char nonce[crypto_secretbox_NONCEBYTES];
+	unsigned char nonce[crypto_secretbox_NONCEBYTES] = {0};
 	unsigned char pt_in[crypto_secretbox_ZEROBYTES + PT_LEN];
 	unsigned char ct[crypto_secretbox_ZEROBYTES + PT_LEN];
 	unsigned char pt_out[crypto_secretbox_ZEROBYTES + PT_LEN];

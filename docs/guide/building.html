@@ -74,7 +74,7 @@ bazel build //release:full --config=linux_x86_64 --config=debug
 bazel build --config=windows_x86_64 //src/payload:hello_windows
 </code></pre>
 <h2 id="build-and-stage-all-platforms">Build and stage all platforms</h2>
-<pre data-lang="bash"><code>./buildall
+<pre data-lang="bash"><code>task stage
 </code></pre>
 <p>This runs <code>tools/stage_blobs.py</code>, which builds all supported blobs,
 non-Linux runners for FreeBSD and Windows, plus the Linux <code>ul_exec</code>

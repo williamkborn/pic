@@ -1,6 +1,6 @@
 """Rules for testing cross-compiled PIC blobs on the host."""
 
-def _arm_transition_impl(settings, attr):
+def _arm_transition_impl(_settings, attr):
     return {"//command_line_option:platforms": attr.platform}
 
 _arm_transition = transition(

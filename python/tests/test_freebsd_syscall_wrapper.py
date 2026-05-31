@@ -71,7 +71,7 @@ def _compile_probe(
     """Compile the probe for *arch*, returning the resulting object file."""
     gcc = _find_cross_gcc(arch)
     if gcc is None:
-        pytest.skip(f"Cross-gcc for {arch} not found (run ./buildall first)")
+        pytest.skip(f"Cross-gcc for {arch} not found (run task stage first)")
 
     src = tmp_path / f"probe_{arch}.c"
     src.write_text(PROBE_SOURCE)

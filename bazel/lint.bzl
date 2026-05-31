@@ -22,16 +22,30 @@ load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 # clang-tidy aspect
 # ============================================================
 
+# Compile flags clang-tidy uses to parse C sources. Mirrors the toolchain
+# `freestanding` feature compile flag_set (see toolchains/bootlin.bzl).
+# clang-tidy is a separate binary from gcc and won't pick these up from
+# the toolchain, so they're forwarded explicitly.
+_CLANG_TIDY_COMPILE_FLAGS = [
+    "-ffreestanding",
+    "-fno-builtin",
+    "-fno-stack-protector",
+    "-fPIC",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Os",
+    "-Wall",
+]
+
 def _clang_tidy_aspect_impl(target, ctx):
     """Aspect that runs clang-tidy on C source files.
 
-    Fails the build if clang-tidy reports any warnings or errors.
+    Fails the build if clang-tidy reports any warnings or errors. When
+    clang-tidy is missing on PATH the action skips silently unless
+    PICBLOBS_REQUIRE_LINT_TOOLS=1 is set (CI sets this).
     """
-    if not CcInfo in target:
+    if CcInfo not in target:
         return []
-
-    cc_info = target[CcInfo]
-    compilation_context = cc_info.compilation_context
 
     srcs = []
     if hasattr(ctx.rule.attr, "srcs"):
@@ -43,6 +57,9 @@ def _clang_tidy_aspect_impl(target, ctx):
     if not srcs:
         return [OutputGroupInfo(lint_results = depset())]
 
+    compilation_context = target[CcInfo].compilation_context
+    header_inputs = compilation_context.headers.to_list()
+
     outputs = []
     for src in srcs:
         lint_output = ctx.actions.declare_file(
@@ -50,47 +67,38 @@ def _clang_tidy_aspect_impl(target, ctx):
         )
         outputs.append(lint_output)
 
-        include_flags = []
-        for inc in compilation_context.includes.to_list():
-            include_flags.extend(["-I", inc])
-        for inc in compilation_context.system_includes.to_list():
-            include_flags.extend(["-isystem", inc])
-        for inc in compilation_context.quote_includes.to_list():
-            include_flags.extend(["-iquote", inc])
-
-        header_inputs = compilation_context.headers.to_list()
-
         args = ctx.actions.args()
+        args.add(lint_output)
         args.add(src)
-        args.add("--quiet")
-        args.add("--warnings-as-errors=*")
-        args.add_all(include_flags)
         args.add("--")
-        args.add("-ffreestanding")
-        args.add("-fno-builtin")
+        args.add_all(compilation_context.includes, before_each = "-I")
+        args.add_all(compilation_context.system_includes, before_each = "-isystem")
+        args.add_all(compilation_context.quote_includes, before_each = "-iquote")
+        args.add_all(_CLANG_TIDY_COMPILE_FLAGS)
 
         ctx.actions.run_shell(
             outputs = [lint_output],
             inputs = [src] + header_inputs,
             command = """
+                set -eu
+                out="$1"; shift
                 if ! command -v clang-tidy >/dev/null 2>&1; then
-                    if [ -n "${{PICBLOBS_REQUIRE_LINT_TOOLS:-}}" ]; then
+                    if [ -n "${PICBLOBS_REQUIRE_LINT_TOOLS:-}" ]; then
                         echo "ERROR: clang-tidy not found but PICBLOBS_REQUIRE_LINT_TOOLS is set" >&2
                         exit 1
                     fi
-                    echo "SKIP: clang-tidy not found" > {out}
+                    echo "SKIP: clang-tidy not found" > "$out"
                     exit 0
                 fi
-                clang-tidy "$@" > {out} 2>&1
-                status=$?
-                if [ $status -ne 0 ]; then
-                    cat {out} >&2
-                    exit $status
+                if ! clang-tidy --quiet --warnings-as-errors='*' "$@" > "$out" 2>&1; then
+                    cat "$out" >&2
+                    exit 1
                 fi
-            """.format(out = lint_output.path),
+            """,
             arguments = [args],
+            use_default_shell_env = True,
             mnemonic = "ClangTidy",
-            progress_message = "clang-tidy %{{label}}: {}".format(src.short_path),
+            progress_message = "clang-tidy %{label}: " + src.short_path,
         )
 
     return [OutputGroupInfo(lint_results = depset(outputs))]

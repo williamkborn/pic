@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Simple TCP listener for kshell_nacl.ko test — accepts and logs data."""
-import socket, sys, time
+
+import socket
+import sys
+import time
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -18,7 +21,7 @@ try:
         sys.stdout.write("ENCRYPTED_FRAME: yes\n")
     sys.stdout.flush()
     c.close()
-except socket.timeout:
+except TimeoutError:
     sys.stdout.write("TIMEOUT\n")
     sys.stdout.flush()
 s.close()

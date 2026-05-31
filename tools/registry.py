@@ -180,7 +180,7 @@ _register_arch(
         bootlin_arch="armv7-eabihf",
         gcc_triple="arm-buildroot-linux-gnueabihf",
         extra_cflags=["-march=armv7-a", "-mthumb"],
-        cpu_constraint="//platforms:armv7",
+        cpu_constraint="@platforms//cpu:armv7",
         uses_mmap2=True,
         is_32bit=True,
     )
@@ -210,7 +210,7 @@ _register_arch(
         bootlin_arch="s390x-z13",
         gcc_triple="s390x-buildroot-linux-gnu",
         extra_cflags=["-march=z13"],
-        cpu_constraint="//platforms:s390x",
+        cpu_constraint="@platforms//cpu:s390x",
         uses_old_mmap=True,
         is_big_endian=True,
     )
@@ -258,7 +258,7 @@ _register_arch(
         bootlin_arch="powerpc-e300c3",
         gcc_triple="powerpc-buildroot-linux-gnu",
         extra_cflags=["-mcpu=e300c3"],
-        cpu_constraint="//platforms:powerpc",
+        cpu_constraint="@platforms//cpu:ppc32",
         uses_mmap2=True,
         needs_got_reloc=True,
         is_32bit=True,
@@ -275,7 +275,7 @@ _register_arch(
         bootlin_arch="powerpc64le-power8",
         gcc_triple="powerpc64le-buildroot-linux-gnu",
         extra_cflags=["-mcpu=power8"],
-        cpu_constraint="//platforms:ppc64le",
+        cpu_constraint="@platforms//cpu:ppc64le",
         bootlin_sha256="8133b74614f880eb8b76730efee77b8fd281c982bfa2791b72c5f836a529530d",
     )
 )
@@ -287,7 +287,7 @@ _register_arch(
         qemu_binary="qemu-riscv64-static",
         bootlin_arch="riscv64-lp64d",
         gcc_triple="riscv64-buildroot-linux-gnu",
-        cpu_constraint="//platforms:riscv64",
+        cpu_constraint="@platforms//cpu:riscv64",
         openat_only=True,
         bootlin_sha256="78e16f3def8b2ff3da09c16155f993ac7e4dc1791d0904ada03fcb2e04910aab",
     )

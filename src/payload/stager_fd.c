@@ -57,7 +57,7 @@ void _start(void)
 		((pic_u32)cfg[2] << 16) | ((pic_u32)cfg[3] << 24);
 	int fd = (int)fd_u;
 
-	pic_u8 size_buf[4];
+	pic_u8 size_buf[4] = {0};
 	if (read_all(fd, size_buf, 4) < 0)
 		pic_exit_group(1);
 	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
