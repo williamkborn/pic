@@ -69,7 +69,7 @@ static int load_path(const pic_u8 *cfg, char path[PATH_MAX_LEN])
 PIC_TEXT
 static pic_u32 read_payload_size(int fd)
 {
-	pic_u8 size_buf[4];
+	pic_u8 size_buf[4] = {0};
 	if (read_all(fd, size_buf, 4) < 0)
 		return 0;
 	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |

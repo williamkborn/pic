@@ -135,23 +135,25 @@ static inline pic_u32 read32_le(const pic_u8 *p)
 	return (pic_u32)p[0] | ((pic_u32)p[1] << 8) | ((pic_u32)p[2] << 16) |
 		((pic_u32)p[3] << 24);
 }
-static inline void write32_be(pic_u8 *p, pic_u32 v)
+/* Big-endian helpers — used only in the s390x/mips syscall-patch paths,
+ * unused when this runner is built for a little-endian host. */
+static inline __attribute__((unused)) void write32_be(pic_u8 *p, pic_u32 v)
 {
 	p[0] = (pic_u8)(v >> 24);
 	p[1] = (pic_u8)(v >> 16);
 	p[2] = (pic_u8)(v >> 8);
 	p[3] = (pic_u8)v;
 }
-static inline pic_u32 read32_be(const pic_u8 *p)
+static inline __attribute__((unused)) pic_u32 read32_be(const pic_u8 *p)
 {
 	return ((pic_u32)p[0] << 24) | ((pic_u32)p[1] << 16) |
 		((pic_u32)p[2] << 8) | (pic_u32)p[3];
 }
-static inline pic_u16 read16_be(const pic_u8 *p)
+static inline __attribute__((unused)) pic_u16 read16_be(const pic_u8 *p)
 {
 	return (pic_u16)(((pic_u16)p[0] << 8) | (pic_u16)p[1]);
 }
-static inline void write16_be(pic_u8 *p, pic_u16 v)
+static inline __attribute__((unused)) void write16_be(pic_u8 *p, pic_u16 v)
 {
 	p[0] = (pic_u8)(v >> 8);
 	p[1] = (pic_u8)v;

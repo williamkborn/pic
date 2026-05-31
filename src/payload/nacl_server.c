@@ -134,9 +134,9 @@ PIC_TEXT
 static long recv_decrypt(
 	int fd, const unsigned char *key, unsigned char *pt, pic_size_t pt_cap)
 {
-	unsigned char nonce[crypto_secretbox_NONCEBYTES];
+	unsigned char nonce[crypto_secretbox_NONCEBYTES] = {0};
 	unsigned char ct[crypto_secretbox_ZEROBYTES + MAX_CT];
-	pic_u8 len_buf[4];
+	pic_u8 len_buf[4] = {0};
 	pic_u32 ct_len;
 	pic_u64 box_len;
 
@@ -169,12 +169,12 @@ PIC_TEXT
 static int encrypt_send(
 	int fd, const unsigned char *key, const void *msg, pic_size_t msg_len)
 {
-	unsigned char nonce[crypto_secretbox_NONCEBYTES];
+	unsigned char nonce[crypto_secretbox_NONCEBYTES] = {0};
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
 	unsigned char ct[crypto_secretbox_ZEROBYTES + MAX_CT];
 	pic_u64 box_len = crypto_secretbox_ZEROBYTES + msg_len;
 	pic_u32 ct_len;
-	pic_u8 len_buf[4];
+	pic_u8 len_buf[4] = {0};
 
 	if (msg_len > MAX_CT)
 		return -1;
