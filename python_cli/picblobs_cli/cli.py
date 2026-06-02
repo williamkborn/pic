@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import dataclasses
 import os as _os
 import signal
 import socket
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import click
@@ -28,7 +30,12 @@ from picblobs import (
     BlobType,
     ValidationError,
 )
-from picblobs.runner import can_run, exec_command, find_runner, run_blob
+from picblobs.runner import (
+    can_run,
+    exec_command,
+    find_runner,
+    run_blob,
+)
 
 from picblobs_cli import (
     __version__ as cli_version,
@@ -287,34 +294,43 @@ def _check_allowed_options(
         )
 
 
-def _provided_build_options(
-    payload_file: Path | None,
-    address: str | None,
-    port: int | None,
-    fd: int | None,
-    stage_path: str | None,
-    offset: int,
-    size: int | None,
-    pe_file: Path | None,
-    call_dll_main: bool,
-    elf_file: Path | None,
-    argv: tuple[str, ...],
-    envp: tuple[str, ...],
-) -> dict[str, bool]:
+@dataclasses.dataclass(frozen=True)
+class _BuildOpts:
+    """Builder options collected from the ``build`` / ``debug`` CLI flags.
+
+    Field order matches the positional contract of the per-blob builders in
+    ``_BUILDERS`` (see ``_build_blob_bytes``).
+    """
+
+    payload_file: Path | None = None
+    address: str | None = None
+    port: int | None = None
+    fd: int | None = None
+    stage_path: str | None = None
+    offset: int = 0
+    size: int | None = None
+    pe_file: Path | None = None
+    call_dll_main: bool = False
+    elf_file: Path | None = None
+    argv: tuple[str, ...] = ()
+    envp: tuple[str, ...] = ()
+
+
+def _provided_build_options(opts: _BuildOpts) -> dict[str, bool]:
     """Return a normalized map of supplied build options."""
     return {
-        "payload": payload_file is not None,
-        "address": address is not None,
-        "port": port is not None,
-        "fd": fd is not None,
-        "path": stage_path is not None,
-        "offset": offset != 0,
-        "size": size is not None,
-        "pe": pe_file is not None,
-        "call-dll-main": call_dll_main,
-        "elf": elf_file is not None,
-        "argv": len(argv) > 0,
-        "envp": len(envp) > 0,
+        "payload": opts.payload_file is not None,
+        "address": opts.address is not None,
+        "port": opts.port is not None,
+        "fd": opts.fd is not None,
+        "path": opts.stage_path is not None,
+        "offset": opts.offset != 0,
+        "size": opts.size is not None,
+        "pe": opts.pe_file is not None,
+        "call-dll-main": opts.call_dll_main,
+        "elf": opts.elf_file is not None,
+        "argv": len(opts.argv) > 0,
+        "envp": len(opts.envp) > 0,
     }
 
 
@@ -322,20 +338,9 @@ def _build_blob_bytes(
     base: Blob,
     blob: BlobType,
     provided: dict[str, bool],
-    payload_file: Path | None,
-    address: str | None,
-    port: int | None,
-    fd: int | None,
-    stage_path: str | None,
-    offset: int,
-    size: int | None,
-    pe_file: Path | None,
-    call_dll_main: bool,
-    elf_file: Path | None,
-    argv: tuple[str, ...],
-    envp: tuple[str, ...],
+    opts: _BuildOpts,
 ) -> bytes:
-    """Build bytes for one blob type from click CLI options."""
+    """Build bytes for one blob type from collected CLI options."""
     build_fn = _BUILDERS.get(blob)
     if build_fn is None:
         _fail(f"{blob.value}: not buildable via this CLI")
@@ -343,19 +348,43 @@ def _build_blob_bytes(
         base,
         blob,
         provided,
-        payload_file,
-        address,
-        port,
-        fd,
-        stage_path,
-        offset,
-        size,
-        pe_file,
-        call_dll_main,
-        elf_file,
-        argv,
-        envp,
+        opts.payload_file,
+        opts.address,
+        opts.port,
+        opts.fd,
+        opts.stage_path,
+        opts.offset,
+        opts.size,
+        opts.pe_file,
+        opts.call_dll_main,
+        opts.elf_file,
+        opts.argv,
+        opts.envp,
     )
+
+
+def _assemble_blob_image(
+    blob_type: str,
+    os_name: str,
+    arch: str,
+    opts: _BuildOpts,
+) -> bytes:
+    """Parse a blob type and assemble its full configured bytes.
+
+    Shared by ``build`` and ``debug``. Enforces per-blob config requirements
+    (e.g. ``ul_exec`` requires ``--elf``) via the builder dispatch, so a blob
+    is never assembled with an empty config region that would trip its own
+    runtime validation.
+    """
+    try:
+        blob = BlobType.parse(blob_type)
+    except ValidationError as e:
+        _fail(str(e))
+    provided = _provided_build_options(opts)
+    try:
+        return _build_blob_bytes(Blob(os_name, arch), blob, provided, opts)
+    except ValidationError as e:
+        _fail(str(e))
 
 
 def _build_hello(
@@ -723,46 +752,21 @@ def build(
 ) -> None:
     """Assemble a blob via the builder API and write it to OUTPUT."""
     os_name, arch = _parse_target(target)
-    try:
-        blob = BlobType.parse(blob_type)
-    except ValidationError as e:
-        _fail(str(e))
-
-    provided = _provided_build_options(
-        payload_file,
-        address,
-        port,
-        fd,
-        stage_path,
-        offset,
-        size,
-        pe_file,
-        call_dll_main,
-        elf_file,
-        argv,
-        envp,
+    opts = _BuildOpts(
+        payload_file=payload_file,
+        address=address,
+        port=port,
+        fd=fd,
+        stage_path=stage_path,
+        offset=offset,
+        size=size,
+        pe_file=pe_file,
+        call_dll_main=call_dll_main,
+        elf_file=elf_file,
+        argv=argv,
+        envp=envp,
     )
-
-    try:
-        out = _build_blob_bytes(
-            Blob(os_name, arch),
-            blob,
-            provided,
-            payload_file,
-            address,
-            port,
-            fd,
-            stage_path,
-            offset,
-            size,
-            pe_file,
-            call_dll_main,
-            elf_file,
-            argv,
-            envp,
-        )
-    except ValidationError as e:
-        _fail(str(e))
+    out = _assemble_blob_image(blob_type, os_name, arch, opts)
 
     if wrap_elf_output:
         output_format = "elf"
@@ -1153,6 +1157,330 @@ def run(
         runner_path,
         dry_run,
     )
+
+
+# ---------------------------------------------------------------------------
+# debug
+# ---------------------------------------------------------------------------
+
+# qemu-user opens its gdbstub socket at process start, before executing any
+# guest code, so a short settle is enough for gdb's `target remote` to land.
+# We deliberately do not pre-connect to probe readiness — the stub accepts a
+# single client, and a probe would consume gdb's slot.
+_GDBSTUB_SETTLE_S = 0.5
+
+
+def _write_temp_elf(elf_bytes: bytes) -> Path:
+    """Write ELF bytes to an executable temp file and return its path."""
+    temp_dir = Path(tempfile.mkdtemp(prefix="picblobs_"))
+    elf_file = temp_dir / "blob.elf"
+    elf_file.write_bytes(elf_bytes)
+    elf_file.chmod(elf_file.stat().st_mode | 0o700)
+    return elf_file
+
+
+def _debug_prepare_elf(
+    blob_type: str | None,
+    os_name: str,
+    arch: str,
+    blob_file: Path | None,
+    opts: _BuildOpts,
+) -> tuple[Path, Path | None]:
+    """Return ``(elf_path, symbol_so)`` for a debug session.
+
+    Registry mode assembles a fully configured blob via the builder API (so
+    e.g. ``ul_exec`` gets its embedded ELF and does not abort at its own config
+    check), wraps it into a temporary executable ELF, and returns its debug
+    ``.so`` (if staged) for symbol/source loading. File mode wraps/copies the
+    already-assembled file into a temp ELF with no symbols.
+    """
+    if blob_file is not None:
+        return _prepare_linux_file(blob_file, arch), None
+
+    if blob_type is None:
+        _fail("a blob type is required when --file is not used")
+
+    out = _assemble_blob_image(blob_type, os_name, arch, opts)
+    try:
+        elf_bytes = picblobs.wrap_elf(out, os_name, arch)
+    except ValidationError as e:
+        _fail(str(e))
+
+    elf_path = _write_temp_elf(elf_bytes)
+    symbol_so = _resolve_staged_so_path(
+        blob_type,
+        os_name,
+        arch,
+        prefer_debug=True,
+        allow_release_fallback=True,
+    )
+    return elf_path, symbol_so
+
+
+def _write_gdb_script(
+    elf_path: Path,
+    base_vaddr: int,
+    entry_pc: int,
+    symbol_so: Path | None,
+    *,
+    remote_port: int | None,
+) -> Path:
+    """Write the gdb command script and return its path.
+
+    The script loads symbols from the debug ``.so`` (offset to the ELF load
+    base), then stops on the blob's first instruction: ``starti`` for a native
+    inferior, or ``target remote`` for a qemu gdbstub (which halts at the entry
+    point before connecting).
+    """
+    lines = ["set pagination off", "set confirm off"]
+    if symbol_so is not None:
+        lines.append(f"add-symbol-file {symbol_so} -o {base_vaddr:#x}")
+    if remote_port is not None:
+        lines.append(f"target remote :{remote_port}")
+    else:
+        lines.append("starti")
+    lines.append("set confirm on")
+    lines.append(
+        f"echo \\n[picblobs] stopped at first instruction (entry {entry_pc:#x})\\n"
+    )
+
+    fd, name = tempfile.mkstemp(prefix="picblobs_gdb_", suffix=".gdb")
+    script = Path(name)
+    with _os.fdopen(fd, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return script
+
+
+def _debug_validate(
+    positional: tuple[str, ...],
+    blob_file: Path | None,
+    opts: _BuildOpts,
+) -> tuple[str | None, str, str]:
+    """Validate debug args and return ``(blob_type, os_name, arch)``."""
+    blob_type, target = _parse_run_mode(positional, blob_file)
+    os_name, arch = _parse_target(target)
+    if os_name != "linux":
+        _fail("debug currently supports linux targets only")
+    if blob_file is not None and any(_provided_build_options(opts).values()):
+        _fail(
+            "build options have no effect with --file; assemble the blob first "
+            "via 'picblobs-cli build ... -o FILE'"
+        )
+    return blob_type, os_name, arch
+
+
+def _debug_resolve_gdb(arch: str, gdb_path: str | None, native: bool) -> str:
+    """Resolve the gdb binary, warning if a host-only gdb is used cross-arch."""
+    from picblobs._gdb import find_gdb
+
+    try:
+        gdb_bin = gdb_path or find_gdb(arch, native=native)
+    except FileNotFoundError as e:
+        _fail(str(e))
+    if not native and Path(gdb_bin).name == "gdb":
+        click.echo(
+            f"warning: using plain '{gdb_bin}' for cross target {arch}; it may "
+            "not decode this architecture. Install gdb-multiarch or an "
+            f"{arch}-specific gdb for full register/disassembly support.",
+            err=True,
+        )
+    return gdb_bin
+
+
+def _debug_qemu_cmd(arch: str, port: int, elf_path: Path) -> list[str]:
+    """Build the qemu-user gdbstub command, cleaning up the ELF on failure."""
+    from picblobs.runner import find_qemu
+
+    try:
+        qemu_bin = find_qemu(arch)
+    except (FileNotFoundError, ValueError) as e:
+        _cleanup_prepared_linux_file(elf_path)
+        _fail(str(e))
+    return [str(qemu_bin), "-g", str(port), str(elf_path)]
+
+
+def _debug_dry_run(
+    gdb_cmd: list[str],
+    qemu_cmd: list[str] | None,
+    elf_path: Path,
+    script: Path,
+) -> None:
+    """Print the would-be commands, clean up temp artifacts, and exit."""
+    if qemu_cmd is not None:
+        click.echo(" ".join(qemu_cmd))
+    click.echo(" ".join(gdb_cmd))
+    _cleanup_prepared_linux_file(elf_path)
+    script.unlink(missing_ok=True)
+    sys.exit(0)
+
+
+def _debug_launch(
+    gdb_cmd: list[str],
+    qemu_cmd: list[str] | None,
+) -> int:
+    """Launch gdb (and a backing qemu gdbstub, if any); return gdb's exit code."""
+    qemu_proc: subprocess.Popen[bytes] | None = None
+    if qemu_cmd is not None:
+        # Blob stdout/stderr share the terminal so prints are visible; stdin is
+        # detached so qemu does not fight gdb for the controlling tty.
+        qemu_proc = subprocess.Popen(qemu_cmd, stdin=subprocess.DEVNULL)
+        time.sleep(_GDBSTUB_SETTLE_S)
+    try:
+        return subprocess.run(gdb_cmd, check=False).returncode
+    finally:
+        if qemu_proc is not None and qemu_proc.poll() is None:
+            qemu_proc.kill()
+            qemu_proc.wait()
+
+
+@main.command()
+@click.argument("positional", nargs=-1)
+@click.option(
+    "-f",
+    "--file",
+    "blob_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Debug an already-assembled blob file instead of a registry lookup.",
+)
+@click.option(
+    "--payload",
+    "payload_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Payload bytes (alloc_jump)",
+)
+@click.option("--address", help="IPv4 address (stager_tcp)")
+@click.option("--port", type=int, help="TCP port (stager_tcp)")
+@click.option("--fd", type=int, help="File descriptor (stager_fd)")
+@click.option(
+    "--path",
+    "stage_path",
+    help="FIFO or file path (stager_pipe, stager_mmap)",
+)
+@click.option("--offset", type=int, default=0, help="File offset (stager_mmap)")
+@click.option("--size", type=int, help="Byte count to map (stager_mmap)")
+@click.option(
+    "--pe",
+    "pe_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="PE image (reflective_pe)",
+)
+@click.option("--call-dll-main", is_flag=True, help="Call DllMain (reflective_pe)")
+@click.option(
+    "--elf",
+    "elf_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="ELF image (ul_exec)",
+)
+@click.option("--argv", multiple=True, help="argv entry (ul_exec, repeatable)")
+@click.option("--envp", multiple=True, help="envp entry (ul_exec, repeatable)")
+@click.option(
+    "--gdb-port",
+    "gdb_port",
+    type=int,
+    default=1234,
+    show_default=True,
+    help="TCP port for the qemu gdbstub (cross-arch / --qemu)",
+)
+@click.option("--gdb", "gdb_path", help="Explicit gdb binary to use")
+@click.option(
+    "--qemu",
+    "force_qemu",
+    is_flag=True,
+    help="Use a qemu gdbstub even for a host-native architecture",
+)
+@click.option(
+    "--symbols/--no-symbols",
+    "load_symbols",
+    default=True,
+    show_default=True,
+    help="Load source/symbols from the staged debug .so when available",
+)
+@click.option("--dry-run", is_flag=True, help="Print the commands without launching")
+def debug(
+    positional: tuple[str, ...],
+    blob_file: Path | None,
+    payload_file: Path | None,
+    address: str | None,
+    port: int | None,
+    fd: int | None,
+    stage_path: str | None,
+    offset: int,
+    size: int | None,
+    pe_file: Path | None,
+    call_dll_main: bool,
+    elf_file: Path | None,
+    argv: tuple[str, ...],
+    envp: tuple[str, ...],
+    gdb_port: int,
+    gdb_path: str | None,
+    force_qemu: bool,
+    load_symbols: bool,
+    dry_run: bool,
+) -> None:
+    """Launch a blob under gdb, stopped on its first instruction.
+
+    \b
+      picblobs-cli debug <blob_type> <target>    # registry lookup
+      picblobs-cli debug --file FILE <target>    # already-assembled blob
+
+    Registry mode assembles a fully configured blob with the same builder
+    options as ``build`` (e.g. ``ul_exec`` requires ``--elf``), so the blob
+    enters with a valid config instead of aborting at its own config check.
+
+    Host-native targets run under gdb directly (``starti``). Cross targets run
+    under a qemu-user gdbstub that halts at the entry point; gdb attaches over
+    the local ``--gdb-port``. When a debug ``.so`` is staged its symbols and
+    source are loaded automatically (disable with ``--no-symbols``).
+    """
+    from picblobs._elf import linux_elf_entry
+    from picblobs.runner import _is_native_arch
+
+    opts = _BuildOpts(
+        payload_file=payload_file,
+        address=address,
+        port=port,
+        fd=fd,
+        stage_path=stage_path,
+        offset=offset,
+        size=size,
+        pe_file=pe_file,
+        call_dll_main=call_dll_main,
+        elf_file=elf_file,
+        argv=argv,
+        envp=envp,
+    )
+    blob_type, os_name, arch = _debug_validate(positional, blob_file, opts)
+    try:
+        base_vaddr, entry_pc = linux_elf_entry(arch)
+    except ValidationError as e:
+        _fail(str(e))
+
+    native = _is_native_arch(arch) and not force_qemu
+    gdb_bin = _debug_resolve_gdb(arch, gdb_path, native)
+
+    elf_path, symbol_so = _debug_prepare_elf(blob_type, os_name, arch, blob_file, opts)
+    if not load_symbols:
+        symbol_so = None
+
+    qemu_cmd = None if native else _debug_qemu_cmd(arch, gdb_port, elf_path)
+    script = _write_gdb_script(
+        elf_path,
+        base_vaddr,
+        entry_pc,
+        symbol_so,
+        remote_port=None if native else gdb_port,
+    )
+    gdb_cmd = [gdb_bin, str(elf_path), "-x", str(script)]
+
+    if dry_run:
+        _debug_dry_run(gdb_cmd, qemu_cmd, elf_path, script)
+
+    try:
+        code = _debug_launch(gdb_cmd, qemu_cmd)
+    finally:
+        _cleanup_prepared_linux_file(elf_path)
+        script.unlink(missing_ok=True)
+    sys.exit(code)
 
 
 # ---------------------------------------------------------------------------

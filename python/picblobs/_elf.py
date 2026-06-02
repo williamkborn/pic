@@ -308,6 +308,33 @@ def _validate_elf32_limits(
         _check_u32(name, value)
 
 
+def linux_elf_entry(
+    target_arch: Arch | str,
+    entry_offset: int = 0,
+    base_vaddr: int | None = None,
+) -> tuple[int, int]:
+    """Return ``(base_vaddr, entry_pc)`` for a Linux ELF-wrapped blob.
+
+    Mirrors the address arithmetic in :func:`wrap_elf` so callers (notably the
+    ``debug`` command) can predict where a wrapped blob loads and where its
+    first instruction lives without re-implementing the per-arch layout. The
+    returned ``entry_pc`` carries the Thumb low bit for Thumb targets, matching
+    the ELF ``e_entry`` value.
+
+    Raises:
+        ValidationError: For architectures ELF wrapping does not support.
+    """
+    arch_e = Arch.parse(target_arch)
+    arch = _LINUX_ARCHES.get(arch_e)
+    if arch is None:
+        raise ValidationError(f"ELF wrapping does not support arch {arch_e.value}")
+    base = arch.base_vaddr if base_vaddr is None else base_vaddr
+    entry = base + entry_offset
+    if arch.thumb_entry:
+        entry |= 1
+    return base, entry
+
+
 def wrap_elf(
     payload: bytes,
     target_os: OS | str,
@@ -404,5 +431,6 @@ __all__ = [
     "PF_R",
     "PF_W",
     "PF_X",
+    "linux_elf_entry",
     "wrap_elf",
 ]

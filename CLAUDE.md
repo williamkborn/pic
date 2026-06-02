@@ -145,7 +145,7 @@ task clean                 # remove build/dist artifacts + `bazel clean`
 ## CLI
 
 `picblobs-cli` (click). Commands: `list`, `info`, `list-runners`, `build`,
-`extract`, `run`, `disasm`, `listing`, `test`, `verify`. Run
+`extract`, `run`, `debug`, `disasm`, `listing`, `test`, `verify`. Run
 `picblobs-cli <cmd> --help` for the authoritative flags — do not rely on this
 file for option lists.
 
@@ -156,6 +156,8 @@ picblobs-cli list                          # all staged blobs
 picblobs-cli info hello linux:x86_64       # blob metadata
 picblobs-cli run hello linux:aarch64       # run a staged blob under runner + QEMU
 picblobs-cli run hello linux:x86_64 --debug    # verbose, keep temp files
+picblobs-cli debug hello linux:aarch64     # launch under gdb, stopped at entry
+picblobs-cli debug ul_exec linux:x86_64 --elf inner.elf   # debug needs build-style config
 picblobs-cli run --file /tmp/hello.bin linux:x86_64   # run a prebuilt blob image
 picblobs-cli verify                        # run every staged blob end-to-end
 picblobs-cli extract hello linux:x86_64 -o /tmp/hello.bin --config-hex 01020304
