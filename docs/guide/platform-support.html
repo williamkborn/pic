@@ -222,12 +222,12 @@
 <tr>
 <td><code>nacl_server</code></td>
 <td>Linux, FreeBSD</td>
-<td>NaCl encrypted TCP server: bind, accept, decrypt message with crypto_secretbox, send encrypted ACK</td>
+<td>NaCl encrypted TCP server: bind, accept, perform an authenticated ephemeral X25519 key exchange (32-byte auth key injected via config, never embedded), then decrypt the message and send an encrypted ACK under the per-session key (crypto_secretbox / XSalsa20-Poly1305)</td>
 </tr>
 <tr>
 <td><code>nacl_client</code></td>
 <td>Linux, FreeBSD</td>
-<td>NaCl encrypted TCP client: connect, encrypt and send message, decrypt ACK from server</td>
+<td>NaCl encrypted TCP client: connect, perform an authenticated ephemeral X25519 key exchange (forward secrecy; auth key injected via config), then send the encrypted message and decrypt the ACK under the per-session key</td>
 </tr>
 <tr>
 <td><code>nacl_server_hosted</code></td>

@@ -120,6 +120,11 @@ class TestNaClPayload:
 EXPECTED_PLAINTEXT = b"Hello from NaCl PIC blob!"
 E2E_TIMEOUT = 30.0
 
+# 32-byte handshake auth key injected into both blobs' config. The client and
+# server must share it to authenticate the ephemeral X25519 exchange; a wire
+# attacker without it cannot MITM. A fixed non-secret value is fine for tests.
+E2E_AUTH_KEY = bytes(range(1, 33))
+
 _E2E_SKIP_ARCHES: frozenset[str] = frozenset()
 
 
@@ -171,7 +176,7 @@ class TestNaClE2E:
             )
 
         port = reserve_tcp_port()
-        config = struct.pack("<H", port)
+        config = struct.pack("<H", port) + E2E_AUTH_KEY
         try:
             result = run_blob_pair(
                 server_blob,

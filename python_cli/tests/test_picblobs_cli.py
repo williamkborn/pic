@@ -1123,8 +1123,11 @@ class TestVerifyNaclE2E:
         detail = cli._verify_nacl_e2e("freebsd", "x86_64", 30.0)
         assert "Hello from NaCl PIC blob!" in detail
         kwargs = captured["kwargs"]
-        assert kwargs["server_config"] == struct.pack("<H", 45678)
-        assert kwargs["client_config"] == struct.pack("<H", 45678)
+        expected = struct.pack("<H", 45678) + cli._NACL_VERIFY_AUTH_KEY
+        assert kwargs["server_config"] == expected
+        assert kwargs["client_config"] == expected
+        # Config must carry the port plus the 32-byte handshake auth key.
+        assert len(expected) == 2 + 32
 
 
 class TestDisasmAndListing:
@@ -1177,6 +1180,133 @@ class TestDisasmAndListing:
         r = runner.invoke(main, ["listing", "hello", "linux:x86_64"])
         assert r.exit_code == 0, r.output
         assert "disasm:hello.so:False" in r.output
+
+
+class TestDebugCommand:
+    def test_debug_help_mentions_first_instruction(
+        self,
+        runner: CliRunner,
+    ) -> None:
+        r = runner.invoke(main, ["debug", "--help"])
+        assert r.exit_code == 0, r.output
+        assert "first instruction" in r.output
+
+    def test_debug_native_dry_run(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _arch: True)
+        monkeypatch.setattr(
+            "picblobs._gdb.find_gdb", lambda _arch, native=False: "/usr/bin/gdb"
+        )
+
+        r = runner.invoke(main, ["debug", "hello", "linux:x86_64", "--dry-run"])
+        assert r.exit_code == 0, r.output
+        # Native: gdb launched directly, no qemu gdbstub line.
+        assert "/usr/bin/gdb" in r.output
+        assert " -x " in r.output
+        assert "-g " not in r.output
+
+    def test_debug_cross_dry_run_spawns_qemu_stub(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr("picblobs.runner._is_native_arch", lambda _arch: False)
+        monkeypatch.setattr(
+            "picblobs._gdb.find_gdb", lambda _arch, native=False: "gdb-multiarch"
+        )
+        monkeypatch.setattr(
+            "picblobs.runner.find_qemu", lambda _arch: Path("/usr/bin/qemu-aarch64")
+        )
+
+        r = runner.invoke(
+            main,
+            ["debug", "hello", "linux:aarch64", "--gdb-port", "4567", "--dry-run"],
+        )
+        assert r.exit_code == 0, r.output
+        assert "/usr/bin/qemu-aarch64 -g 4567" in r.output
+        assert "gdb-multiarch" in r.output
+
+    def test_debug_rejects_non_linux(self, runner: CliRunner) -> None:
+        r = runner.invoke(main, ["debug", "hello_windows", "windows:x86_64"])
+        assert r.exit_code == 1
+        assert "linux targets only" in r.output
+
+    def test_debug_enforces_required_config(self, runner: CliRunner) -> None:
+        # ul_exec needs an embedded ELF; without --elf the builder must reject
+        # it rather than wrapping an unconfigured blob that dies at its own
+        # runtime check.
+        r = runner.invoke(main, ["debug", "ul_exec", "linux:x86_64", "--dry-run"])
+        assert r.exit_code == 1
+        assert "ul_exec requires --elf" in r.output
+
+    def test_debug_config_error_precedes_gdb_resolution(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # On a host without gdb, an input error (ul_exec missing --elf) must
+        # still surface as the actionable config error, not "No gdb found":
+        # blob validation happens before debugger resolution.
+        def _no_gdb(_arch: str, native: bool = False) -> str:
+            raise FileNotFoundError("No gdb found for testing")
+
+        monkeypatch.setattr("picblobs._gdb.find_gdb", _no_gdb)
+
+        r = runner.invoke(main, ["debug", "ul_exec", "linux:x86_64", "--dry-run"])
+        assert r.exit_code == 1
+        assert "ul_exec requires --elf" in r.output
+        assert "No gdb found" not in r.output
+
+    def test_debug_rejects_build_options_with_file(
+        self,
+        runner: CliRunner,
+        tmp_path: Path,
+    ) -> None:
+        fake = tmp_path / "blob.bin"
+        fake.write_bytes(b"\x90\x90")
+        r = runner.invoke(
+            main,
+            ["debug", "--file", str(fake), "linux:x86_64", "--elf", str(fake)],
+        )
+        assert r.exit_code == 1
+        assert "no effect with --file" in r.output
+
+    def test_write_gdb_script_native_uses_starti(self, tmp_path: Path) -> None:
+        import picblobs_cli.cli as cli
+
+        so = tmp_path / "hello.so"
+        so.write_bytes(b"\x7fELF")
+        script = cli._write_gdb_script(
+            tmp_path / "blob.elf",
+            base_vaddr=0x400000,
+            entry_pc=0x400000,
+            symbol_so=so,
+            remote_port=None,
+        )
+        text = script.read_text()
+        assert "starti" in text
+        assert "target remote" not in text
+        assert f"add-symbol-file {so} -o 0x400000" in text
+        script.unlink()
+
+    def test_write_gdb_script_remote_uses_target(self, tmp_path: Path) -> None:
+        import picblobs_cli.cli as cli
+
+        script = cli._write_gdb_script(
+            tmp_path / "blob.elf",
+            base_vaddr=0x400000,
+            entry_pc=0x400001,
+            symbol_so=None,
+            remote_port=1234,
+        )
+        text = script.read_text()
+        assert "target remote :1234" in text
+        assert "starti" not in text
+        assert "add-symbol-file" not in text
+        script.unlink()
 
 
 class TestTestCommand:

@@ -36,6 +36,11 @@ pic_blob(
 pic_blob(
     name = "nacl_client",
     srcs = ["nacl_client.c"],
+    copts = select({
+        "//platforms:mipsel32": ["-mno-explicit-relocs"],
+        "//platforms:mipsbe32": ["-mno-explicit-relocs"],
+        "//conditions:default": [],
+    }),
     linker_script = "//src/linker:blob.ld",
     deps = ["//src/include/picblobs:headers"],
 )
@@ -48,6 +53,11 @@ extract_bin(
 pic_blob(
     name = "nacl_client_hosted",
     srcs = ["nacl_client.c"],
+    copts = select({
+        "//platforms:mipsel32": ["-mno-explicit-relocs"],
+        "//platforms:mipsbe32": ["-mno-explicit-relocs"],
+        "//conditions:default": [],
+    }),
     linker_script = "//src/linker:blob.ld",
     local_defines = ["PIC_PLATFORM_HOSTED"],
     deps = ["//src/include/picblobs:headers"],
@@ -68,6 +78,11 @@ pic_blob(
 pic_blob(
     name = "nacl_server",
     srcs = ["nacl_server.c"],
+    copts = select({
+        "//platforms:mipsel32": ["-mno-explicit-relocs"],
+        "//platforms:mipsbe32": ["-mno-explicit-relocs"],
+        "//conditions:default": [],
+    }),
     linker_script = "//src/linker:blob.ld",
     deps = ["//src/include/picblobs:headers"],
 )
@@ -80,6 +95,11 @@ extract_bin(
 pic_blob(
     name = "nacl_server_hosted",
     srcs = ["nacl_server.c"],
+    copts = select({
+        "//platforms:mipsel32": ["-mno-explicit-relocs"],
+        "//platforms:mipsbe32": ["-mno-explicit-relocs"],
+        "//conditions:default": [],
+    }),
     linker_script = "//src/linker:blob.ld",
     local_defines = ["PIC_PLATFORM_HOSTED"],
     deps = ["//src/include/picblobs:headers"],
