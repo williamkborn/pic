@@ -28,6 +28,9 @@ lefthook-local.yml
 # Core dumps
 *.core
 
+# Debugger (gdb writes .gdb_history in the cwd, e.g. from `picblobs-cli debug`)
+.gdb_history
+
 # Binaries
 python/picblobs/_blobs/**/*.so
 python_cli/picblobs_cli/_runners/**/runner
