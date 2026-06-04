@@ -1242,6 +1242,24 @@ class TestDebugCommand:
         assert r.exit_code == 1
         assert "ul_exec requires --elf" in r.output
 
+    def test_debug_config_error_precedes_gdb_resolution(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # On a host without gdb, an input error (ul_exec missing --elf) must
+        # still surface as the actionable config error, not "No gdb found":
+        # blob validation happens before debugger resolution.
+        def _no_gdb(_arch: str, native: bool = False) -> str:
+            raise FileNotFoundError("No gdb found for testing")
+
+        monkeypatch.setattr("picblobs._gdb.find_gdb", _no_gdb)
+
+        r = runner.invoke(main, ["debug", "ul_exec", "linux:x86_64", "--dry-run"])
+        assert r.exit_code == 1
+        assert "ul_exec requires --elf" in r.output
+        assert "No gdb found" not in r.output
+
     def test_debug_rejects_build_options_with_file(
         self,
         runner: CliRunner,

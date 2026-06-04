@@ -1269,13 +1269,23 @@ def _debug_validate(
     return blob_type, os_name, arch
 
 
-def _debug_resolve_gdb(arch: str, gdb_path: str | None, native: bool) -> str:
-    """Resolve the gdb binary, warning if a host-only gdb is used cross-arch."""
+def _debug_resolve_gdb(
+    arch: str,
+    gdb_path: str | None,
+    native: bool,
+    elf_path: Path,
+) -> str:
+    """Resolve the gdb binary, warning if a host-only gdb is used cross-arch.
+
+    Called after the blob ELF is prepared, so a missing gdb cleans up the temp
+    ELF before failing.
+    """
     from picblobs._gdb import find_gdb
 
     try:
         gdb_bin = gdb_path or find_gdb(arch, native=native)
     except FileNotFoundError as e:
+        _cleanup_prepared_linux_file(elf_path)
         _fail(str(e))
     if not native and Path(gdb_bin).name == "gdb":
         click.echo(
@@ -1456,12 +1466,15 @@ def debug(
         _fail(str(e))
 
     native = _is_native_arch(arch) and not force_qemu
-    gdb_bin = _debug_resolve_gdb(arch, gdb_path, native)
 
+    # Assemble and validate the blob before resolving the debugger, so input
+    # errors (e.g. ul_exec missing --elf) surface independently of whether gdb
+    # is installed on this host.
     elf_path, symbol_so = _debug_prepare_elf(blob_type, os_name, arch, blob_file, opts)
     if not load_symbols:
         symbol_so = None
 
+    gdb_bin = _debug_resolve_gdb(arch, gdb_path, native, elf_path)
     qemu_cmd = None if native else _debug_qemu_cmd(arch, gdb_port, elf_path)
     script = _write_gdb_script(
         elf_path,
