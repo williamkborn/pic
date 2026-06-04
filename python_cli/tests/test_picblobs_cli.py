@@ -1123,8 +1123,11 @@ class TestVerifyNaclE2E:
         detail = cli._verify_nacl_e2e("freebsd", "x86_64", 30.0)
         assert "Hello from NaCl PIC blob!" in detail
         kwargs = captured["kwargs"]
-        assert kwargs["server_config"] == struct.pack("<H", 45678)
-        assert kwargs["client_config"] == struct.pack("<H", 45678)
+        expected = struct.pack("<H", 45678) + cli._NACL_VERIFY_AUTH_KEY
+        assert kwargs["server_config"] == expected
+        assert kwargs["client_config"] == expected
+        # Config must carry the port plus the 32-byte handshake auth key.
+        assert len(expected) == 2 + 32
 
 
 class TestDisasmAndListing:

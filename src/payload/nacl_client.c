@@ -1,13 +1,27 @@
 /*
- * nacl_client — NaCl symmetric-encrypted TCP client PIC blob.
+ * nacl_client — NaCl encrypted TCP client PIC blob.
  *
- * Uses crypto_secretbox (XSalsa20-Poly1305) with a pre-shared key.
+ * Performs an authenticated ephemeral X25519 (Curve25519) key exchange, then
+ * encrypts application data under the resulting per-session key with
+ * crypto_secretbox (XSalsa20-Poly1305).
+ *
+ * Forward secrecy: the session key is derived from ephemeral keypairs that
+ * never leave memory, so recovering the long-term auth key later does not
+ * decrypt past sessions. Authentication: the ephemeral public keys are sealed
+ * under a 32-byte auth key supplied via config (never embedded in the blob),
+ * so a wire attacker who lacks that key cannot substitute keys and therefore
+ * cannot man-in-the-middle / hijack the session. See nacl_server.c for the
+ * security rationale and the residual trust assumption.
  *
  * Protocol:
- *   1. Connects to 127.0.0.1:<configured port>.
- *   2. Sends: nonce (24B) + length (4B LE) + ciphertext.
- *   3. Receives encrypted ACK, decrypts and verifies.
- *   4. Exits 0 on success, 1 on failure.
+ *   1. Connect to 127.0.0.1:<configured port>.
+ *   2. Handshake: send secretbox(auth_key, eph_pk); recv secretbox(auth_key,
+ *      peer eph_pk); session_key = X25519(eph_sk, peer eph_pk).
+ *   3. Send the message encrypted under session_key.
+ *   4. Receive the encrypted ACK, decrypt and verify.
+ *   5. Exit 0 on success, 1 on failure.
+ *
+ * Each framed message is: nonce (24B) + length (4B LE) + ciphertext.
  */
 
 #ifndef PIC_PLATFORM_HOSTED
@@ -29,52 +43,26 @@
 
 #define MAX_CT 4096
 
+/*
+ * Config layout: port (u16 LE) followed by a 32-byte handshake
+ * authentication key. The auth key is injected at deploy time into the
+ * .config section — it is deliberately NOT compiled into the blob, so an
+ * attacker who captures the payload cannot recover it and therefore cannot
+ * authenticate (and thus cannot MITM) the X25519 key exchange. The .skip
+ * below only reserves space; a deployment must overwrite it with a real
+ * random key (an all-zero key authenticates nothing).
+ */
 struct __attribute__((packed)) nacl_client_config {
 	pic_u16 port; /* little-endian */
+	unsigned char auth_key[32];
 };
 
 __asm__(".section .config,\"aw\"\n"
 	".globl nacl_client_config\n"
 	"nacl_client_config:\n"
-	".byte 0x0f, 0x27\n"
+	".byte 0x0f, 0x27\n" /* port = 9999 */
+	".skip 32, 0\n"	     /* auth_key placeholder — inject at deploy time */
 	".previous\n");
-
-/* Same pre-shared key as server. */
-PIC_RODATA
-static const unsigned char PSK[32] = {
-	0x4a,
-	0x6f,
-	0x68,
-	0x6e,
-	0x20,
-	0x44,
-	0x6f,
-	0x65,
-	0x2d,
-	0x50,
-	0x49,
-	0x43,
-	0x2d,
-	0x4e,
-	0x61,
-	0x43,
-	0x6c,
-	0x2d,
-	0x50,
-	0x53,
-	0x4b,
-	0x2d,
-	0x30,
-	0x30,
-	0x31,
-	0x21,
-	0x21,
-	0x21,
-	0x00,
-	0x00,
-	0x00,
-	0x00,
-};
 
 PIC_RODATA static const char tag_send[] =
 	"[client] sending encrypted message\n";
@@ -215,6 +203,55 @@ static pic_u16 config_port(void)
 	return (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
 }
 
+/* Pointer to the 32-byte handshake auth key within the config section. */
+PIC_TEXT
+static const unsigned char *config_auth_key(void)
+{
+	extern char nacl_client_config[] __attribute__((visibility("hidden")));
+	return (const unsigned char *)(void *)(nacl_client_config + 2);
+}
+
+/*
+ * Authenticated ephemeral X25519 key exchange.
+ *
+ * Generates an ephemeral keypair, swaps public keys with the peer (each public
+ * key sealed under the shared auth key so a party lacking that key cannot
+ * substitute its own), then derives a fresh per-session key via X25519. The
+ * ephemeral secret is wiped once the session key is derived. send_first orders
+ * the exchange to avoid a deadlock (client sends first, server receives first).
+ */
+PIC_TEXT
+static int handshake(int fd, const unsigned char *auth_key,
+	unsigned char *session_key, int send_first)
+{
+	unsigned char eph_pk[crypto_scalarmult_BYTES];
+	unsigned char eph_sk[crypto_scalarmult_SCALARBYTES];
+	unsigned char peer_pk[crypto_scalarmult_BYTES];
+	unsigned char hs[crypto_secretbox_ZEROBYTES + 64];
+	long n;
+
+	crypto_box_keypair(eph_pk, eph_sk);
+
+	if (send_first) {
+		if (encrypt_send(fd, auth_key, eph_pk, sizeof(eph_pk)) < 0)
+			return -1;
+		n = recv_decrypt(fd, auth_key, hs, sizeof(hs));
+		if (n != (long)sizeof(eph_pk))
+			return -1;
+	} else {
+		n = recv_decrypt(fd, auth_key, hs, sizeof(hs));
+		if (n != (long)sizeof(eph_pk))
+			return -1;
+		if (encrypt_send(fd, auth_key, eph_pk, sizeof(eph_pk)) < 0)
+			return -1;
+	}
+
+	pic_memcpy(peer_pk, hs + crypto_secretbox_ZEROBYTES, sizeof(peer_pk));
+	crypto_box_beforenm(session_key, peer_pk, eph_sk);
+	pic_memset(eph_sk, 0, sizeof(eph_sk));
+	return 0;
+}
+
 PIC_TEXT
 static int connect_retry(struct pic_sockaddr_in *addr)
 {
@@ -265,6 +302,7 @@ void _start(
 #endif
 
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
+	unsigned char session_key[crypto_secretbox_KEYBYTES];
 	int sock;
 	long pt_len;
 
@@ -274,13 +312,17 @@ void _start(
 	if (sock < 0)
 		goto fail;
 
-	/* Send encrypted message. */
+	/* Authenticated ephemeral X25519 key exchange (client sends first). */
+	if (handshake(sock, config_auth_key(), session_key, 1) < 0)
+		goto fail;
+
+	/* Send the message encrypted under the per-session key. */
 	pic_write(1, tag_send, sizeof(tag_send) - 1);
-	if (encrypt_send(sock, PSK, message, sizeof(message) - 1) < 0)
+	if (encrypt_send(sock, session_key, message, sizeof(message) - 1) < 0)
 		goto fail;
 
 	/* Receive encrypted ACK. */
-	pt_len = recv_decrypt(sock, PSK, pt, sizeof(pt));
+	pt_len = recv_decrypt(sock, session_key, pt, sizeof(pt));
 	if (pt_len < 0)
 		goto fail;
 

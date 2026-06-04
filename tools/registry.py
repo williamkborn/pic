@@ -1201,9 +1201,12 @@ _register_blob(
             "freebsd": _os_arches("freebsd"),
         },
         config_schema=ConfigSchema(
-            fixed_size=2,
+            fixed_size=34,
             fields=[
                 ConfigField(name="port", type="u16", offset=0),
+                # 32-byte handshake auth key, injected per deployment (never
+                # embedded). Seals the ephemeral X25519 public-key exchange.
+                ConfigField(name="auth_key", type="u8[32]", offset=2),
             ],
             trailing_data=[],
         ),
@@ -1220,9 +1223,12 @@ _register_blob(
             "freebsd": _os_arches("freebsd"),
         },
         config_schema=ConfigSchema(
-            fixed_size=2,
+            fixed_size=34,
             fields=[
                 ConfigField(name="port", type="u16", offset=0),
+                # 32-byte handshake auth key, injected per deployment (never
+                # embedded). Seals the ephemeral X25519 public-key exchange.
+                ConfigField(name="auth_key", type="u8[32]", offset=2),
             ],
             trailing_data=[],
         ),
@@ -1239,9 +1245,12 @@ _register_blob(
             "freebsd": _os_arches("freebsd"),
         },
         config_schema=ConfigSchema(
-            fixed_size=2,
+            fixed_size=34,
             fields=[
                 ConfigField(name="port", type="u16", offset=0),
+                # 32-byte handshake auth key, injected per deployment (never
+                # embedded). Seals the ephemeral X25519 public-key exchange.
+                ConfigField(name="auth_key", type="u8[32]", offset=2),
             ],
             trailing_data=[],
         ),
@@ -1258,9 +1267,12 @@ _register_blob(
             "freebsd": _os_arches("freebsd"),
         },
         config_schema=ConfigSchema(
-            fixed_size=2,
+            fixed_size=34,
             fields=[
                 ConfigField(name="port", type="u16", offset=0),
+                # 32-byte handshake auth key, injected per deployment (never
+                # embedded). Seals the ephemeral X25519 public-key exchange.
+                ConfigField(name="auth_key", type="u8[32]", offset=2),
             ],
             trailing_data=[],
         ),

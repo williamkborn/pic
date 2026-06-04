@@ -2025,6 +2025,10 @@ def _verify_ul_exec(os_name: str, arch: str, timeout: float):
 
 _NACL_E2E_SLOW_ARCHES: frozenset[str] = frozenset()
 
+# Shared 32-byte handshake auth key injected into both nacl blobs during
+# verify. Authenticates the ephemeral X25519 exchange; not a secret here.
+_NACL_VERIFY_AUTH_KEY = bytes(range(1, 33))
+
 
 def _check_nacl_e2e_speed(arch: str, force_slow: bool) -> None:
     if arch not in _NACL_E2E_SLOW_ARCHES or force_slow:
@@ -2052,7 +2056,10 @@ def _verify_nacl_e2e(
     server_blob = picblobs.get_blob("nacl_server", os_name, arch)
     client_blob = picblobs.get_blob("nacl_client", os_name, arch)
     port = reserve_tcp_port()
-    config = struct.pack("<H", port)
+    # Config is port (u16 LE) + the shared 32-byte handshake auth key. Both
+    # blobs need the same key to authenticate the ephemeral X25519 exchange;
+    # a wire attacker without it cannot MITM. A fixed value is fine for verify.
+    config = struct.pack("<H", port) + _NACL_VERIFY_AUTH_KEY
     result = run_blob_pair(
         server_blob,
         client_blob,
