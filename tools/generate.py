@@ -873,6 +873,71 @@ def _blob_needs_hosted(source: Path) -> bool:
     return "PIC_PLATFORM_HOSTED" in content
 
 
+def _blob_uses_x25519(source: Path) -> bool:
+    """Check if a blob source pulls in the Curve25519/X25519 key exchange.
+
+    The TweetNaCl scalarmult code, when compiled -Os -fPIC for 32-bit MIPS,
+    emits CALL16 GOT relocations against a *local* section symbol that the
+    freestanding blob link rejects (binutils elfxx-mips assertion). Blobs that
+    use it need the MIPS copt workaround below; secretbox-only blobs do not.
+    """
+    content = source.read_text()
+    return "crypto_box_" in content or "crypto_scalarmult" in content
+
+
+# MIPS-only copt for X25519 blobs. -mno-explicit-relocs makes gcc route GOT
+# function references through the assembler's $gp macro expansion instead of
+# explicit %call16 against a local section symbol, avoiding the binutils
+# CALL16 assertion while keeping -Os. Harmless on the secretbox-only blobs, so
+# it is applied only where the Curve25519 path is actually compiled in.
+# Single line on purpose: it is injected into a textwrap.dedent() template, and
+# a multi-line value would break dedent's common-prefix detection. buildifier
+# reflows it onto multiple lines afterwards.
+_X25519_MIPS_COPTS = (
+    "copts = select({"
+    '"//platforms:mipsel32": ["-mno-explicit-relocs"], '
+    '"//platforms:mipsbe32": ["-mno-explicit-relocs"], '
+    '"//conditions:default": []}),'
+)
+
+
+def _payload_blob_target(stem: str, copts: str, hosted: bool) -> str:
+    """Return the pic_blob (+ hosted variant) Starlark for one payload blob."""
+    out = textwrap.dedent(f"""\
+        pic_blob(
+            name = "{stem}",
+            srcs = ["{stem}.c"],
+            deps = ["//src/include/picblobs:headers"],
+            linker_script = "//src/linker:blob.ld",
+            {copts}
+        )
+
+        """)
+    if not hosted:
+        return out
+    return out + textwrap.dedent(f"""\
+        extract_bin(
+            name = "{stem}_bin",
+            src = ":{stem}",
+        )
+
+        pic_blob(
+            name = "{stem}_hosted",
+            srcs = ["{stem}.c"],
+            local_defines = ["PIC_PLATFORM_HOSTED"],
+            deps = ["//src/include/picblobs:headers"],
+            linker_script = "//src/linker:blob.ld",
+            {copts}
+        )
+
+        extract_bin(
+            name = "{stem}_hosted_bin",
+            src = ":{stem}_hosted",
+        )
+
+        """)
+
+
 def _gen_payload_build() -> str:
     """Generate src/payload/BUILD.bazel by scanning for .c files."""
     payload_dir = PROJECT_ROOT / "src/payload"
@@ -881,7 +946,8 @@ def _gen_payload_build() -> str:
         return ""
 
     # Check which blobs need hosted variants and extract_bin.
-    hosted_blobs = [s for s in c_files if _blob_needs_hosted(payload_dir / f"{s}.c")]
+    hosted_blobs = {s for s in c_files if _blob_needs_hosted(payload_dir / f"{s}.c")}
+    x25519_blobs = {s for s in c_files if _blob_uses_x25519(payload_dir / f"{s}.c")}
 
     lines = [
         _BZL,
@@ -904,41 +970,8 @@ def _gen_payload_build() -> str:
     )
 
     for stem in c_files:
-        lines.append(
-            textwrap.dedent(f"""\
-            pic_blob(
-                name = "{stem}",
-                srcs = ["{stem}.c"],
-                deps = ["//src/include/picblobs:headers"],
-                linker_script = "//src/linker:blob.ld",
-            )
-
-            """)
-        )
-
-        if stem in hosted_blobs:
-            lines.append(
-                textwrap.dedent(f"""\
-                extract_bin(
-                    name = "{stem}_bin",
-                    src = ":{stem}",
-                )
-
-                pic_blob(
-                    name = "{stem}_hosted",
-                    srcs = ["{stem}.c"],
-                    local_defines = ["PIC_PLATFORM_HOSTED"],
-                    deps = ["//src/include/picblobs:headers"],
-                    linker_script = "//src/linker:blob.ld",
-                )
-
-                extract_bin(
-                    name = "{stem}_hosted_bin",
-                    src = ":{stem}_hosted",
-                )
-
-                """)
-            )
+        copts = _X25519_MIPS_COPTS if stem in x25519_blobs else ""
+        lines.append(_payload_blob_target(stem, copts, stem in hosted_blobs))
 
     return "".join(lines)
 

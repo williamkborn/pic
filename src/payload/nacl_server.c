@@ -211,10 +211,15 @@ PIC_TEXT
 static int handshake(int fd, const unsigned char *auth_key,
 	unsigned char *session_key, int send_first)
 {
-	unsigned char eph_pk[crypto_scalarmult_BYTES];
-	unsigned char eph_sk[crypto_scalarmult_SCALARBYTES];
-	unsigned char peer_pk[crypto_scalarmult_BYTES];
-	unsigned char hs[crypto_secretbox_ZEROBYTES + 64];
+	/* Zero-init the key material: crypto_box_keypair fills eph_pk/eph_sk
+	 * via randombytes, but the static analyzer cannot model the
+	 * /dev/urandom read, so it would otherwise flag a false "uninitialized"
+	 * read inside the vendored X25519 (tweetnacl.h). The zeroing is
+	 * harmless — every byte is overwritten before use. */
+	unsigned char eph_pk[crypto_scalarmult_BYTES] = {0};
+	unsigned char eph_sk[crypto_scalarmult_SCALARBYTES] = {0};
+	unsigned char peer_pk[crypto_scalarmult_BYTES] = {0};
+	unsigned char hs[crypto_secretbox_ZEROBYTES + 64] = {0};
 	long n;
 
 	crypto_box_keypair(eph_pk, eph_sk);
