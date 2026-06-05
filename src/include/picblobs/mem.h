@@ -24,8 +24,9 @@ __attribute__((used, noinline)) static void *memcpy(
 {
 	pic_u8 *d = (pic_u8 *)dst;
 	const pic_u8 *s = (const pic_u8 *)src;
-	while (n--)
+	while (n--) {
 		*d++ = *s++;
+	}
 	return dst;
 }
 
@@ -33,8 +34,9 @@ __attribute__((used, noinline)) static void *memset(
 	void *dst, int c, pic_size_t n)
 {
 	pic_u8 *d = (pic_u8 *)dst;
-	while (n--)
+	while (n--) {
 		*d++ = (pic_u8)c;
+	}
 	return dst;
 }
 
@@ -44,8 +46,9 @@ __attribute__((used, noinline)) static int memcmp(
 	const pic_u8 *pa = (const pic_u8 *)a;
 	const pic_u8 *pb = (const pic_u8 *)b;
 	while (n--) {
-		if (*pa != *pb)
+		if (*pa != *pb) {
 			return *pa - *pb;
+		}
 		pa++;
 		pb++;
 	}

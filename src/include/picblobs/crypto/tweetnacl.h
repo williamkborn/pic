@@ -28,6 +28,13 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
+/*
+ * Vendored, near-verbatim TweetNaCl (public domain). Not subject to the
+ * project's clang-tidy style rules — kept close to upstream so it can be
+ * re-synced. NOLINTBEGIN ... NOLINTEND (paired with the marker near EOF).
+ */
+// NOLINTBEGIN
+
 /* ---- API constants ---- */
 
 #define crypto_box_PUBLICKEYBYTES 32
@@ -213,8 +220,9 @@ static int crypto_stream_salsa20_xor(
 {
 	_tn_u8 z[16], x[64];
 	_tn_u32 u, i;
-	if (!b)
+	if (!b) {
 		return 0;
+	}
 	_TN_FOR(i, 16) z[i] = 0;
 	_TN_FOR(i, 8) z[i] = n[i];
 	while (b >= 64) {
@@ -228,8 +236,9 @@ static int crypto_stream_salsa20_xor(
 		}
 		b -= 64;
 		c += 64;
-		if (m)
+		if (m) {
 			m += 64;
+		}
 	}
 	if (b) {
 		crypto_core_salsa20(x, z, k, _tn_sigma);
@@ -292,8 +301,9 @@ static int crypto_onetimeauth(
 
 	while (n > 0) {
 		_TN_FOR(j, 17) c[j] = 0;
-		for (j = 0; (j < 16) && (j < n); ++j)
+		for (j = 0; (j < 16) && (j < n); ++j) {
 			c[j] = m[j];
+		}
 		c[j] = 1;
 		m += j;
 		n -= j;
@@ -352,8 +362,9 @@ static int crypto_secretbox(
 	_tn_u8 *c, const _tn_u8 *m, _tn_u64 d, const _tn_u8 *n, const _tn_u8 *k)
 {
 	int i;
-	if (d < 32)
+	if (d < 32) {
 		return -1;
+	}
 	crypto_stream_xor(c, m, d, n, k);
 	crypto_onetimeauth(c + 16, c + 32, d - 32, c);
 	_TN_FOR(i, 16) c[i] = 0;
@@ -365,11 +376,13 @@ static int crypto_secretbox_open(
 {
 	int i;
 	_tn_u8 x[32];
-	if (d < 32)
+	if (d < 32) {
 		return -1;
+	}
 	crypto_stream(x, 32, n, k);
-	if (crypto_onetimeauth_verify(c + 16, c + 32, d - 32, x) != 0)
+	if (crypto_onetimeauth_verify(c + 16, c + 32, d - 32, x) != 0) {
 		return -1;
+	}
 	crypto_stream_xor(m, c, d, n, k);
 	_TN_FOR(i, 32) m[i] = 0;
 	return 0;
@@ -488,8 +501,9 @@ static void _tn_inv25519(_tn_gf o, const _tn_gf i)
 	_TN_FOR(a, 16) c[a] = i[a];
 	for (a = 253; a >= 0; a--) {
 		_tn_S(c, c);
-		if (a != 2 && a != 4)
+		if (a != 2 && a != 4) {
 			_tn_M(c, c, i);
+		}
 	}
 	_TN_FOR(a, 16) o[a] = c[a];
 }
@@ -501,8 +515,9 @@ static void _tn_pow2523(_tn_gf o, const _tn_gf i)
 	_TN_FOR(a, 16) c[a] = i[a];
 	for (a = 250; a >= 0; a--) {
 		_tn_S(c, c);
-		if (a != 1)
+		if (a != 1) {
 			_tn_M(c, c, i);
+		}
 	}
 	_TN_FOR(a, 16) o[a] = c[a];
 }
@@ -927,16 +942,19 @@ static int _tn_unpackneg(_tn_gf r[4], const _tn_u8 p[32])
 
 	_tn_S(chk, r[0]);
 	_tn_M(chk, chk, den);
-	if (_tn_neq25519(chk, num))
+	if (_tn_neq25519(chk, num)) {
 		_tn_M(r[0], r[0], _tn_I);
+	}
 
 	_tn_S(chk, r[0]);
 	_tn_M(chk, chk, den);
-	if (_tn_neq25519(chk, num))
+	if (_tn_neq25519(chk, num)) {
 		return -1;
+	}
 
-	if (_tn_par25519(r[0]) == (p[31] >> 7))
+	if (_tn_par25519(r[0]) == (p[31] >> 7)) {
 		_tn_Z(r[0], _tn_gf0, r[0]);
+	}
 
 	_tn_M(r[3], r[0], r[1]);
 	return 0;
@@ -950,11 +968,13 @@ static int crypto_sign_open(
 	_tn_gf p[4], q[4];
 
 	*mlen = (_tn_u64)-1;
-	if (n < 64)
+	if (n < 64) {
 		return -1;
+	}
 
-	if (_tn_unpackneg(q, pk))
+	if (_tn_unpackneg(q, pk)) {
 		return -1;
+	}
 
 	_TN_FOR(i, (_tn_i64)n) m[i] = sm[i];
 	_TN_FOR(i, 32) m[i + 32] = pk[i];
@@ -976,6 +996,8 @@ static int crypto_sign_open(
 	*mlen = n;
 	return 0;
 }
+
+// NOLINTEND
 
 #pragma GCC diagnostic pop
 

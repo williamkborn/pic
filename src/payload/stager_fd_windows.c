@@ -55,10 +55,12 @@ static int read_all(fn_ReadFile rf, void *hFile, void *buf, pic_u32 count)
 	unsigned long got = 0;
 	pic_u32 done = 0;
 	while (done < count) {
-		if (!rf(hFile, p + done, count - done, &got, PIC_NULL))
+		if (!rf(hFile, p + done, count - done, &got, PIC_NULL)) {
 			return 0;
-		if (got == 0)
+		}
+		if (got == 0) {
 			return 0;
+		}
 		done += (pic_u32)got;
 	}
 	return 1;
@@ -100,10 +102,12 @@ static int resolve_funcs(struct resolved_funcs *f)
 PIC_TEXT
 static unsigned long stream_handle_id(pic_u32 stream_id)
 {
-	if (stream_id == 1)
+	if (stream_id == 1) {
 		return STD_OUTPUT_HANDLE;
-	if (stream_id == 2)
+	}
+	if (stream_id == 2) {
 		return STD_ERROR_HANDLE;
+	}
 	return STD_INPUT_HANDLE;
 }
 
@@ -111,8 +115,9 @@ PIC_TEXT
 static pic_u32 read_payload_size(fn_ReadFile rf, void *hFile)
 {
 	pic_u8 size_buf[4];
-	if (!read_all(rf, hFile, size_buf, 4))
+	if (!read_all(rf, hFile, size_buf, 4)) {
 		return 0;
+	}
 	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
 		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
 }

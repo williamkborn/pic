@@ -118,11 +118,13 @@ PIC_TEXT
 static const pic_u8 *validate_pe(const pic_u8 *cfg, pic_u32 *pe_size)
 {
 	*pe_size = config_pe_size(cfg);
-	if (*pe_size < 2 || *pe_size > 0x10000000)
+	if (*pe_size < 2 || *pe_size > 0x10000000) {
 		return PIC_NULL;
+	}
 	const pic_u8 *pe = cfg + 9;
-	if (pe[0] != 'M' || pe[1] != 'Z')
+	if (pe[0] != 'M' || pe[1] != 'Z') {
 		return PIC_NULL;
+	}
 	return pe;
 }
 
@@ -130,8 +132,9 @@ PIC_TEXT
 static void copy_image(void *image, const pic_u8 *pe, pic_u32 pe_size)
 {
 	pic_u8 *dst = (pic_u8 *)image;
-	for (pic_u32 i = 0; i < pe_size; i++)
+	for (pic_u32 i = 0; i < pe_size; i++) {
 		dst[i] = pe[i];
+	}
 }
 
 PIC_ENTRY

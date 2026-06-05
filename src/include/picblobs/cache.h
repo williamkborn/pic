@@ -20,11 +20,13 @@ PIC_CACHE_INLINE void pic_sync_icache_aarch64(void *addr, pic_size_t len)
 	dline = (pic_uintptr)4U << ((ctr >> 16U) & 0xfU);
 	iline = (pic_uintptr)4U << (ctr & 0xfU);
 
-	for (pic_uintptr p = start & ~(dline - 1U); p < end; p += dline)
+	for (pic_uintptr p = start & ~(dline - 1U); p < end; p += dline) {
 		__asm__ volatile("dc cvau, %0" : : "r"(p) : "memory");
+	}
 	__asm__ volatile("dsb ish" ::: "memory");
-	for (pic_uintptr p = start & ~(iline - 1U); p < end; p += iline)
+	for (pic_uintptr p = start & ~(iline - 1U); p < end; p += iline) {
 		__asm__ volatile("ic ivau, %0" : : "r"(p) : "memory");
+	}
 	__asm__ volatile("dsb ish\n\tisb" ::: "memory");
 #else
 	(void)addr;
@@ -71,8 +73,9 @@ PIC_CACHE_INLINE void pic_sync_icache_mips(void *addr, pic_size_t len)
 
 PIC_CACHE_INLINE void pic_sync_icache(void *addr, pic_size_t len)
 {
-	if (len == 0)
+	if (len == 0) {
 		return;
+	}
 #if defined(__aarch64__)
 	pic_sync_icache_aarch64(addr, len);
 #elif defined(__arm__)

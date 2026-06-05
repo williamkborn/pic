@@ -88,8 +88,9 @@ static int read_exact(int fd, void *buf, pic_size_t n)
 	pic_size_t done = 0;
 	while (done < n) {
 		long r = pic_read(fd, p + done, n - done);
-		if (r <= 0)
+		if (r <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)r;
 	}
 	return 0;
@@ -102,8 +103,9 @@ static int write_all(int fd, const void *buf, pic_size_t n)
 	pic_size_t done = 0;
 	while (done < n) {
 		long r = pic_write(fd, p + done, n - done);
-		if (r <= 0)
+		if (r <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)r;
 	}
 	return 0;
@@ -138,26 +140,32 @@ static long recv_decrypt(
 	pic_u32 ct_len;
 	pic_u64 box_len;
 
-	if (read_exact(fd, nonce, sizeof(nonce)) < 0)
+	if (read_exact(fd, nonce, sizeof(nonce)) < 0) {
 		return -1;
-	if (read_exact(fd, len_buf, 4) < 0)
+	}
+	if (read_exact(fd, len_buf, 4) < 0) {
 		return -1;
+	}
 
 	ct_len = (pic_u32)len_buf[0] | ((pic_u32)len_buf[1] << 8) |
 		((pic_u32)len_buf[2] << 16) | ((pic_u32)len_buf[3] << 24);
-	if (ct_len > MAX_CT)
+	if (ct_len > MAX_CT) {
 		return -1;
+	}
 
 	pic_memset(ct, 0, crypto_secretbox_BOXZEROBYTES);
-	if (read_exact(fd, ct + crypto_secretbox_BOXZEROBYTES, ct_len) < 0)
+	if (read_exact(fd, ct + crypto_secretbox_BOXZEROBYTES, ct_len) < 0) {
 		return -1;
+	}
 
 	box_len = (pic_u64)ct_len + crypto_secretbox_BOXZEROBYTES;
-	if (box_len > pt_cap)
+	if (box_len > pt_cap) {
 		return -1;
+	}
 
-	if (crypto_secretbox_open(pt, ct, box_len, nonce, key) != 0)
+	if (crypto_secretbox_open(pt, ct, box_len, nonce, key) != 0) {
 		return -1;
+	}
 
 	return (long)(box_len - crypto_secretbox_ZEROBYTES);
 }
@@ -174,8 +182,9 @@ static int encrypt_send(
 	pic_u32 ct_len;
 	pic_u8 len_buf[4] = {0};
 
-	if (msg_len > MAX_CT)
+	if (msg_len > MAX_CT) {
 		return -1;
+	}
 
 	randombytes(nonce, sizeof(nonce));
 	pic_memset(pt, 0, crypto_secretbox_ZEROBYTES);
@@ -189,12 +198,15 @@ static int encrypt_send(
 	len_buf[2] = (pic_u8)(ct_len >> 16);
 	len_buf[3] = (pic_u8)(ct_len >> 24);
 
-	if (write_all(fd, nonce, sizeof(nonce)) < 0)
+	if (write_all(fd, nonce, sizeof(nonce)) < 0) {
 		return -1;
-	if (write_all(fd, len_buf, 4) < 0)
+	}
+	if (write_all(fd, len_buf, 4) < 0) {
 		return -1;
-	if (write_all(fd, ct + crypto_secretbox_BOXZEROBYTES, ct_len) < 0)
+	}
+	if (write_all(fd, ct + crypto_secretbox_BOXZEROBYTES, ct_len) < 0) {
 		return -1;
+	}
 	return 0;
 }
 
@@ -225,17 +237,21 @@ static int handshake(int fd, const unsigned char *auth_key,
 	crypto_box_keypair(eph_pk, eph_sk);
 
 	if (send_first) {
-		if (encrypt_send(fd, auth_key, eph_pk, sizeof(eph_pk)) < 0)
+		if (encrypt_send(fd, auth_key, eph_pk, sizeof(eph_pk)) < 0) {
 			return -1;
+		}
 		n = recv_decrypt(fd, auth_key, hs, sizeof(hs));
-		if (n != (long)sizeof(eph_pk))
+		if (n != (long)sizeof(eph_pk)) {
 			return -1;
+		}
 	} else {
 		n = recv_decrypt(fd, auth_key, hs, sizeof(hs));
-		if (n != (long)sizeof(eph_pk))
+		if (n != (long)sizeof(eph_pk)) {
 			return -1;
-		if (encrypt_send(fd, auth_key, eph_pk, sizeof(eph_pk)) < 0)
+		}
+		if (encrypt_send(fd, auth_key, eph_pk, sizeof(eph_pk)) < 0) {
 			return -1;
+		}
 	}
 
 	pic_memcpy(peer_pk, hs + crypto_secretbox_ZEROBYTES, sizeof(peer_pk));
@@ -260,14 +276,16 @@ void _start(
 
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
 	unsigned char session_key[crypto_secretbox_KEYBYTES];
-	int sock, conn;
+	int sock;
+	int conn;
 	long pt_len;
 	pic_u16 port;
 
 	/* Create listening socket. */
 	sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);
-	if (sock < 0)
+	if (sock < 0) {
 		pic_exit_group(1);
+	}
 
 	int one = 1;
 	pic_setsockopt(
@@ -280,36 +298,42 @@ void _start(
 	addr.sin_port = pic_htons(port);
 	addr.sin_addr = PIC_INADDR_ANY;
 
-	if (pic_bind(sock, &addr, sizeof(addr)) < 0)
+	if (pic_bind(sock, &addr, sizeof(addr)) < 0) {
 		goto fail_sock;
-	if (pic_listen(sock, 1) < 0)
+	}
+	if (pic_listen(sock, 1) < 0) {
 		goto fail_sock;
+	}
 
 	pic_write(1, tag_listen, sizeof(tag_listen) - 1);
 
 	conn = (int)pic_accept(sock, PIC_NULL, PIC_NULL);
-	if (conn < 0)
+	if (conn < 0) {
 		goto fail_sock;
+	}
 
 	pic_write(1, tag_conn, sizeof(tag_conn) - 1);
 
 	/* Authenticated ephemeral X25519 key exchange (server receives first).
 	 */
-	if (handshake(conn, config_auth_key(), session_key, 0) < 0)
+	if (handshake(conn, config_auth_key(), session_key, 0) < 0) {
 		goto fail_conn;
+	}
 
 	/* Receive and decrypt message under the per-session key. */
 	pt_len = recv_decrypt(conn, session_key, pt, sizeof(pt));
-	if (pt_len < 0)
+	if (pt_len < 0) {
 		goto fail_conn;
+	}
 
 	pic_write(1, tag_recv, sizeof(tag_recv) - 1);
 	pic_write(1, pt + crypto_secretbox_ZEROBYTES, (pic_size_t)pt_len);
 	pic_write(1, newline, 1);
 
 	/* Send encrypted ACK under the per-session key. */
-	if (encrypt_send(conn, session_key, ack_msg, sizeof(ack_msg) - 1) < 0)
+	if (encrypt_send(conn, session_key, ack_msg, sizeof(ack_msg) - 1) < 0) {
 		goto fail_conn;
+	}
 
 	pic_write(1, tag_ok, sizeof(tag_ok) - 1);
 	pic_close(conn);

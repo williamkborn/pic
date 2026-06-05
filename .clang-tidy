@@ -9,6 +9,7 @@ Checks: >
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-reserved-identifier,
+  -bugprone-casting-through-void,
   cert-*,
   -cert-dcl37-c,
   -cert-dcl51-cpp,

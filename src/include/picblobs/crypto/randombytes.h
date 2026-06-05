@@ -34,8 +34,9 @@ static void randombytes(unsigned char *x, unsigned long long xlen)
 	long n;
 
 	fd = (int)pic_open(path, PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(90);
+	}
 
 	while (xlen > 0) {
 		n = pic_read(fd, x, (pic_size_t)xlen);

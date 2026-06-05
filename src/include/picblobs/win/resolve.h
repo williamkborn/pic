@@ -31,8 +31,9 @@ static inline void *pic_resolve(pic_u32 dll_hash, pic_u32 func_hash)
 	void *teb = pic_get_teb();
 	void *peb = pic_get_peb(teb);
 	void *dll_base = pic_find_module(peb, dll_hash);
-	if (!dll_base)
+	if (!dll_base) {
 		return PIC_NULL;
+	}
 	return pic_find_export(dll_base, func_hash);
 }
 

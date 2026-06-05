@@ -24,7 +24,8 @@ static inline long pic_raw_syscall(
 		: "r"(r0), "r"(r4), "r"(r5), "r"(r6), "r"(r7), "r"(r8)
 		: "memory", "cr0", "ctr", "lr");
 
-	if (cr & (1L << 28))
+	if (cr & (1L << 28)) {
 		return -r3;
+	}
 	return r3;
 }

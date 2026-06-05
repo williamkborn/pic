@@ -57,8 +57,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -68,10 +69,12 @@ PIC_TEXT
 static int load_path(const pic_u8 *cfg, char path[PATH_MAX_LEN])
 {
 	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
-	if (path_len == 0 || path_len >= PATH_MAX_LEN)
+	if (path_len == 0 || path_len >= PATH_MAX_LEN) {
 		return 0;
-	for (pic_u16 i = 0; i < path_len; i++)
+	}
+	for (pic_u16 i = 0; i < path_len; i++) {
 		path[i] = (char)cfg[2 + i];
+	}
 	path[path_len] = '\0';
 	return 1;
 }
@@ -79,8 +82,9 @@ static int load_path(const pic_u8 *cfg, char path[PATH_MAX_LEN])
 PIC_TEXT
 static int seek_payload(int fd, pic_u32 offset)
 {
-	if (offset == 0)
+	if (offset == 0) {
 		return 1;
+	}
 	return pic_lseek(fd, (long)offset, PIC_SEEK_SET) >= 0;
 }
 
@@ -101,18 +105,21 @@ void _start(void)
 	const pic_u8 *cfg = (const pic_u8 *)stager_mmap_config;
 
 	char path[PATH_MAX_LEN];
-	if (!load_path(cfg, path))
+	if (!load_path(cfg, path)) {
 		pic_exit_group(1);
+	}
 
 	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
 	pic_u32 offset = read_u32_le(cfg + 2 + path_len);
 	pic_u32 size = read_u32_le(cfg + 2 + path_len + 8);
-	if (size == 0 || size > 0x10000000)
+	if (size == 0 || size > 0x10000000) {
 		pic_exit_group(1);
+	}
 
 	int fd = (int)pic_open(path, PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(1);
+	}
 
 	/* Skip bytes before the target segment. On 32-bit MIPS pic_lseek wraps
 	 * llseek which takes hi/lo args — we only support offsets that fit in a
