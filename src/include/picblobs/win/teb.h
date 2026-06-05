@@ -21,7 +21,7 @@
 PIC_TEXT
 static inline void *pic_get_teb(void)
 {
-	void *teb;
+	void *teb = 0;
 	__asm__ volatile("mov %%gs:0x30, %0" : "=r"(teb));
 	return teb;
 }

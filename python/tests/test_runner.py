@@ -242,6 +242,43 @@ class TestExecCommandFallback:
         assert exc_info.value.errno == errno.ENOEXEC
 
 
+class _RecordingRun:
+    """subprocess.run replacement that records the kwargs of each call."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, stdout=None, stderr=None)
+
+
+class TestExecCommandInteractive:
+    """Interactive mode inherits the terminal instead of capturing output."""
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_interactive_inherits_stdio(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = _RecordingRun()
+        monkeypatch.setattr("picblobs.runner.subprocess.run", fake)
+        proc, _ = exec_command(["./blob.elf"], "x86_64", interactive=True)
+        assert proc.returncode == 0
+        kwargs = fake.calls[0]
+        # No capture, no fed stdin, no timeout — the child owns the tty.
+        assert "capture_output" not in kwargs
+        assert "input" not in kwargs
+        assert kwargs.get("timeout") is None
+
+    @pytest.mark.usefixtures("_clear_launcher_cache")
+    def test_non_interactive_captures(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fake = _RecordingRun()
+        monkeypatch.setattr("picblobs.runner.subprocess.run", fake)
+        exec_command(["./blob.elf"], "x86_64", stdin_data=b"hi", timeout=5.0)
+        kwargs = fake.calls[0]
+        assert kwargs["capture_output"] is True
+        assert kwargs["input"] == b"hi"
+        assert kwargs["timeout"] == 5.0
+
+
 class TestFindRunner:
     """Test runner binary discovery."""
 

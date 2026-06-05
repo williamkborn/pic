@@ -42,10 +42,12 @@ PIC_TEXT
 static inline void _pic_log_puts(const char *s)
 {
 	const char *p = s;
-	while (*p)
+	while (*p) {
 		p++;
-	if (p != s)
+	}
+	if (p != s) {
 		pic_write(2, s, (pic_size_t)(p - s));
+	}
 }
 
 /*
@@ -75,8 +77,9 @@ static inline void _pic_log_putd(long val)
 		}
 	}
 
-	if (neg)
+	if (neg) {
 		buf[--pos] = '-';
+	}
 
 	pic_write(2, buf + pos, (pic_size_t)(sizeof(buf) - pos));
 }
@@ -125,8 +128,9 @@ static inline void _pic_log_fmt(const char *fmt, ...)
 		}
 
 		/* Flush text before '%' */
-		if (p > span)
+		if (p > span) {
 			pic_write(2, span, (pic_size_t)(p - span));
+		}
 
 		p++; /* skip '%' */
 		switch (*p) {
@@ -159,8 +163,9 @@ static inline void _pic_log_fmt(const char *fmt, ...)
 	}
 
 	/* Flush remaining text. */
-	if (p > span)
+	if (p > span) {
 		pic_write(2, span, (pic_size_t)(p - span));
+	}
 
 	__builtin_va_end(ap);
 }

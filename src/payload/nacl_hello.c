@@ -86,13 +86,15 @@ void _start(void)
 
 	/* Decrypt. */
 	pic_memset(pt_out, 0, sizeof(pt_out));
-	if (crypto_secretbox_open(pt_out, ct, sizeof(ct), nonce, key) != 0)
+	if (crypto_secretbox_open(pt_out, ct, sizeof(ct), nonce, key) != 0) {
 		goto fail;
+	}
 
 	/* Verify round-trip. */
 	if (pic_memcmp(pt_out + crypto_secretbox_ZEROBYTES, plaintext,
-		    PT_LEN) != 0)
+		    PT_LEN) != 0) {
 		goto fail;
+	}
 
 	pic_write(1, msg_ok, sizeof(msg_ok) - 1);
 	pic_exit_group(0);

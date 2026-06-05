@@ -49,14 +49,16 @@ void _start(void)
 	 * interpret the little-endian config field backwards). */
 	pic_u32 size = (pic_u32)cfg_bytes[0] | ((pic_u32)cfg_bytes[1] << 8) |
 		((pic_u32)cfg_bytes[2] << 16) | ((pic_u32)cfg_bytes[3] << 24);
-	if (size == 0 || size > 0x10000000)
+	if (size == 0 || size > 0x10000000) {
 		pic_exit_group(1);
+	}
 
 	void *mem = pic_mmap(PIC_NULL, (pic_size_t)size,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)mem == -1)
+	if ((long)mem == -1) {
 		pic_exit_group(1);
+	}
 
 	/*
 	 * Inline byte copy. Using pic_memcpy() would emit a function call on
@@ -69,8 +71,9 @@ void _start(void)
 	 */
 	const pic_u8 *src = cfg_bytes + sizeof(struct alloc_jump_config);
 	pic_u8 *dst = (pic_u8 *)mem;
-	for (pic_u32 i = 0; i < size; i++)
+	for (pic_u32 i = 0; i < size; i++) {
 		dst[i] = src[i];
+	}
 	pic_sync_icache(mem, (pic_size_t)size);
 
 	/* Jump to payload; on ARM Thumb, set the LSB. */

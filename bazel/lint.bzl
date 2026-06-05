@@ -60,6 +60,12 @@ def _clang_tidy_aspect_impl(target, ctx):
     compilation_context = target[CcInfo].compilation_context
     header_inputs = compilation_context.headers.to_list()
 
+    # Stage .clang-tidy into the action and point clang-tidy at it explicitly.
+    # Without this, sandboxed actions can't find the config by directory walk,
+    # so clang-tidy silently runs with no project checks (e.g. the Barr-C
+    # readability-braces-around-statements rule never fires).
+    config_file = ctx.file._clang_tidy_config
+
     outputs = []
     for src in srcs:
         lint_output = ctx.actions.declare_file(
@@ -70,6 +76,7 @@ def _clang_tidy_aspect_impl(target, ctx):
         args = ctx.actions.args()
         args.add(lint_output)
         args.add(src)
+        args.add(config_file, format = "--config-file=%s")
         args.add("--")
         args.add_all(compilation_context.includes, before_each = "-I")
         args.add_all(compilation_context.system_includes, before_each = "-isystem")
@@ -78,7 +85,7 @@ def _clang_tidy_aspect_impl(target, ctx):
 
         ctx.actions.run_shell(
             outputs = [lint_output],
-            inputs = [src] + header_inputs,
+            inputs = [src, config_file] + header_inputs,
             command = """
                 set -eu
                 out="$1"; shift
@@ -106,6 +113,12 @@ def _clang_tidy_aspect_impl(target, ctx):
 clang_tidy_aspect = aspect(
     implementation = _clang_tidy_aspect_impl,
     attr_aspects = ["deps"],
+    attrs = {
+        "_clang_tidy_config": attr.label(
+            default = Label("//:.clang-tidy"),
+            allow_single_file = True,
+        ),
+    },
     doc = "Runs clang-tidy on C source files. Fails on warnings.",
 )
 

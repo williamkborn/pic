@@ -208,24 +208,27 @@ static void pic_memcpy(void *dst, const void *src, pic_size_t n)
 {
 	pic_u8 *d = (pic_u8 *)dst;
 	const pic_u8 *s = (const pic_u8 *)src;
-	while (n--)
+	while (n--) {
 		*d++ = *s++;
+	}
 }
 
 PIC_TEXT
 static void pic_memset(void *dst, int c, pic_size_t n)
 {
 	pic_u8 *d = (pic_u8 *)dst;
-	while (n--)
+	while (n--) {
 		*d++ = (pic_u8)c;
+	}
 }
 
 PIC_TEXT
 static pic_size_t pic_strlen(const char *s)
 {
 	pic_size_t n = 0;
-	while (s[n])
+	while (s[n]) {
 		n++;
+	}
 	return n;
 }
 
@@ -239,12 +242,15 @@ PIC_TEXT
 static int pf_to_prot(Elf_Word flags)
 {
 	int prot = 0;
-	if (flags & PF_R)
+	if (flags & PF_R) {
 		prot |= PIC_PROT_READ;
-	if (flags & PF_W)
+	}
+	if (flags & PF_W) {
 		prot |= PIC_PROT_WRITE;
-	if (flags & PF_X)
+	}
+	if (flags & PF_X) {
 		prot |= PIC_PROT_EXEC;
+	}
 	return prot;
 }
 
@@ -255,8 +261,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -304,8 +311,9 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 	pic_u8 *new_base = (pic_u8 *)pic_mmap(SAFE_ADDR_HINT, alloc_size,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)new_base == -1)
+	if ((long)new_base == -1) {
 		pic_exit_group(110);
+	}
 
 	/* Copy the entire blob + config to the new location. */
 	pic_memcpy(new_base, (const void *)blob_start, total_size);
@@ -338,8 +346,9 @@ __attribute__((noreturn)) static void self_remap(pic_uintptr blob_start,
 		pic_uintptr *got = (pic_uintptr *)(new_base + got_off);
 		pic_uintptr *got_e = (pic_uintptr *)(new_base + got_end_off);
 		while (got < got_e) {
-			if (*got)
+			if (*got) {
 				*got += delta;
+			}
 			got++;
 		}
 	}
@@ -374,18 +383,22 @@ static int find_load_range(const Elf_Ehdr *ehdr, const Elf_Phdr *phdr,
 	pic_uintptr vaddr_max = 0;
 
 	for (int i = 0; i < ehdr->e_phnum; i++) {
-		if (phdr[i].p_type != PT_LOAD)
+		if (phdr[i].p_type != PT_LOAD) {
 			continue;
+		}
 		pic_uintptr lo = (pic_uintptr)phdr[i].p_vaddr;
 		pic_uintptr hi = lo + phdr[i].p_memsz;
-		if (lo < vaddr_min)
+		if (lo < vaddr_min) {
 			vaddr_min = lo;
-		if (hi > vaddr_max)
+		}
+		if (hi > vaddr_max) {
 			vaddr_max = hi;
+		}
 	}
 
-	if (vaddr_min == (pic_uintptr)-1)
+	if (vaddr_min == (pic_uintptr)-1) {
 		return 0;
+	}
 
 	*out_vaddr_min = vaddr_min;
 	*out_vaddr_max = vaddr_max;
@@ -400,8 +413,9 @@ static pic_uintptr reserve_pie_range(
 		PAGE_ALIGN_UP(vaddr_max) - PAGE_ALIGN_DOWN(vaddr_min);
 	void *region = pic_mmap(PIC_NULL, total, PIC_PROT_NONE,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)region == -1)
+	if ((long)region == -1) {
 		return (pic_uintptr)-1;
+	}
 	return (pic_uintptr)region - PAGE_ALIGN_DOWN(vaddr_min);
 }
 
@@ -417,21 +431,25 @@ static int map_load_segment(const pic_u8 *elf_data, pic_size_t elf_size,
 	void *p = pic_mmap((void *)map_start, map_size,
 		PIC_PROT_READ | PIC_PROT_WRITE,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS | PIC_MAP_FIXED, -1, 0);
-	if ((long)p == -1)
+	if ((long)p == -1) {
 		return 0;
+	}
 
 	if (segment->p_filesz > 0) {
-		if (segment->p_offset + segment->p_filesz > elf_size)
+		if (segment->p_offset + segment->p_filesz > elf_size) {
 			return 0;
+		}
 		pic_memcpy((void *)seg_addr, elf_data + segment->p_offset,
 			segment->p_filesz);
 	}
 
-	if (segment->p_memsz > segment->p_filesz)
+	if (segment->p_memsz > segment->p_filesz) {
 		pic_memset((void *)(seg_addr + segment->p_filesz), 0,
 			segment->p_memsz - segment->p_filesz);
-	if (segment->p_flags & PF_X)
+	}
+	if (segment->p_flags & PF_X) {
 		pic_sync_icache((void *)seg_addr, segment->p_memsz);
+	}
 
 	if (pic_mprotect((void *)map_start, map_size,
 		    pf_to_prot(segment->p_flags)) < 0) {
@@ -482,8 +500,9 @@ static void set_phdr_addr(const Elf_Ehdr *ehdr, const Elf_Phdr *phdr,
 			break;
 		}
 	}
-	if (*out_phdr_addr == 0)
+	if (*out_phdr_addr == 0) {
 		*out_phdr_addr = base + vaddr_min + ehdr->e_phoff;
+	}
 }
 
 PIC_TEXT
@@ -495,29 +514,35 @@ static pic_uintptr load_elf_from_memory(const pic_u8 *elf_data,
 	pic_uintptr vaddr_min = 0;
 	pic_uintptr vaddr_max = 0;
 
-	if (0 == validate_elf_image(ehdr, elf_size))
+	if (0 == validate_elf_image(ehdr, elf_size)) {
 		return (pic_uintptr)-1;
+	}
 
 	phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
 
-	if (0 == find_load_range(ehdr, phdr, &vaddr_min, &vaddr_max))
+	if (0 == find_load_range(ehdr, phdr, &vaddr_min, &vaddr_max)) {
 		return (pic_uintptr)-1;
+	}
 
 	if (ehdr->e_type == ET_DYN) {
 		base = reserve_pie_range(vaddr_min, vaddr_max);
-		if (base == (pic_uintptr)-1)
+		if (base == (pic_uintptr)-1) {
 			return (pic_uintptr)-1;
+		}
 	}
 
 	for (int i = 0; i < ehdr->e_phnum; i++) {
-		if (phdr[i].p_type != PT_LOAD)
+		if (phdr[i].p_type != PT_LOAD) {
 			continue;
-		if (!map_load_segment(elf_data, elf_size, &phdr[i], base))
+		}
+		if (!map_load_segment(elf_data, elf_size, &phdr[i], base)) {
 			return (pic_uintptr)-1;
+		}
 	}
 
-	if (out_phdr_addr)
+	if (out_phdr_addr) {
 		set_phdr_addr(ehdr, phdr, base, vaddr_min, out_phdr_addr);
+	}
 
 	return base;
 }
@@ -530,8 +555,9 @@ PIC_TEXT
 static pic_uintptr load_interp(const char *path, Elf_Addr *out_entry)
 {
 	int fd = (int)pic_open(path, PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		return (pic_uintptr)-1;
+	}
 
 	long fsize = pic_lseek(fd, 0, PIC_SEEK_END);
 	if (fsize <= 0) {
@@ -722,7 +748,7 @@ static pic_uintptr build_stack(pic_u32 argc, const char *argv_data,
 	pic_u32 envp_size, Elf_Addr entry, Elf_Addr phdr_addr, Elf_Half phnum,
 	Elf_Half phentsize, pic_uintptr interp_base)
 {
-	pic_size_t stack_size = 2 * 1024 * 1024;
+	pic_size_t stack_size = (pic_size_t)2 * 1024 * 1024;
 	pic_uintptr stack_base = alloc_stack(stack_size);
 	pic_uintptr top = (pic_uintptr)stack_base + stack_size;
 	pic_uintptr random_addr = 0;
@@ -993,8 +1019,9 @@ static const Elf_Phdr *find_interp_phdr(
 {
 	const Elf_Phdr *phdr = (const Elf_Phdr *)(elf_data + ehdr->e_phoff);
 	for (int i = 0; i < ehdr->e_phnum; i++) {
-		if (phdr[i].p_type == PT_INTERP)
+		if (phdr[i].p_type == PT_INTERP) {
 			return &phdr[i];
+		}
 	}
 	return PIC_NULL;
 }
@@ -1003,15 +1030,18 @@ PIC_TEXT
 static const char *interp_path_from_phdr(
 	const pic_u8 *elf_data, pic_u32 elf_size, const Elf_Phdr *interp_phdr)
 {
-	if (!interp_phdr)
+	if (!interp_phdr) {
 		return PIC_NULL;
-	if (interp_phdr->p_offset + interp_phdr->p_filesz > elf_size)
+	}
+	if (interp_phdr->p_offset + interp_phdr->p_filesz > elf_size) {
 		return PIC_NULL;
+	}
 
 	const char *s = (const char *)(elf_data + interp_phdr->p_offset);
 	for (Elf_Off j = 0; j < interp_phdr->p_filesz; j++) {
-		if (s[j] == '\0')
+		if (s[j] == '\0') {
 			return s;
+		}
 	}
 	return PIC_NULL;
 }
@@ -1019,8 +1049,9 @@ static const char *interp_path_from_phdr(
 PIC_TEXT
 static void maybe_clean_exec_range(const Elf_Ehdr *ehdr, const Elf_Phdr *phdr)
 {
-	if (ehdr->e_type != ET_EXEC)
+	if (ehdr->e_type != ET_EXEC) {
 		return;
+	}
 
 #if defined(__powerpc__) && !defined(__powerpc64__)
 	/*
@@ -1056,15 +1087,15 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 	const char *argv_data = (const char *)(elf_data + cfg->elf_size);
 	const char *envp_data = argv_data + cfg->argv_size;
 	const Elf_Ehdr *ehdr = (const Elf_Ehdr *)elf_data;
-	const Elf_Phdr *phdr;
-	const char *interp_path;
+	const Elf_Phdr *phdr = 0;
+	const char *interp_path = 0;
 	Elf_Addr phdr_addr = 0;
-	pic_uintptr elf_base;
-	Elf_Addr entry;
+	pic_uintptr elf_base = 0;
+	Elf_Addr entry = 0;
 	pic_uintptr interp_base = 0;
 	pic_uintptr interp_entry = 0;
-	pic_uintptr sp;
-	pic_uintptr target;
+	pic_uintptr sp = 0;
+	pic_uintptr target = 0;
 
 	validate_elf_config(cfg, ehdr);
 
@@ -1079,8 +1110,9 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 
 	elf_base =
 		load_elf_from_memory(elf_data, cfg->elf_size, ehdr, &phdr_addr);
-	if (elf_base == (pic_uintptr)-1)
+	if (elf_base == (pic_uintptr)-1) {
 		pic_exit_group(103);
+	}
 
 	entry = elf_base + ehdr->e_entry;
 	PIC_LOG("ul_exec: loaded base=%x entry=%x\n", (long)elf_base,
@@ -1089,8 +1121,9 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 	if (interp_path) {
 		Elf_Addr ie_entry = 0;
 		interp_base = load_interp(interp_path, &ie_entry);
-		if (interp_base == (pic_uintptr)-1)
+		if (interp_base == (pic_uintptr)-1) {
 			pic_exit_group(106);
+		}
 		interp_entry = interp_base + ie_entry;
 		PIC_LOG("ul_exec: interp base=%x entry=%x\n", (long)interp_base,
 			(long)interp_entry);

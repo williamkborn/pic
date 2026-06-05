@@ -9,8 +9,8 @@
 static inline long pic_raw_syscall(
 	long n, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-	long ret;
-	unsigned char cf;
+	long ret = 0;
+	unsigned char cf = 0;
 	register long r10 __asm__("r10") = a3;
 	register long r8 __asm__("r8") = a4;
 	register long r9 __asm__("r9") = a5;
@@ -25,7 +25,7 @@ static inline long pic_raw_syscall(
 static inline long pic_raw_syscall(
 	long n, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-	long ret;
+	long ret = 0;
 	register long r10 __asm__("r10") = a3;
 	register long r8 __asm__("r8") = a4;
 	register long r9 __asm__("r9") = a5;

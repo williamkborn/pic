@@ -87,8 +87,9 @@ struct user_desc {
 static long set_teb_base(void *teb)
 {
 	struct user_desc desc;
-	for (int i = 0; i < (int)sizeof(desc); i++)
+	for (int i = 0; i < (int)sizeof(desc); i++) {
 		((char *)&desc)[i] = 0;
+	}
 	desc.entry_number = (unsigned int)-1;
 	desc.base_addr = (unsigned int)(unsigned long)teb;
 	desc.limit = 0xfffff;
@@ -97,8 +98,9 @@ static long set_teb_base(void *teb)
 	desc.useable = 1;
 
 	long ret = pic_syscall1(__NR_set_thread_area, (long)&desc);
-	if (ret < 0)
+	if (ret < 0) {
 		return ret;
+	}
 
 	unsigned short sel = (unsigned short)((desc.entry_number << 3) | 3);
 	__asm__ volatile("mov %0, %%fs" : : "r"(sel));
@@ -157,19 +159,23 @@ static void call_blob_with_teb(void *blob, void *teb)
 static int unwrap_handle(void *hFile)
 {
 	pic_uintptr v = (pic_uintptr)hFile;
-	if (0U != (v & STD_HANDLE_BIAS))
+	if (0U != (v & STD_HANDLE_BIAS)) {
 		return (int)(v & STD_HANDLE_MASK);
+	}
 	return (int)v;
 }
 
 static void *mock_GetStdHandle(unsigned long nStdHandle)
 {
-	if (nStdHandle == (unsigned long)-10)
+	if (nStdHandle == (unsigned long)-10) {
 		return (void *)(pic_uintptr)(STD_HANDLE_BIAS | 0u); /* stdin */
-	if (nStdHandle == (unsigned long)-11)
+	}
+	if (nStdHandle == (unsigned long)-11) {
 		return (void *)(pic_uintptr)(STD_HANDLE_BIAS | 1u); /* stdout */
-	if (nStdHandle == (unsigned long)-12)
+	}
+	if (nStdHandle == (unsigned long)-12) {
 		return (void *)(pic_uintptr)(STD_HANDLE_BIAS | 2u); /* stderr */
+	}
 	return (void *)-1; /* INVALID_HANDLE_VALUE */
 }
 
@@ -183,13 +189,15 @@ static void *mock_VirtualAlloc(void *lpAddress, pic_uintptr dwSize,
 	/* PAGE_EXECUTE=0x10, PAGE_EXECUTE_READ=0x20,
 	 * PAGE_EXECUTE_READWRITE=0x40 */
 	if ((0x10UL == flProtect) || (0x20UL == flProtect) ||
-		(0x40UL == flProtect))
+		(0x40UL == flProtect)) {
 		prot |= PIC_PROT_EXEC;
+	}
 
 	void *mem = pic_mmap(PIC_NULL, (pic_size_t)dwSize, prot,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)mem == -1)
+	if ((long)mem == -1) {
 		return PIC_NULL;
+	}
 	return mem;
 }
 
@@ -201,12 +209,14 @@ static int mock_WriteFile(void *hFile, const void *lpBuffer,
 	long ret = pic_write(unwrap_handle(hFile), lpBuffer,
 		(pic_size_t)nNumberOfBytesToWrite);
 	if (ret < 0) {
-		if (PIC_NULL != lpNumberOfBytesWritten)
+		if (PIC_NULL != lpNumberOfBytesWritten) {
 			*lpNumberOfBytesWritten = 0;
+		}
 		return 0;
 	}
-	if (PIC_NULL != lpNumberOfBytesWritten)
+	if (PIC_NULL != lpNumberOfBytesWritten) {
 		*lpNumberOfBytesWritten = (unsigned long)ret;
+	}
 	return 1;
 }
 
@@ -218,12 +228,14 @@ static int mock_ReadFile(void *hFile, void *lpBuffer,
 	long ret = pic_read(unwrap_handle(hFile), lpBuffer,
 		(pic_size_t)nNumberOfBytesToRead);
 	if (ret < 0) {
-		if (PIC_NULL != lpNumberOfBytesRead)
+		if (PIC_NULL != lpNumberOfBytesRead) {
 			*lpNumberOfBytesRead = 0;
+		}
 		return 0;
 	}
-	if (PIC_NULL != lpNumberOfBytesRead)
+	if (PIC_NULL != lpNumberOfBytesRead) {
 		*lpNumberOfBytesRead = (unsigned long)ret;
+	}
 	return 1;
 }
 
@@ -248,14 +260,16 @@ static void *mock_CreateFileA(const char *lpFileName,
 
 	int flags = PIC_O_RDONLY;
 	if ((dwDesiredAccess & GENERIC_WRITE) &&
-		(dwDesiredAccess & GENERIC_READ))
+		(dwDesiredAccess & GENERIC_READ)) {
 		flags = 2; /* O_RDWR */
-	else if (dwDesiredAccess & GENERIC_WRITE)
+	} else if (dwDesiredAccess & GENERIC_WRITE) {
 		flags = 1; /* O_WRONLY */
+	}
 
 	long fd = pic_open(lpFileName, flags, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		return (void *)-1; /* INVALID_HANDLE_VALUE */
+	}
 	return (void *)(pic_uintptr)fd;
 }
 
@@ -264,14 +278,17 @@ static int mock_CloseHandle(void *hObject)
 	pic_uintptr v = (pic_uintptr)hObject;
 	long close_status = 0;
 
-	if (0U != (v & STD_HANDLE_BIAS))
+	if (0U != (v & STD_HANDLE_BIAS)) {
 		return 1; /* pseudo-handle — never close stdio fds */
+	}
 	int fd = (int)v;
-	if (2 >= fd)
+	if (2 >= fd) {
 		return 1;
+	}
 	close_status = pic_close(fd);
-	if (0 == close_status)
+	if (0 == close_status) {
 		return 1;
+	}
 	return 0;
 }
 
@@ -292,8 +309,9 @@ static int mock_WSAStartup(unsigned short wVersionRequested, void *lpWSAData)
 		 * ABIs are fine since we only write the prefix.
 		 */
 		pic_u8 *p = (pic_u8 *)lpWSAData;
-		for (int i = 0; i < 408; i++)
+		for (int i = 0; i < 408; i++) {
 			p[i] = 0;
+		}
 	}
 	return 0;
 }
@@ -301,8 +319,9 @@ static int mock_WSAStartup(unsigned short wVersionRequested, void *lpWSAData)
 static pic_uintptr mock_socket(int af, int type, int protocol)
 {
 	long fd = pic_socket(af, type, protocol);
-	if (fd < 0)
+	if (fd < 0) {
 		return (pic_uintptr)-1; /* INVALID_SOCKET */
+	}
 	return (pic_uintptr)fd;
 }
 
@@ -532,11 +551,13 @@ static pic_u8 *build_mock_pe(const struct mock_export *exports, int n_exports)
 	pic_u8 *pe = (pic_u8 *)pic_mmap(PIC_NULL, MOCK_PE_SIZE,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)pe == -1)
+	if ((long)pe == -1) {
 		return PIC_NULL;
+	}
 
-	for (int i = 0; i < MOCK_PE_SIZE; i++)
+	for (int i = 0; i < MOCK_PE_SIZE; i++) {
 		pe[i] = 0;
+	}
 
 	/* DOS header: e_lfanew at +0x3C. */
 	pe_write32(pe, 0x3C, PE_SIG_OFFSET);
@@ -615,7 +636,7 @@ static pic_u8 *build_mock_pe(const struct mock_export *exports, int n_exports)
 
 static pic_u16 write_utf16le(pic_u8 *dest, const char *str)
 {
-	int i = 0;
+	pic_size_t i = 0;
 	while (str[i]) {
 		dest[i * 2] = (pic_u8)str[i];
 		dest[i * 2 + 1] = 0;
@@ -676,11 +697,13 @@ static pic_u8 *build_mock_env(pic_u8 *pe_kernel32, pic_u8 *pe_ws2_32)
 	pic_u8 *region = (pic_u8 *)pic_mmap(PIC_NULL, MOCK_REGION_SIZE,
 		PIC_PROT_READ | PIC_PROT_WRITE,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)region == -1)
+	if ((long)region == -1) {
 		return PIC_NULL;
+	}
 
-	for (int i = 0; i < MOCK_REGION_SIZE; i++)
+	for (int i = 0; i < MOCK_REGION_SIZE; i++) {
 		region[i] = 0;
+	}
 
 	pic_u8 *teb = region + TEB_OFF;
 	pic_u8 *peb = region + PEB_OFF;
@@ -729,10 +752,12 @@ static pic_u8 *build_mock_env(pic_u8 *pe_kernel32, pic_u8 *pe_ws2_32)
 static long file_size(int fd)
 {
 	long end = pic_lseek(fd, 0, PIC_SEEK_END);
-	if (end < 0)
+	if (end < 0) {
 		return -1;
-	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0)
+	}
+	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0) {
 		return -1;
+	}
 	return end;
 }
 
@@ -742,8 +767,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -763,8 +789,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 
 int runner_main(int argc, char **argv)
 {
-	if (argc < 2)
+	if (argc < 2) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	/*
 	 * kernel32.dll exports — alphabetically sorted.
@@ -794,24 +821,29 @@ int runner_main(int argc, char **argv)
 	static const int ws2_n = sizeof(ws2_exports) / sizeof(ws2_exports[0]);
 
 	pic_u8 *pe_k32 = build_mock_pe(k32_exports, k32_n);
-	if (!pe_k32)
+	if (!pe_k32) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	pic_u8 *pe_ws2 = build_mock_pe(ws2_exports, ws2_n);
-	if (!pe_ws2)
+	if (!pe_ws2) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	pic_u8 *teb = build_mock_env(pe_k32, pe_ws2);
-	if (!teb)
+	if (!teb) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	long ret = set_teb_base(teb);
-	if (ret < 0)
+	if (ret < 0) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	int fd = (int)pic_open(argv[1], PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	long size = file_size(fd);
 	if (size <= 0) {

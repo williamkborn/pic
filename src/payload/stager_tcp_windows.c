@@ -64,8 +64,9 @@ static int recv_all(fn_recv pRecv, pic_uintptr s, void *buf, pic_u32 count)
 	pic_u32 done = 0;
 	while (done < count) {
 		int n = pRecv(s, p + done, (int)(count - done), 0);
-		if (n <= 0)
+		if (n <= 0) {
 			return 0;
+		}
 		done += (pic_u32)n;
 	}
 	return 1;
@@ -114,8 +115,9 @@ PIC_TEXT
 static void init_sockaddr(struct pic_sockaddr_in *sa, const pic_u8 *cfg)
 {
 	pic_u8 *sp = (pic_u8 *)sa;
-	for (int i = 0; i < (int)sizeof(*sa); i++)
+	for (int i = 0; i < (int)sizeof(*sa); i++) {
 		sp[i] = 0;
+	}
 	sa->sin_family = (pic_u16)cfg[0];
 	sa->sin_port = pic_htons((pic_u16)cfg[1] | ((pic_u16)cfg[2] << 8));
 	sa->sin_addr = *(const pic_u32 *)(cfg + 3);
@@ -125,8 +127,9 @@ PIC_TEXT
 static pic_u32 recv_payload_size(fn_recv pRecv, pic_uintptr s)
 {
 	pic_u8 size_buf[4];
-	if (!recv_all(pRecv, s, size_buf, 4))
+	if (!recv_all(pRecv, s, size_buf, 4)) {
 		return 0;
+	}
 	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
 		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
 }

@@ -825,6 +825,7 @@ def _run_file(
     debug: bool,
     dry_run: bool,
     runner_path: Path | None,
+    interactive: bool = False,
 ) -> None:
     """Execute an already-assembled blob file under the correct runner.
 
@@ -836,7 +837,9 @@ def _run_file(
     from picblobs.runner import _build_command
 
     if runner_type == "linux" and runner_path is None:
-        _run_linux_file(blob_file, arch, stdin_data, timeout, debug, dry_run)
+        _run_linux_file(
+            blob_file, arch, stdin_data, timeout, debug, dry_run, interactive
+        )
         return
 
     resolved_runner = runner_path
@@ -858,16 +861,34 @@ def _run_file(
         sys.exit(0)
 
     try:
-        result, _ = exec_command(cmd, arch, stdin_data=stdin_data, timeout=timeout)
+        result, _ = exec_command(
+            cmd,
+            arch,
+            stdin_data=stdin_data,
+            timeout=None if interactive else timeout,
+            interactive=interactive,
+        )
     except subprocess.TimeoutExpired:
         _fail(f"blob timed out after {timeout}s")
     except FileNotFoundError as e:
         _fail(str(e))
 
-    sys.stdout.buffer.write(result.stdout)
-    sys.stderr.buffer.write(result.stderr)
-    sys.stdout.flush()
-    sys.stderr.flush()
+    _emit_exec_result(result, interactive)
+
+
+def _emit_exec_result(
+    result: subprocess.CompletedProcess[bytes], interactive: bool
+) -> None:
+    """Forward a completed-process result to stdio and exit with its code.
+
+    In interactive mode output already went to the terminal, so there is
+    nothing (and possibly nothing captured) to replay.
+    """
+    if not interactive:
+        sys.stdout.buffer.write(result.stdout or b"")
+        sys.stderr.buffer.write(result.stderr or b"")
+        sys.stdout.flush()
+        sys.stderr.flush()
     sys.exit(result.returncode)
 
 
@@ -878,12 +899,13 @@ def _run_linux_file(
     timeout: float,
     debug: bool,
     dry_run: bool,
+    interactive: bool = False,
 ) -> None:
     """Run a raw or ELF Linux payload file without a packaged C runner."""
     if dry_run:
         _run_linux_file_dry(blob_file, arch, debug)
         return
-    _run_linux_file_exec(blob_file, arch, stdin_data, timeout, debug)
+    _run_linux_file_exec(blob_file, arch, stdin_data, timeout, debug, interactive)
 
 
 def _run_linux_file_dry(blob_file: Path, arch: str, debug: bool) -> None:
@@ -911,6 +933,7 @@ def _run_linux_file_exec(
     stdin_data: bytes,
     timeout: float,
     debug: bool,
+    interactive: bool = False,
 ) -> None:
     """Prepare and execute Linux file-mode payload bytes as an ELF."""
     from picblobs.runner import build_linux_elf_command
@@ -930,7 +953,13 @@ def _run_linux_file_exec(
         click.echo(f"command:   {' '.join(cmd)}", err=True)
 
     try:
-        result, _ = exec_command(cmd, arch, stdin_data=stdin_data, timeout=timeout)
+        result, _ = exec_command(
+            cmd,
+            arch,
+            stdin_data=stdin_data,
+            timeout=None if interactive else timeout,
+            interactive=interactive,
+        )
     except subprocess.TimeoutExpired:
         _fail(f"blob timed out after {timeout}s")
     except FileNotFoundError as e:
@@ -939,11 +968,7 @@ def _run_linux_file_exec(
         if exec_file is not None:
             _cleanup_prepared_linux_file(exec_file)
 
-    sys.stdout.buffer.write(result.stdout)
-    sys.stderr.buffer.write(result.stderr)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    sys.exit(result.returncode)
+    _emit_exec_result(result, interactive)
 
 
 def _linux_file_placeholder(blob_file: Path) -> Path:
@@ -1033,6 +1058,7 @@ def _run_registry_blob(
     runner_type: str,
     runner_path: Path | None,
     dry_run: bool,
+    interactive: bool = False,
 ) -> None:
     """Run a staged blob looked up through picblobs."""
     try:
@@ -1054,6 +1080,7 @@ def _run_registry_blob(
             runner_type=runner_type,
             runner_path=runner_path,
             dry_run=dry_run,
+            interactive=interactive,
         )
     except FileNotFoundError as e:
         _fail(str(e))
@@ -1063,6 +1090,8 @@ def _run_registry_blob(
     if dry_run:
         click.echo(" ".join(result.command))
         sys.exit(0)
+    if interactive:
+        sys.exit(result.exit_code)
     _emit_run_result(result.stdout, result.stderr, result.exit_code)
 
 
@@ -1097,6 +1126,14 @@ def _run_registry_blob(
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     help="Explicit runner binary path",
 )
+@click.option(
+    "-i",
+    "--interactive",
+    is_flag=True,
+    help="Attach the blob to your terminal (TTY) so interactive guests work "
+    "(e.g. a shell loaded by ul_exec). Disables output capture, stdin feed, "
+    "and the timeout.",
+)
 @click.option("--debug", is_flag=True, help="Verbose output, keep temp files")
 @click.option("--dry-run", is_flag=True, help="Print the command without executing")
 def run(
@@ -1108,6 +1145,7 @@ def run(
     timeout: float,
     runner_type: str | None,
     runner_path: Path | None,
+    interactive: bool,
     debug: bool,
     dry_run: bool,
 ) -> None:
@@ -1121,9 +1159,17 @@ def run(
 
     File mode is what you want after ``picblobs-cli build ... -o out.bin``
     or any other flow that produces a complete (code+config) blob.
+
+    Use ``-i/--interactive`` for blobs that drive a terminal — e.g.
+    ``picblobs-cli run --file bash.bin linux:x86_64 -i`` after building an
+    ul_exec blob around an interactive program.
     """
     blob_type, target = _parse_run_mode(positional, blob_file)
     os_name, arch = _parse_target(target)
+    if interactive and stdin_file:
+        _fail("--interactive and --stdin are mutually exclusive")
+    if interactive and dry_run:
+        _fail("--interactive and --dry-run are mutually exclusive")
     stdin_data = stdin_file.read_bytes() if stdin_file else b""
     selected_runner_type = runner_type or os_name
 
@@ -1142,6 +1188,7 @@ def run(
             debug,
             dry_run,
             runner_path,
+            interactive,
         )
         return
 
@@ -1156,6 +1203,7 @@ def run(
         selected_runner_type,
         runner_path,
         dry_run,
+        interactive,
     )
 
 

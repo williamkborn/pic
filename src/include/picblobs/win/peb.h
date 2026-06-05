@@ -55,8 +55,9 @@ static inline void *pic_find_module(void *peb, pic_u32 dll_hash)
 {
 	/* PEB → Ldr (PEB_LDR_DATA*) */
 	void *ldr = *(void **)((pic_u8 *)peb + PEB_LDR_OFFSET);
-	if (!ldr)
+	if (!ldr) {
 		return PIC_NULL;
+	}
 
 	/*
 	 * Ldr → InMemoryOrderModuleList (LIST_ENTRY).

@@ -514,6 +514,31 @@ class TestRunCommand:
         r = runner.invoke(main, ["run", "hello", "bogus_target"])
         assert r.exit_code != 0
 
+    def test_interactive_rejects_stdin(self, runner: CliRunner, tmp_path: Path) -> None:
+        stdin_file = tmp_path / "in.bin"
+        stdin_file.write_bytes(b"x")
+        r = runner.invoke(
+            main,
+            ["run", "hello", "linux:x86_64", "-i", "--stdin", str(stdin_file)],
+        )
+        assert r.exit_code != 0
+        assert "mutually exclusive" in r.output
+
+    def test_interactive_rejects_dry_run(self, runner: CliRunner) -> None:
+        r = runner.invoke(
+            main, ["run", "hello", "linux:x86_64", "--interactive", "--dry-run"]
+        )
+        assert r.exit_code != 0
+        assert "mutually exclusive" in r.output
+
+    def test_interactive_runs_native(
+        self, runner: CliRunner, qemu_available: bool
+    ) -> None:
+        """Interactive mode runs the blob and exits with its code."""
+        _require_qemu(qemu_available)
+        r = runner.invoke(main, ["run", "hello", "linux:x86_64", "-i"])
+        assert r.exit_code == 0
+
     def test_stdin_piping(
         self,
         runner: CliRunner,
