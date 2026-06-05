@@ -667,6 +667,7 @@ def run_blob(
     debug: bool = False,
     dry_run: bool = False,
     stdin_data: bytes = b"",
+    interactive: bool = False,
 ) -> RunResult:
     """Prepare and execute a blob under QEMU.
 
@@ -681,6 +682,10 @@ def run_blob(
         dry_run: Build command but don't execute. Returns RunResult with command only.
         stdin_data: Bytes to feed to the blob's stdin — used by stager_fd
             tests so the blob can read a length-prefixed payload from fd 0.
+        interactive: Inherit the terminal (TTY) instead of capturing output, so
+            an interactive guest (e.g. a shell loaded by ul_exec) can be driven
+            from the keyboard. Disables stdin_data and the timeout; the returned
+            RunResult has empty stdout/stderr (output went straight to the tty).
 
     Returns:
         RunResult with stdout, stderr, exit code, and duration.
@@ -700,6 +705,7 @@ def run_blob(
             debug,
             dry_run,
             stdin_data,
+            interactive,
         )
 
     return _run_blob_with_runner(
@@ -711,6 +717,7 @@ def run_blob(
         debug,
         dry_run,
         stdin_data,
+        interactive,
     )
 
 
@@ -723,6 +730,7 @@ def _run_blob_with_runner(
     debug: bool,
     dry_run: bool,
     stdin_data: bytes,
+    interactive: bool = False,
 ) -> RunResult:
     """Prepare and execute a blob through a C runner binary."""
     if runner_path is None:
@@ -743,7 +751,7 @@ def _run_blob_with_runner(
 
     try:
         return _execute_blob_command(
-            cmd, blob_file, timeout, debug, stdin_data, blob.target_arch
+            cmd, blob_file, timeout, debug, stdin_data, blob.target_arch, interactive
         )
     except subprocess.TimeoutExpired:
         if not debug:
@@ -778,6 +786,7 @@ def _run_linux_elf_blob(
     debug: bool,
     dry_run: bool,
     stdin_data: bytes,
+    interactive: bool = False,
 ) -> RunResult:
     """Prepare and execute a Linux blob as a temporary ELF executable."""
     if dry_run:
@@ -795,7 +804,7 @@ def _run_linux_elf_blob(
 
     try:
         return _execute_blob_command(
-            cmd, blob_file, timeout, debug, stdin_data, blob.target_arch
+            cmd, blob_file, timeout, debug, stdin_data, blob.target_arch, interactive
         )
     except subprocess.TimeoutExpired:
         if not debug:
@@ -854,12 +863,37 @@ def _run_blob_dry(
     )
 
 
+def _spawn(
+    cmd: list[str],
+    stdin_data: bytes,
+    timeout: float | None,
+    interactive: bool,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run *cmd*, capturing output or inheriting the terminal when interactive.
+
+    In interactive mode the child inherits this process's stdin/stdout/stderr so
+    a guest that drives a terminal (e.g. a shell loaded by ul_exec) gets a real
+    TTY. Output is therefore not captured (``proc.stdout``/``stderr`` are None),
+    no stdin is fed, and no timeout is applied — the session runs until it exits.
+    """
+    if interactive:
+        return subprocess.run(cmd, check=False)
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        check=False,
+        input=stdin_data or None,
+        timeout=timeout,
+    )
+
+
 def exec_command(
     cmd: list[str],
     arch: str,
     *,
     stdin_data: bytes = b"",
     timeout: float | None = None,
+    interactive: bool = False,
 ) -> tuple[subprocess.CompletedProcess[bytes], list[str]]:
     """Run *cmd*, retrying under a qemu-user interpreter on exec failure.
 
@@ -869,7 +903,8 @@ def exec_command(
     qemu-user interpreter and retry once.
 
     Returns the completed process and the argv that actually ran (which gains
-    a qemu prefix if the fallback fired).
+    a qemu prefix if the fallback fired). With ``interactive=True`` the child
+    inherits the terminal (see :func:`_spawn`).
 
     Raises:
         FileNotFoundError: Direct exec failed and no qemu-user interpreter is
@@ -877,15 +912,9 @@ def exec_command(
         subprocess.TimeoutExpired: If execution exceeds *timeout*.
     """
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            check=False,
-            input=stdin_data or None,
-            timeout=timeout,
-        )
+        proc = _spawn(cmd, stdin_data, timeout, interactive)
     except OSError as exc:
-        return _retry_under_qemu(cmd, arch, exc, stdin_data, timeout)
+        return _retry_under_qemu(cmd, arch, exc, stdin_data, timeout, interactive)
     return proc, cmd
 
 
@@ -900,6 +929,7 @@ def _retry_under_qemu(
     exc: OSError,
     stdin_data: bytes,
     timeout: float | None,
+    interactive: bool = False,
 ) -> tuple[subprocess.CompletedProcess[bytes], list[str]]:
     """Recover a failed direct exec by prepending a qemu-user launcher.
 
@@ -918,13 +948,7 @@ def _retry_under_qemu(
         ) from exc
     _LAUNCHER_CACHE[arch] = (str(qemu),)
     new_cmd = [str(qemu), *cmd]
-    proc = subprocess.run(
-        new_cmd,
-        capture_output=True,
-        check=False,
-        input=stdin_data or None,
-        timeout=timeout,
-    )
+    proc = _spawn(new_cmd, stdin_data, timeout, interactive)
     return proc, new_cmd
 
 
@@ -935,18 +959,29 @@ def _execute_blob_command(
     debug: bool,
     stdin_data: bytes,
     arch: str,
+    interactive: bool = False,
 ) -> RunResult:
-    """Execute a prepared blob command and return the captured result."""
+    """Execute a prepared blob command and return the captured result.
+
+    In interactive mode the child inherits the terminal, so no output is
+    captured (stdout/stderr come back empty) and the timeout is not applied.
+    """
     start = time.monotonic()
-    proc, cmd = exec_command(cmd, arch, stdin_data=stdin_data, timeout=timeout)
+    proc, cmd = exec_command(
+        cmd,
+        arch,
+        stdin_data=stdin_data,
+        timeout=None if interactive else timeout,
+        interactive=interactive,
+    )
     duration = time.monotonic() - start
     if debug:
         log.debug("exit code:  %d", proc.returncode)
         log.debug("duration:   %.3fs", duration)
         log.debug("temp dir:   %s (preserved)", blob_file.parent)
     return RunResult(
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=proc.stdout or b"",
+        stderr=proc.stderr or b"",
         exit_code=proc.returncode,
         duration_s=duration,
         command=cmd,

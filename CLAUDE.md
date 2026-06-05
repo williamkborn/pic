@@ -159,6 +159,7 @@ picblobs-cli run hello linux:x86_64 --debug    # verbose, keep temp files
 picblobs-cli debug hello linux:aarch64     # launch under gdb, stopped at entry
 picblobs-cli debug ul_exec linux:x86_64 --elf inner.elf   # debug needs build-style config
 picblobs-cli run --file /tmp/hello.bin linux:x86_64   # run a prebuilt blob image
+picblobs-cli run --file bash.bin linux:x86_64 -i      # -i/--interactive: attach the tty (e.g. a shell loaded by ul_exec)
 picblobs-cli verify                        # run every staged blob end-to-end
 picblobs-cli extract hello linux:x86_64 -o /tmp/hello.bin --config-hex 01020304
 picblobs-cli listing --so path/to/hello.so linux:aarch64   # --so: disasm/listing only
