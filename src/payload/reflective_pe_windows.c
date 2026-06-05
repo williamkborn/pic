@@ -151,7 +151,7 @@ void _start(void)
 		__attribute__((visibility("hidden")));
 	const pic_u8 *cfg = (const pic_u8 *)reflective_pe_config;
 
-	pic_u32 pe_size;
+	pic_u32 pe_size = 0;
 	/* flags at +4 and entry_type at +8 are reserved for real loads. */
 	const pic_u8 *pe = validate_pe(cfg, &pe_size);
 	if (!pe) {

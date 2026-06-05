@@ -11,6 +11,7 @@ Checks: >
   -bugprone-reserved-identifier,
   -bugprone-casting-through-void,
   cert-*,
+  cppcoreguidelines-init-variables,
   -cert-dcl37-c,
   -cert-dcl51-cpp,
   clang-analyzer-*,

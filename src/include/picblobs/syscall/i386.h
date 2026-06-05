@@ -14,8 +14,8 @@
 static inline long pic_raw_syscall(
 	long n, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-	long ret;
-	unsigned char cf;
+	long ret = 0;
+	unsigned char cf = 0;
 	__asm__ volatile("push %[a5]\n\t"
 			 "push %[a4]\n\t"
 			 "push %[a3]\n\t"
@@ -36,7 +36,7 @@ static inline long pic_raw_syscall(
 static inline long pic_raw_syscall(
 	long n, long a0, long a1, long a2, long a3, long a4, long a5)
 {
-	long ret;
+	long ret = 0;
 	__asm__ volatile("push %%ebp\n\t"
 			 "push %%edi\n\t"
 			 "mov %[a4], %%edi\n\t"

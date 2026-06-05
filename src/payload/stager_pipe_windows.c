@@ -151,9 +151,9 @@ static void *alloc_payload(const struct resolved_funcs *funcs, pic_u32 size)
 PIC_TEXT
 static void *load_payload(const struct resolved_funcs *funcs, const char *path)
 {
-	void *h;
-	pic_u32 size;
-	void *mem;
+	void *h = 0;
+	pic_u32 size = 0;
+	void *mem = 0;
 
 	h = open_input(funcs, path);
 	if (h == (void *)-1) {
@@ -185,8 +185,8 @@ void _start(void)
 {
 	struct resolved_funcs funcs;
 	char path[PATH_MAX_LEN];
-	pic_u16 path_len;
-	void *mem;
+	pic_u16 path_len = 0;
+	void *mem = 0;
 
 	resolve_funcs(&funcs);
 	if (!funcs.create_file || !funcs.read_file || !funcs.close_handle ||

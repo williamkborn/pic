@@ -137,8 +137,8 @@ static long recv_decrypt(
 	unsigned char nonce[crypto_secretbox_NONCEBYTES] = {0};
 	unsigned char ct[crypto_secretbox_ZEROBYTES + MAX_CT];
 	pic_u8 len_buf[4] = {0};
-	pic_u32 ct_len;
-	pic_u64 box_len;
+	pic_u32 ct_len = 0;
+	pic_u64 box_len = 0;
 
 	if (read_exact(fd, nonce, sizeof(nonce)) < 0) {
 		return -1;
@@ -179,7 +179,7 @@ static int encrypt_send(
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
 	unsigned char ct[crypto_secretbox_ZEROBYTES + MAX_CT];
 	pic_u64 box_len = crypto_secretbox_ZEROBYTES + msg_len;
-	pic_u32 ct_len;
+	pic_u32 ct_len = 0;
 	pic_u8 len_buf[4] = {0};
 
 	if (msg_len > MAX_CT) {
@@ -232,7 +232,7 @@ static int handshake(int fd, const unsigned char *auth_key,
 	unsigned char eph_sk[crypto_scalarmult_SCALARBYTES] = {0};
 	unsigned char peer_pk[crypto_scalarmult_BYTES] = {0};
 	unsigned char hs[crypto_secretbox_ZEROBYTES + 64] = {0};
-	long n;
+	long n = 0;
 
 	crypto_box_keypair(eph_pk, eph_sk);
 
@@ -276,10 +276,10 @@ void _start(
 
 	unsigned char pt[crypto_secretbox_ZEROBYTES + MAX_CT];
 	unsigned char session_key[crypto_secretbox_KEYBYTES];
-	int sock;
-	int conn;
-	long pt_len;
-	pic_u16 port;
+	int sock = 0;
+	int conn = 0;
+	long pt_len = 0;
+	pic_u16 port = 0;
 
 	/* Create listening socket. */
 	sock = (int)pic_socket(PIC_AF_INET, PIC_SOCK_STREAM, 0);

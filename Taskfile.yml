@@ -91,6 +91,14 @@ tasks:
     cmds:
       - bazel build --config=lint //src/... //tests/...
 
+  lint:init:
+    desc: "Detect uninitialized local declarations (aggregates; --all for scalars)"
+    deps: [_venv]
+    env:
+      PICBLOBS_REQUIRE_LINT_TOOLS: '1'
+    cmds:
+      - '{{.DEV}} python tools/init_check.py {{.CLI_ARGS}}'
+
   # ----------------------------------------------------------- codegen ---
   generate:
     desc: "Regenerate all derived files from tools/registry.py"

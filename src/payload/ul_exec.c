@@ -1087,15 +1087,15 @@ __attribute__((noreturn)) static void phase2(const struct ul_exec_config *cfg)
 	const char *argv_data = (const char *)(elf_data + cfg->elf_size);
 	const char *envp_data = argv_data + cfg->argv_size;
 	const Elf_Ehdr *ehdr = (const Elf_Ehdr *)elf_data;
-	const Elf_Phdr *phdr;
-	const char *interp_path;
+	const Elf_Phdr *phdr = 0;
+	const char *interp_path = 0;
 	Elf_Addr phdr_addr = 0;
-	pic_uintptr elf_base;
-	Elf_Addr entry;
+	pic_uintptr elf_base = 0;
+	Elf_Addr entry = 0;
 	pic_uintptr interp_base = 0;
 	pic_uintptr interp_entry = 0;
-	pic_uintptr sp;
-	pic_uintptr target;
+	pic_uintptr sp = 0;
+	pic_uintptr target = 0;
 
 	validate_elf_config(cfg, ehdr);
 
