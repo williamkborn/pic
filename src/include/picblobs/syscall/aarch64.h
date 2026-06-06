@@ -16,7 +16,7 @@ static inline long pic_raw_syscall(
 	register long x3 __asm__("x3") = a3;
 	register long x4 __asm__("x4") = a4;
 	register long x5 __asm__("x5") = a5;
-	unsigned long nzcv;
+	unsigned long nzcv = 0;
 	__asm__ volatile("svc #0\n\t"
 			 "mrs %[nzcv], nzcv"
 		: "=r"(x0), [nzcv] "=r"(nzcv)

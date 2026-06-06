@@ -165,10 +165,12 @@ static pic_u8 *find_prev_mov_eax_imm(
 {
 	pic_size_t lo = (start > limit) ? (start - limit) : 0;
 	for (pic_size_t i = start; i >= lo + 4; i--) {
-		if (code[i - 4] == 0xb8)
+		if (code[i - 4] == 0xb8) {
 			return code + i - 4;
-		if (i == lo + 4)
+		}
+		if (i == lo + 4) {
 			break;
+		}
 	}
 	return (pic_u8 *)0;
 }
@@ -176,14 +178,18 @@ static pic_u8 *find_prev_mov_eax_imm(
 static pic_u32 translate_mmap_flags(pic_u32 freebsd_flags)
 {
 	pic_u32 linux_flags = 0;
-	if (0U != (freebsd_flags & 0x0001U))
+	if (0U != (freebsd_flags & 0x0001U)) {
 		linux_flags |= 0x01;
-	if (0U != (freebsd_flags & 0x0002U))
+	}
+	if (0U != (freebsd_flags & 0x0002U)) {
 		linux_flags |= 0x02;
-	if (0U != (freebsd_flags & 0x0010U))
+	}
+	if (0U != (freebsd_flags & 0x0010U)) {
 		linux_flags |= 0x10;
-	if (0U != (freebsd_flags & 0x1000U))
+	}
+	if (0U != (freebsd_flags & 0x1000U)) {
 		linux_flags |= 0x20;
+	}
 	return linux_flags;
 }
 
@@ -228,48 +234,59 @@ static void translate_x86_64_entry(struct x86_64_regs *regs)
 {
 	pic_u32 freebsd_nr = (pic_u32)regs->orig_rax;
 	pic_u32 linux_nr = translate_nr(freebsd_nr);
-	if (freebsd_nr == 477)
+	if (freebsd_nr == 477) {
 		regs->r10 = translate_mmap_flags((pic_u32)regs->r10);
+	}
 	regs->rax = linux_nr;
 	regs->orig_rax = linux_nr;
 }
 
 static int wait_initial_trace_stop(long pid, int *status)
 {
-	if (linux_wait4(pid, status) < 0)
+	if (linux_wait4(pid, status) < 0) {
 		return 121;
-	if (0 == wait_stopped(*status))
+	}
+	if (0 == wait_stopped(*status)) {
 		return 122;
-	if (linux_ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0)
+	}
+	if (linux_ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) <
+		0) {
 		return 123;
+	}
 	return 0;
 }
 
 static int wait_for_ptrace_stop(long pid, int *status)
 {
-	if (linux_ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0)
+	if (linux_ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0) {
 		return 124;
-	if (linux_wait4(pid, status) < 0)
+	}
+	if (linux_wait4(pid, status) < 0) {
 		return 125;
+	}
 	return 0;
 }
 
 static int wait_for_signal_resume(long pid, int sig, int *status)
 {
-	if (linux_ptrace(PTRACE_CONT, pid, 0, sig) < 0)
+	if (linux_ptrace(PTRACE_CONT, pid, 0, sig) < 0) {
 		return 129;
-	if (linux_wait4(pid, status) < 0)
+	}
+	if (linux_wait4(pid, status) < 0) {
 		return 130;
+	}
 	return 0;
 }
 
 static int maybe_trace_exit(int status, int *done)
 {
 	*done = 1;
-	if (exited(status))
+	if (exited(status)) {
 		return exit_status(status);
-	if (signaled(status))
+	}
+	if (signaled(status)) {
 		return 128 + term_signal(status);
+	}
 	*done = 0;
 	return 0;
 }
@@ -278,14 +295,17 @@ static int handle_x86_64_syscall_stop(long pid, int *in_syscall)
 {
 	struct x86_64_regs regs = {0};
 
-	if (linux_ptrace(PTRACE_GETREGS, pid, 0, (long)&regs) < 0)
+	if (linux_ptrace(PTRACE_GETREGS, pid, 0, (long)&regs) < 0) {
 		return 127;
-	if (0 == *in_syscall)
+	}
+	if (0 == *in_syscall) {
 		translate_x86_64_entry(&regs);
-	else
+	} else {
 		set_freebsd_result(&regs);
-	if (linux_ptrace(PTRACE_SETREGS, pid, 0, (long)&regs) < 0)
+	}
+	if (linux_ptrace(PTRACE_SETREGS, pid, 0, (long)&regs) < 0) {
 		return 128;
+	}
 	*in_syscall = !(*in_syscall);
 	return 0;
 }
@@ -294,8 +314,9 @@ static int handle_x86_64_signal_stop(long pid, int sig, int *status, int *done)
 {
 	int trace_status = 0;
 
-	if (sig == SIGTRAP)
+	if (sig == SIGTRAP) {
 		return 0;
+	}
 
 	trace_status = wait_for_signal_resume(pid, sig, status);
 	if (0 != trace_status) {
@@ -326,8 +347,9 @@ static int trace_child_x86_64(long pid)
 		if (0 != done) {
 			return trace_status;
 		}
-		if (0 == wait_stopped(status))
+		if (0 == wait_stopped(status)) {
 			return 126;
+		}
 
 		int sig = stop_signal(status);
 		if (sig == (SIGTRAP | 0x80)) {
@@ -354,10 +376,12 @@ static pic_u8 *find_prev_mov_r10d_imm(
 {
 	pic_size_t lo = (start > limit) ? (start - limit) : 0;
 	for (pic_size_t i = start; i >= lo + 5; i--) {
-		if (code[i - 5] == 0x41 && code[i - 4] == 0xba)
+		if (code[i - 5] == 0x41 && code[i - 4] == 0xba) {
 			return code + i - 5;
-		if (i == lo + 5)
+		}
+		if (i == lo + 5) {
 			break;
+		}
 	}
 	return (pic_u8 *)0;
 }
@@ -381,18 +405,27 @@ static void patch_x86_64_errno_normalization(
 	static const pic_u8 jz_seq[] = {0x74, 0x03};
 	static const pic_u8 neg_seq[] = {0x48, 0xf7, 0xd8};
 
-	if (syscall_off + 14 > size)
+	if (syscall_off + 14 > size) {
 		return;
-	if (0 == bytes_match(code, syscall_off + 2, setc_seq, sizeof(setc_seq)))
+	}
+	if (0 ==
+		bytes_match(
+			code, syscall_off + 2, setc_seq, sizeof(setc_seq))) {
 		return;
-	if (0 == bytes_match(code, syscall_off + 6, add_seq, sizeof(add_seq)))
+	}
+	if (0 == bytes_match(code, syscall_off + 6, add_seq, sizeof(add_seq))) {
 		return;
-	if (0 == bytes_match(code, syscall_off + 9, jz_seq, sizeof(jz_seq)))
+	}
+	if (0 == bytes_match(code, syscall_off + 9, jz_seq, sizeof(jz_seq))) {
 		return;
-	if (0 == bytes_match(code, syscall_off + 11, neg_seq, sizeof(neg_seq)))
+	}
+	if (0 ==
+		bytes_match(code, syscall_off + 11, neg_seq, sizeof(neg_seq))) {
 		return;
-	for (pic_size_t i = syscall_off + 2; i < syscall_off + 14; i++)
+	}
+	for (pic_size_t i = syscall_off + 2; i < syscall_off + 14; i++) {
 		code[i] = 0x90;
+	}
 }
 
 static void patch_syscalls_x86_64(pic_u8 *code, pic_size_t size)
@@ -400,8 +433,9 @@ static void patch_syscalls_x86_64(pic_u8 *code, pic_size_t size)
 	for (pic_size_t i = 0; i + 1 < size; i++) {
 		if (code[i] == 0x0f && code[i + 1] == 0x05) {
 			pic_u8 *mov = find_prev_mov_eax_imm(code, i, 32);
-			if (PIC_NULL == mov)
+			if (PIC_NULL == mov) {
 				continue;
+			}
 			pic_u32 nr = read32_le(mov + 1);
 			pic_u32 lnr = translate_nr(nr);
 			if (nr == 477) {
@@ -413,8 +447,9 @@ static void patch_syscalls_x86_64(pic_u8 *code, pic_size_t size)
 						translate_mmap_flags(flags));
 				}
 			}
-			if (lnr != nr)
+			if (lnr != nr) {
 				write32_le(mov + 1, lnr);
+			}
 			patch_x86_64_errno_normalization(code, i, size);
 		}
 	}
@@ -429,10 +464,12 @@ static pic_u8 *find_prev_mov_eax_imm(
 {
 	pic_size_t lo = (start > limit) ? (start - limit) : 0;
 	for (pic_size_t i = start; i >= lo + 4; i--) {
-		if (code[i - 4] == 0xb8)
+		if (code[i - 4] == 0xb8) {
 			return code + i - 4;
-		if (i == lo + 4)
+		}
+		if (i == lo + 4) {
 			break;
+		}
 	}
 	return (pic_u8 *)0;
 }
@@ -442,12 +479,14 @@ static void patch_syscalls_i386(pic_u8 *code, pic_size_t size)
 	for (pic_size_t i = 0; i + 1 < size; i++) {
 		if (code[i] == 0xcd && code[i + 1] == 0x80) {
 			pic_u8 *mov = find_prev_mov_eax_imm(code, i, 48);
-			if (!mov)
+			if (!mov) {
 				continue;
+			}
 			pic_u32 nr = read32_le(mov + 1);
 			pic_u32 lnr = translate_nr(nr);
-			if (lnr != nr)
+			if (lnr != nr) {
 				write32_le(mov + 1, lnr);
+			}
 		}
 	}
 }
@@ -485,8 +524,9 @@ static void patch_syscalls_arm(pic_u8 *code, pic_size_t size)
 		if ((insn & 0xFF00) == 0x2700 && next == 0xdf00) {
 			pic_u32 nr = insn & 0xFF;
 			pic_u32 lnr = translate_nr(nr);
-			if (lnr != nr && lnr < 256)
+			if (lnr != nr && lnr < 256) {
 				code[i] = (pic_u8)lnr;
+			}
 		}
 	}
 }
@@ -502,8 +542,9 @@ static void patch_syscalls_s390x(pic_u8 *code, pic_size_t size)
 			code[i + 4] == 0x0a && code[i + 5] == 0x00) {
 			pic_u16 nr = read16_be(code + i + 2);
 			pic_u32 lnr = translate_nr(nr);
-			if (lnr != nr && lnr < 0x8000)
+			if (lnr != nr && lnr < 0x8000) {
 				write16_be(code + i + 2, (pic_u16)lnr);
+			}
 		}
 	}
 }
@@ -521,9 +562,10 @@ static void patch_syscalls_mips_be(pic_u8 *code, pic_size_t size)
 		if ((insn & 0xFFFF0000) == 0x24020000 && next == 0x0000000c) {
 			pic_u32 nr = insn & 0xFFFF;
 			pic_u32 lnr = translate_nr(nr);
-			if (lnr != nr)
+			if (lnr != nr) {
 				write32_be(code + i,
 					(insn & 0xFFFF0000) | (lnr & 0xFFFF));
+			}
 		}
 	}
 }
@@ -536,9 +578,10 @@ static void patch_syscalls_mips_le(pic_u8 *code, pic_size_t size)
 		if ((insn & 0xFFFF0000) == 0x24020000 && next == 0x0000000c) {
 			pic_u32 nr = insn & 0xFFFF;
 			pic_u32 lnr = translate_nr(nr);
-			if (lnr != nr)
+			if (lnr != nr) {
 				write32_le(code + i,
 					(insn & 0xFFFF0000) | (lnr & 0xFFFF));
+			}
 		}
 	}
 }
@@ -556,10 +599,12 @@ static void patch_syscalls(pic_u8 *code, pic_size_t size)
 static long file_size(int fd)
 {
 	long end = pic_lseek(fd, 0, PIC_SEEK_END);
-	if (end < 0)
+	if (end < 0) {
 		return -1;
-	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0)
+	}
+	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0) {
 		return -1;
+	}
 	return end;
 }
 
@@ -569,8 +614,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -598,19 +644,23 @@ static long read_all(int fd, void *buf, pic_size_t count)
  */
 static int parse_digit(char c, int base)
 {
-	if (c >= '0' && c <= '9')
+	if (c >= '0' && c <= '9') {
 		return c - '0';
-	if (base == 16 && c >= 'a' && c <= 'f')
+	}
+	if (base == 16 && c >= 'a' && c <= 'f') {
 		return c - 'a' + 10;
-	if (base == 16 && c >= 'A' && c <= 'F')
+	}
+	if (base == 16 && c >= 'A' && c <= 'F') {
 		return c - 'A' + 10;
+	}
 	return -1;
 }
 
 static pic_size_t parse_size(const char *s)
 {
-	if (!s || !*s)
+	if (!s || !*s) {
 		return 0;
+	}
 	pic_size_t v = 0;
 	int base = 10;
 	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
@@ -619,8 +669,9 @@ static pic_size_t parse_size(const char *s)
 	}
 	for (; *s; s++) {
 		int d = parse_digit(*s, base);
-		if (0 > d)
+		if (0 > d) {
 			return 0;
+		}
 		v = v * (pic_size_t)base + (pic_size_t)d;
 	}
 	return v;
@@ -632,8 +683,9 @@ static pic_u8 *load_blob_image(const char *path, long *size_out)
 	long size = 0;
 	void *blob = PIC_NULL;
 
-	if (fd < 0)
+	if (fd < 0) {
 		return PIC_NULL;
+	}
 
 	size = file_size(fd);
 	if (size <= 0) {
@@ -665,8 +717,9 @@ static pic_size_t patch_limit_from_argv(int argc, char **argv, long size)
 
 	if (argc >= 3) {
 		pic_size_t t_end = parse_size(argv[2]);
-		if ((t_end > 0) && (t_end <= (pic_size_t)size))
+		if ((t_end > 0) && (t_end <= (pic_size_t)size)) {
 			patch_limit = t_end;
+		}
 	}
 
 	return patch_limit;
@@ -676,11 +729,13 @@ static pic_size_t patch_limit_from_argv(int argc, char **argv, long size)
 static void run_x86_64_blob(void *blob)
 {
 	long pid = pic_syscall0(__NR_fork);
-	if (pid < 0)
+	if (pid < 0) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 	if (pid == 0) {
-		if (linux_ptrace(PTRACE_TRACEME, 0, 0, 0) < 0)
+		if (linux_ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) {
 			pic_exit_group(RUNNER_ERROR);
+		}
 		__asm__ volatile("int3");
 		((void (*)(void))blob)();
 		pic_exit_group(RUNNER_ERROR);
@@ -695,12 +750,14 @@ int runner_main(int argc, char **argv)
 	pic_u8 *blob = PIC_NULL;
 	pic_size_t patch_limit = 0;
 
-	if (argc < 2)
+	if (argc < 2) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	blob = load_blob_image(argv[1], &size);
-	if (PIC_NULL == blob)
+	if (PIC_NULL == blob) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	/* Optional argv[2]: hex text_end — scope syscall patching to the
 	 * code region so .rodata/.data/.config can't cause false matches. */

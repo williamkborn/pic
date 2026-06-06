@@ -75,8 +75,9 @@ static void vt_randombytes(unsigned char *buf, unsigned long long len)
 {
 	static const char path[] = "/dev/urandom";
 	int fd = (int)pic_open(path, PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(90);
+	}
 	while (len > 0) {
 		long n = pic_read(fd, buf, (pic_size_t)len);
 		if (n <= 0) {
@@ -96,10 +97,12 @@ static void vt_exit_group(int code) { pic_exit_group(code); }
 static long file_size(int fd)
 {
 	long end = pic_lseek(fd, 0, PIC_SEEK_END);
-	if (end < 0)
+	if (end < 0) {
 		return -1;
-	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0)
+	}
+	if (pic_lseek(fd, 0, PIC_SEEK_SET) < 0) {
 		return -1;
+	}
 	return end;
 }
 
@@ -109,8 +112,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -135,12 +139,14 @@ static long read_all(int fd, void *buf, pic_size_t count)
 
 int runner_main(int argc, char **argv)
 {
-	if (argc < 2)
+	if (argc < 2) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	int fd = (int)pic_open(argv[1], PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(RUNNER_ERROR);
+	}
 
 	long size = file_size(fd);
 	if (size <= 0) {

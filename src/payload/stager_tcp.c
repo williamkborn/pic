@@ -49,8 +49,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -67,14 +68,16 @@ void _start(void)
 
 	/* Create TCP socket. */
 	int fd = (int)pic_socket(cfg->af, PIC_SOCK_STREAM, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(1);
+	}
 
 	/* Build sockaddr_in. */
 	struct pic_sockaddr_in sa;
 	pic_u8 *p = (pic_u8 *)&sa;
-	for (int i = 0; i < (int)sizeof(sa); i++)
+	for (int i = 0; i < (int)sizeof(sa); i++) {
 		p[i] = 0;
+	}
 	sa.sin_family = (pic_u16)cfg->af;
 	/* Port is little-endian in config. Read bytes and convert to
 	 * network order without relying on native struct field access

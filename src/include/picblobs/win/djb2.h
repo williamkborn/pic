@@ -38,8 +38,9 @@ static inline pic_u32 pic_djb2_wide_lower(const pic_u16 *str, pic_u16 byte_len)
 	pic_u16 char_count = byte_len / 2;
 	for (pic_u16 i = 0; i < char_count; i++) {
 		pic_u8 c = (pic_u8)str[i];
-		if (c >= 'A' && c <= 'Z')
+		if (c >= 'A' && c <= 'Z') {
 			c += 32;
+		}
 		hash = hash * 33 + c;
 	}
 	return hash;

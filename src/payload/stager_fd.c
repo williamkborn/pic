@@ -36,8 +36,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -58,21 +59,25 @@ void _start(void)
 	int fd = (int)fd_u;
 
 	pic_u8 size_buf[4] = {0};
-	if (read_all(fd, size_buf, 4) < 0)
+	if (read_all(fd, size_buf, 4) < 0) {
 		pic_exit_group(1);
+	}
 	pic_u32 size = (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
 		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
-	if (size == 0 || size > 0x10000000)
+	if (size == 0 || size > 0x10000000) {
 		pic_exit_group(1);
+	}
 
 	void *mem = pic_mmap(PIC_NULL, (pic_size_t)size,
 		PIC_PROT_READ | PIC_PROT_WRITE | PIC_PROT_EXEC,
 		PIC_MAP_PRIVATE | PIC_MAP_ANONYMOUS, -1, 0);
-	if ((long)mem == -1)
+	if ((long)mem == -1) {
 		pic_exit_group(1);
+	}
 
-	if (read_all(fd, mem, (pic_size_t)size) < 0)
+	if (read_all(fd, mem, (pic_size_t)size) < 0) {
 		pic_exit_group(1);
+	}
 	pic_sync_icache(mem, (pic_size_t)size);
 
 	/* Leave the fd open — the caller may be reusing it (e.g., stdin).

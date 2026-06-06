@@ -35,6 +35,7 @@ Issues = "https://github.com/williamkborn/pic/issues"
 [project.optional-dependencies]
 dev = [
     "clang-format==22.1.1",
+    "libclang>=18",
     "lefthook>=2,<3",
     "lizard>=1.17",
     "pyelftools>=0.31",

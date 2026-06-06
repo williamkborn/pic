@@ -147,8 +147,9 @@ class TCPServer
 	nsapi_error_t accept(TCPSocket *client)
 	{
 		int cfd = ::accept(_fd, NULL, NULL);
-		if (cfd < 0)
+		if (cfd < 0) {
 			return -1;
+		}
 		client->_fd = cfd;
 		return NSAPI_ERROR_OK;
 	}
@@ -170,12 +171,14 @@ static inline int mbedtls_hardware_poll(
 	void *, unsigned char *output, size_t len, size_t *olen)
 {
 	int fd = ::open("/dev/urandom", O_RDONLY);
-	if (fd < 0)
+	if (fd < 0) {
 		return -1;
+	}
 	ssize_t n = ::read(fd, output, len);
 	::close(fd);
-	if (olen)
+	if (olen) {
 		*olen = (n > 0) ? (size_t)n : 0;
+	}
 	return (n > 0) ? 0 : -1;
 }
 }

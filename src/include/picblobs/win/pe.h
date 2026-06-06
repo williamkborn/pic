@@ -58,8 +58,9 @@ static inline void *pic_find_export(void *dll_base, pic_u32 func_hash)
 
 	/* DataDirectory[0] = Export Directory {RVA, Size}. */
 	pic_u32 export_rva = *(pic_u32 *)(opt_hdr + PE_OPT_EXPORT_DIR_OFFSET);
-	if (export_rva == 0)
+	if (export_rva == 0) {
 		return PIC_NULL;
+	}
 
 	pic_u8 *export_dir = base + export_rva;
 

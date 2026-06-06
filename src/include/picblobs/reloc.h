@@ -68,8 +68,9 @@
 			unsigned long *e =                                     \
 				(unsigned long *)(_delta + _got_e_link);       \
 			while (p < e) {                                        \
-				if (*p)                                        \
+				if (*p) {                                      \
 					*p += _delta;                          \
+				}                                              \
 				p++;                                           \
 			}                                                      \
 		}                                                              \

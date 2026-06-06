@@ -47,8 +47,9 @@ static long read_all(int fd, void *buf, pic_size_t count)
 	pic_size_t done = 0;
 	while (done < count) {
 		long n = pic_read(fd, p + done, count - done);
-		if (n <= 0)
+		if (n <= 0) {
 			return -1;
+		}
 		done += (pic_size_t)n;
 	}
 	return (long)done;
@@ -58,10 +59,12 @@ PIC_TEXT
 static int load_path(const pic_u8 *cfg, char path[PATH_MAX_LEN])
 {
 	pic_u16 path_len = (pic_u16)cfg[0] | ((pic_u16)cfg[1] << 8);
-	if (path_len == 0 || path_len >= PATH_MAX_LEN)
+	if (path_len == 0 || path_len >= PATH_MAX_LEN) {
 		return 0;
-	for (pic_u16 i = 0; i < path_len; i++)
+	}
+	for (pic_u16 i = 0; i < path_len; i++) {
 		path[i] = (char)cfg[2 + i];
+	}
 	path[path_len] = '\0';
 	return 1;
 }
@@ -70,8 +73,9 @@ PIC_TEXT
 static pic_u32 read_payload_size(int fd)
 {
 	pic_u8 size_buf[4] = {0};
-	if (read_all(fd, size_buf, 4) < 0)
+	if (read_all(fd, size_buf, 4) < 0) {
 		return 0;
+	}
 	return (pic_u32)size_buf[0] | ((pic_u32)size_buf[1] << 8) |
 		((pic_u32)size_buf[2] << 16) | ((pic_u32)size_buf[3] << 24);
 }
@@ -94,12 +98,14 @@ void _start(void)
 
 	/* Copy path into a NUL-terminated buffer on the stack. */
 	char path[PATH_MAX_LEN];
-	if (!load_path(cfg, path))
+	if (!load_path(cfg, path)) {
 		pic_exit_group(1);
+	}
 
 	int fd = (int)pic_open(path, PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(1);
+	}
 
 	pic_u32 size = read_payload_size(fd);
 	if (size == 0 || size > 0x10000000) {

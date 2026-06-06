@@ -30,12 +30,13 @@ static void randombytes(unsigned char *x, unsigned long long xlen)
 static void randombytes(unsigned char *x, unsigned long long xlen)
 {
 	static const char path[] = "/dev/urandom";
-	int fd;
-	long n;
+	int fd = 0;
+	long n = 0;
 
 	fd = (int)pic_open(path, PIC_O_RDONLY, 0);
-	if (fd < 0)
+	if (fd < 0) {
 		pic_exit_group(90);
+	}
 
 	while (xlen > 0) {
 		n = pic_read(fd, x, (pic_size_t)xlen);
