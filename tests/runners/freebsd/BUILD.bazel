@@ -4,7 +4,7 @@ Patches FreeBSD syscall numbers to Linux equivalents at load time,
 then executes the blob under QEMU with real Linux syscalls.
 """
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:cc_binary.bzl", "pic_cc_binary")
 load("//bazel:lint.bzl", "cppcheck_test")
 
 package(default_visibility = [
@@ -13,36 +13,18 @@ package(default_visibility = [
     "//tests:__subpackages__",
 ])
 
-cc_library(
-    name = "runner_obj",
-    srcs = ["runner.c"] + glob(["start/*.h"]),
-    copts = [
-        "-iquote",
-        "tests/runners/freebsd",
+pic_cc_binary(
+    name = "runner",
+    srcs = ["runner.c"],
+    hdrs = glob(["start/*.h"]),
+    linkopts = [
+        "-static",
+        "-Wl,-e,_start",
     ],
+    quote_includes = ["tests/runners/freebsd"],
     deps = [
         "//src/include/picblobs:headers",
     ],
-)
-
-genrule(
-    name = "runner",
-    srcs = [":runner_obj"],
-    outs = ["runner.bin"],
-    cmd = " ".join([
-        "$(CC)",
-        "-nostdlib",
-        "-nostartfiles",
-        "-static",
-        "-Wl,--gc-sections",
-        "-Wl,-e,_start",
-        "-Wl,--whole-archive",
-        "$(location :runner_obj)",
-        "-Wl,--no-whole-archive",
-        "-o $@",
-    ]),
-    executable = True,
-    toolchains = ["@rules_cc//cc:current_cc_toolchain"],
 )
 
 cppcheck_test(

@@ -1,47 +1,38 @@
-"""Module extension for locating a host qemu-arm interpreter.
+"""Module extension for a hermetic qemu-arm user-mode interpreter.
 
-QEMU user-mode is a system prerequisite (like a kernel). This extension
-wraps the host binary into a Bazel-visible label so tests can declare it as
-a dependency.
-
-It accepts either the static build (``qemu-arm-static``) or the
-dynamically-linked ``qemu-arm`` shipped by the ``qemu-user`` package, which
-is what newer distros (e.g. Ubuntu 26.04, paired with ``qemu-user-binfmt``)
-provide. This mirrors ``find_qemu`` on the Python side.
+The Bazel E2E tests execute ARM Linux binaries, so QEMU must be an ordinary
+declared input rather than something discovered on the submitting host or
+remote worker. This extension downloads a pinned static qemu-arm binary and
+exposes it as ``@qemu_arm_static//:qemu``.
 """
 
-# Searched in order; the static name wins when both are present.
-_QEMU_ARM_CANDIDATES = ["qemu-arm-static", "qemu-arm"]
+_QEMU_ARM_URL = (
+    "https://github.com/multiarch/qemu-user-static/releases/download/" +
+    "v7.2.0-1/qemu-arm-static.tar.gz"
+)
+_QEMU_ARM_SHA256 = "5c90e585443b6656fae712f4bc0aae317519fe12412fb97a9486b566766d8058"
 
 def _qemu_repo_impl(ctx):
-    qemu = None
-    for name in _QEMU_ARM_CANDIDATES:
-        found = ctx.which(name)
-        if found:
-            qemu = found
-            break
-
-    if not qemu:
-        fail(
-            "No qemu-arm interpreter found on PATH (looked for {}). ".format(
-                ", ".join(_QEMU_ARM_CANDIDATES),
-            ) +
-            "Install qemu-user-static, or qemu-user + qemu-user-binfmt.",
-        )
-
-    ctx.symlink(qemu, "qemu-bin")
+    ctx.download_and_extract(
+        url = [ctx.attr.url],
+        sha256 = ctx.attr.sha256,
+    )
     ctx.file("BUILD.bazel", """\
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "qemu",
-    srcs = ["qemu-bin"],
+    srcs = ["{binary}"],
 )
-""")
+""".format(binary = ctx.attr.binary))
 
 qemu_arm_repo = repository_rule(
     implementation = _qemu_repo_impl,
-    local = True,
+    attrs = {
+        "binary": attr.string(default = "qemu-arm-static"),
+        "sha256": attr.string(default = _QEMU_ARM_SHA256),
+        "url": attr.string(default = _QEMU_ARM_URL),
+    },
 )
 
 def _qemu_impl(_module_ctx):

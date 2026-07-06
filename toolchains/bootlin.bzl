@@ -51,8 +51,10 @@ def _config_impl(ctx):
         tool_path(name = "strip", path = "bin/{triple}-strip"),
         tool_path(name = "as", path = "bin/{triple}-as"),
         tool_path(name = "cpp", path = "bin/{triple}-cpp"),
-        tool_path(name = "gcov", path = "/usr/bin/false"),
-        tool_path(name = "dwp", path = "/usr/bin/false"),
+        tool_path(name = "gcov", path = "bin/{triple}-gcov"),
+        # DWP is unused by this repo. Keep the path repo-relative so toolchain
+        # resolution never bakes in a host /usr/bin dependency.
+        tool_path(name = "dwp", path = "bin/{triple}-gcov"),
     ]
 
     freestanding_feature = feature(
@@ -198,10 +200,11 @@ filegroup(
     srcs = glob(["bin/{triple}-strip"]),
 )
 
-# DWP (DWARF packaging) is unused — dwp tool points to /usr/bin/false.
+# DWP (DWARF packaging) is unused; keep a declared repo-local placeholder so
+# the toolchain never references host /usr/bin.
 filegroup(
     name = "dwp_files",
-    srcs = [],
+    srcs = glob(["bin/{triple}-gcov"]),
 )
 
 filegroup(
@@ -247,16 +250,10 @@ def _bootlin_toolchain_repo_impl(ctx):
     }
     if sha256:
         download_kwargs["sha256"] = sha256
-    elif ctx.os.environ.get("PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"):
-        # buildifier: disable=print
-        print("WARNING: Bootlin toolchain '{}' has no SHA256 pin. ".format(toolchain_id) +
-              "Builds are not reproducible. Set sha256 in MODULE.bazel.")
     else:
         fail(
             "Bootlin toolchain '{}' has no SHA256 pin. ".format(toolchain_id) +
-            "Unpinned toolchains are a supply-chain risk. Either:\n" +
-            "  1. Run with PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS=1 to fetch and print the hash, or\n" +
-            "  2. Set sha256 in MODULE.bazel after first fetch.",
+            "Set sha256 in MODULE.bazel before using this toolchain.",
         )
 
     result = ctx.download_and_extract(**download_kwargs)
@@ -304,7 +301,6 @@ bootlin_toolchain_repo = repository_rule(
         "target_cpu": attr.string(mandatory = True),
         "toolchain_id": attr.string(mandatory = True),
     },
-    environ = ["PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"],
 )
 
 # --- Module extension ---

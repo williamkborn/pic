@@ -43,7 +43,7 @@ jobs:
           curl -fsSL \
             "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-amd64" \
             -o /tmp/buildifier
-          sudo install -m 0755 /tmp/buildifier /usr/local/bin/buildifier
+          install -D -m 0755 /tmp/buildifier "$HOME/.local/bin/buildifier"
 
       - name: Validate lefthook config
         run: lefthook validate
@@ -59,8 +59,6 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
-    env:
-      PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +77,8 @@ jobs:
           curl -fsSL \
             "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
             -o /tmp/bazel
-          sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          install -D -m 0755 /tmp/bazel "$HOME/.local/bin/bazel"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install lint tools
         run: |
@@ -91,7 +90,7 @@ jobs:
           curl -fsSL \
             "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-amd64" \
             -o /tmp/buildifier
-          sudo install -m 0755 /tmp/buildifier /usr/local/bin/buildifier
+          install -D -m 0755 /tmp/buildifier "$HOME/.local/bin/buildifier"
 
       - name: Install Task
         run: |
@@ -112,8 +111,6 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
-    env:
-      PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -134,7 +131,8 @@ jobs:
           curl -fsSL \
             "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
             -o /tmp/bazel
-          sudo install -m 0755 /tmp/bazel /usr/local/bin/bazel
+          install -D -m 0755 /tmp/bazel "$HOME/.local/bin/bazel"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install Task + Python dev environment
         run: |

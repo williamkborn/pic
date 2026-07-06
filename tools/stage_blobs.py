@@ -149,6 +149,15 @@ def find_bazel_output(label: str, extension: str) -> Path:
     return PROJECT_ROOT / "bazel-bin" / pkg / f"{name}{extension}"
 
 
+def find_existing_bazel_output(label: str, extensions: list[str]) -> Path:
+    """Return the first existing Bazel output for a label and extension set."""
+    for extension in extensions:
+        path = find_bazel_output(label, extension)
+        if path.exists():
+            return path
+    return find_bazel_output(label, extensions[0])
+
+
 def _is_registry_platform(blob_name: str, os_name: str, arch_name: str) -> bool | None:
     """Return registry platform support, or None for unknown blob targets."""
     bt = BLOB_TYPES.get(blob_name)
@@ -239,7 +248,7 @@ def _stage_runner_output(
     arch_name: str,
 ) -> bool:
     """Stage one built runner binary."""
-    src = find_bazel_output(runner_label, ".bin")
+    src = find_existing_bazel_output(runner_label, ["", ".bin"])
     dest = RUNNER_DIR / runner_type / arch_name / "runner"
     tag = f"    runner -> {runner_type}/{arch_name}"
     if stage_file(src, dest, executable=True):

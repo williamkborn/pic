@@ -38,13 +38,16 @@ RUN $DNFP install \
 
 # ── Bazel 9 ──────────────────────────────────────────────────────
 ARG BAZEL_VERSION=9.0.1
-RUN curl -fSL -o /usr/local/bin/bazel \
+ENV PICBLOBS_TOOLS=/opt/picblobs/bin
+ENV PATH="${PICBLOBS_TOOLS}:${PATH}"
+RUN mkdir -p "${PICBLOBS_TOOLS}" \
+    && curl -fSL -o "${PICBLOBS_TOOLS}/bazel" \
         "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64" \
-    && chmod +x /usr/local/bin/bazel \
+    && chmod +x "${PICBLOBS_TOOLS}/bazel" \
     && bazel --version
 
 # ── uv (fast Python package manager) ─────────────────────────────
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /opt/picblobs/bin/uv
 
 # ── Python dev dependencies ──────────────────────────────────────
 COPY python/pyproject.toml /tmp/pyproject.toml
@@ -62,11 +65,6 @@ RUN for bin in \
         qemu-s390x-static; do \
         which "$bin" || echo "WARNING: $bin not found"; \
     done
-
-# ── Bazel env ─────────────────────────────────────────────────────
-# Bootlin toolchain SHA256 hashes are not yet pinned in MODULE.bazel.
-# Allow unpinned fetches so Bazel can download the cross-compilers.
-ENV PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS=1
 
 # Let `python -m picblobs` and `import picblobs` work from the project root
 # without requiring `cd python/` or `pip install -e`.

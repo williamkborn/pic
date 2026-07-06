@@ -5,7 +5,7 @@ a synthetic Windows environment (TEB, PEB, module list, PE export
 tables) and executes a Windows-targeting blob within it.
 """
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//bazel:cc_binary.bzl", "pic_cc_binary")
 load("//bazel:lint.bzl", "cppcheck_test")
 
 package(default_visibility = [
@@ -14,39 +14,21 @@ package(default_visibility = [
     "//tests:__subpackages__",
 ])
 
-cc_library(
-    name = "runner_obj",
-    srcs = ["runner.c"] + glob(["start/*.h"]),
-    copts = [
-        "-iquote",
-        "tests/runners/windows",
-    ] + select({
+pic_cc_binary(
+    name = "runner",
+    srcs = ["runner.c"],
+    hdrs = glob(["start/*.h"]),
+    copts = select({
         "//platforms:is_cpu_aarch64": ["-ffixed-x18"],
         "//conditions:default": [],
     }),
+    linkopts = [
+        "-static",
+    ],
+    quote_includes = ["tests/runners/windows"],
     deps = [
         "//src/include/picblobs:headers",
     ],
-)
-
-# Link via genrule — same pattern as the Linux runner.
-genrule(
-    name = "runner",
-    srcs = [":runner_obj"],
-    outs = ["runner.bin"],
-    cmd = " ".join([
-        "$(CC)",
-        "-nostdlib",
-        "-nostartfiles",
-        "-static",
-        "-Wl,--gc-sections",
-        "-Wl,--whole-archive",
-        "$(location :runner_obj)",
-        "-Wl,--no-whole-archive",
-        "-o $@",
-    ]),
-    executable = True,
-    toolchains = ["@rules_cc//cc:current_cc_toolchain"],
 )
 
 cppcheck_test(

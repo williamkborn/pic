@@ -6,17 +6,33 @@ build --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 # Freestanding C compilation flags are applied by the toolchain's
 # `freestanding` feature (see toolchains/bootlin.bzl, arm_none_eabi.bzl).
-# The blob/runner genrules add -Wl,--gc-sections explicitly because they
-# don't go through cc_common.link.
+# Custom blob/runner rules use declared cc_toolchain inputs so remote workers
+# do not need host compiler binaries.
 
 # Strict sandbox
 build --sandbox_default_allow_network=false
 build --nolegacy_external_runfiles
 
-# Remote caching (uncomment and configure for CI). When you enable a cache,
-# also add `build:ci --remote_download_minimal` to skip downloading
-# intermediate outputs on CI runners.
-# build --remote_cache=grpcs://cache.example.com
+# NativeLink remote execution. The default endpoint matches the standard local
+# NativeLink dev server; override it in an untracked user rc with:
+#   build:nativelink --remote_executor=grpc://host:port
+#   build:nativelink --remote_cache=grpc://host:port
+#
+# Run with:
+#   bazel build --config=nativelink //...
+#   bazel test  --config=nativelink //...
+#
+# Remote fallback is intentionally disabled: a target that cannot execute on a
+# remote worker should be fixed or explicitly marked local-only.
+try-import %workspace%/.bazelrc.user
+build:nativelink --remote_executor=grpc://127.0.0.1:50051
+build:nativelink --remote_cache=grpc://127.0.0.1:50051
+build:nativelink --remote_download_outputs=toplevel
+build:nativelink --spawn_strategy=remote
+build:nativelink --remote_local_fallback=false
+build:nativelink --remote_timeout=3600
+build:nativelink --remote_cache_compression
+test:nativelink --test_output=errors
 
 # Platform configs — use with: bazel build --config=linux_x86_64 //...
 # BEGIN GENERATED PLATFORM CONFIGS
@@ -63,7 +79,6 @@ build:lint --output_groups=lint_results
 # Test settings
 test --test_output=errors
 test --test_verbose_timeout_warnings
-test --test_env=PATH
 
 # CI settings
 build:ci --config=lint

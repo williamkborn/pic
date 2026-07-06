@@ -22,8 +22,8 @@ from tools.registry import ARCHITECTURES, OPERATING_SYSTEMS, all_platforms
 BAZEL_BIN = PROJECT_ROOT / "bazel-bin"
 _PACKAGE_RUNNERS = PROJECT_ROOT / "python_cli" / "picblobs_cli" / "_runners"
 _BAZEL_RUNNER_PATHS = (
-    BAZEL_BIN / "tests" / "runners" / "linux" / "runner.bin",
     BAZEL_BIN / "tests" / "runners" / "linux" / "runner",
+    BAZEL_BIN / "tests" / "runners" / "linux" / "runner.bin",
 )
 
 

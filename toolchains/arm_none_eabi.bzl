@@ -47,8 +47,10 @@ def _config_impl(ctx):
         tool_path(name = "strip", path = "bin/{triple}-strip"),
         tool_path(name = "as", path = "bin/{triple}-as"),
         tool_path(name = "cpp", path = "bin/{triple}-cpp"),
-        tool_path(name = "gcov", path = "/usr/bin/false"),
-        tool_path(name = "dwp", path = "/usr/bin/false"),
+        tool_path(name = "gcov", path = "bin/{triple}-gcov"),
+        # DWP is unused by this repo. Keep the path repo-relative so toolchain
+        # resolution never bakes in a host /usr/bin dependency.
+        tool_path(name = "dwp", path = "bin/{triple}-gcov"),
     ]
 
     freestanding_feature = feature(
@@ -178,7 +180,7 @@ filegroup(
 
 filegroup(
     name = "dwp_files",
-    srcs = [],
+    srcs = glob(["bin/{triple}-gcov"]),
 )
 
 filegroup(
@@ -215,14 +217,10 @@ def _arm_none_eabi_repo_impl(ctx):
         download_kwargs["stripPrefix"] = strip_prefix
     if sha256:
         download_kwargs["sha256"] = sha256
-    elif ctx.os.environ.get("PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"):
-        # buildifier: disable=print
-        print("WARNING: arm-none-eabi toolchain has no SHA256 pin.")
     else:
         fail(
             "arm-none-eabi toolchain has no SHA256 pin. " +
-            "Set sha256 in MODULE.bazel or " +
-            "run with PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS=1",
+            "Set sha256 in MODULE.bazel before using this toolchain.",
         )
 
     result = ctx.download_and_extract(**download_kwargs)
@@ -249,7 +247,6 @@ arm_none_eabi_repo = repository_rule(
         "sha256": attr.string(default = ""),
         "extra_cflags": attr.string_list(default = []),
     },
-    environ = ["PICBLOBS_ALLOW_UNPINNED_TOOLCHAINS"],
 )
 
 # --- Module extension ---

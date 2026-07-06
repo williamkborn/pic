@@ -190,7 +190,7 @@
   "moduleExtensions": {
     "//toolchains:arm_none_eabi.bzl%arm_none_eabi": {
       "general": {
-        "bzlTransitiveDigest": "DCsIb/xH7QUZa6nqH5Uv+TXj78ScDej6JhOnVYSCB2g=",
+        "bzlTransitiveDigest": "o8SixffBi4ILCwViFGZno6T94A7ap0U4X+QEyNw38XQ=",
         "usagesDigest": "+XUl2DWlmK3JgQ61LN3M0CmG8YRhBwtAQ+CIeeBvHnc=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -212,7 +212,7 @@
     },
     "//toolchains:bootlin.bzl%bootlin": {
       "general": {
-        "bzlTransitiveDigest": "8kLzXYGhZ0sv74Lwk8RgkGIHSiEQwYDHh7B+TZU/veg=",
+        "bzlTransitiveDigest": "vToYgh8Aav4L/JH2dLRTCdqWmgRXBd4TCi9ONjOADQQ=",
         "usagesDigest": "CgMU7xOZwuQ+Ycl2r1eb+E+ofy2GAYBzDUerzK0e8Do=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -400,13 +400,35 @@
     },
     "//toolchains:qemu.bzl%qemu": {
       "general": {
-        "bzlTransitiveDigest": "3+O8g2uba5kvrArapBd/ToJvzuVQBYTKFuqKStNU1H8=",
+        "bzlTransitiveDigest": "YVghJPVwiivhCAEQJfQWiimQD8Vye9s9NpvtRR6mJSg=",
         "usagesDigest": "tQfnmeDqPjq6fKirmfdqXmwjFGEavNpdm6lVMRz3i2U=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "qemu_arm_static": {
             "repoRuleId": "@@//toolchains:qemu.bzl%qemu_arm_repo",
             "attributes": {}
+          }
+        }
+      }
+    },
+    "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
+      "general": {
+        "bzlTransitiveDigest": "06cynZ1bCvvy8zHPrrDlXq+Z68xmjctHpfFxi+zEpJY=",
+        "usagesDigest": "D1r3lfzMuUBFxgG8V6o0bQTLMk3GkaGOaPzw53wrwyw=",
+        "recordedInputs": [
+          "REPO_MAPPING:pybind11_bazel+,bazel_tools bazel_tools",
+          "FILE:@@pybind11_bazel+//MODULE.bazel e6f4c20442eaa7c90d7190d8dc539d0ab422f95c65a57cc59562170c58ae3d34"
+        ],
+        "generatedRepoSpecs": {
+          "pybind11": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file": "@@pybind11_bazel+//:pybind11-BUILD.bazel",
+              "strip_prefix": "pybind11-2.12.0",
+              "urls": [
+                "https://github.com/pybind/pybind11/archive/v2.12.0.zip"
+              ]
+            }
           }
         }
       }

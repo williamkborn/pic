@@ -190,9 +190,9 @@ def test_freebsd_variant_runs_on_linux_host(tmp_path: Path) -> None:
     if os.uname().machine != "x86_64":
         pytest.skip("host must be x86_64 to execute freebsd-variant probe")
 
-    host_gcc = "/usr/bin/gcc"
-    if not Path(host_gcc).exists():
-        pytest.skip("host gcc not found")
+    host_gcc = _find_cross_gcc("x86_64")
+    if host_gcc is None:
+        pytest.skip("x86_64 Bootlin gcc not found")
 
     # Linux __NR_write=1 on x86_64, __NR_close=3.
     src = tmp_path / "run_probe.c"
@@ -210,10 +210,11 @@ int main(void)
 """)
     out = tmp_path / "run_probe"
     cmd = [
-        host_gcc,
+        str(host_gcc),
         "-DPICBLOBS_OS_FREEBSD=1",
         f"-I{PROJECT_ROOT}/src/include",
         "-O2",
+        "-static",
         "-Wall",
         "-Werror",
         str(src),
